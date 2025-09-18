@@ -331,7 +331,7 @@
             "system/hamobj/Ham.cpp": "MISSING",
             "system/hamobj/HamAudio.cpp": "MISSING",
             "system/hamobj/HamBattleData.cpp": "MISSING",
-            "system/hamobj/HamCamShot.cpp": "MISSING",
+            "system/hamobj/HamCamShot.cpp": "NonMatching",
             "system/hamobj/HamCamTransform.cpp": "MISSING",
             "system/hamobj/HamCharacter.cpp": "MISSING",
             "system/hamobj/HamDirector.cpp": "MISSING",

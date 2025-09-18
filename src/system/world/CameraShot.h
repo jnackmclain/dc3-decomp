@@ -183,9 +183,9 @@ protected:
     static Hmx::Object *sAnimTarget;
 
     // these three could be re-ordered, unsure of current order rn
-    virtual void ApplyDynamicOffsetPreLookAt(Transform &, bool);
-    virtual void ApplyDynamicOffsetPostLookAt(Transform &);
-    virtual void ApplyFinalCamTransform(Transform &);
+    virtual void ApplyDynamicOffsetPreLookAt(Transform &, bool) {}
+    virtual void ApplyDynamicOffsetPostLookAt(Transform &) {}
+    virtual void ApplyFinalCamTransform(Transform &) {}
 
     virtual float ZoomFovOffset() { return 0; }
 
