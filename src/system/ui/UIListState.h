@@ -11,6 +11,21 @@ public:
     void SetNumDisplay(int, bool);
     void SetGridSpan(int, bool);
     void SetSelected(int, int, bool);
+    void SetSpeed(float);
+    void SetMinDisplay(int);
+    void SetMaxDisplay(int);
+    void SetScrollPastMinDisplay(bool);
+    void SetScrollPastMaxDisplay(bool);
+
+    bool Circular() const { return mCircular; }
+    int NumDisplay() const { return mNumDisplay; }
+    int FirstShowing() const { return mFirstShowing; }
+    int GridSpan() const { return mGridSpan; }
+    float Speed() const;
+    int MinDisplay();
+    int MaxDisplay() const;
+    bool ScrollPastMinDisplay() const;
+    bool ScrollPastMaxDisplay() const;
 
 private:
     /** "Does the list scrolling wrap?" */
