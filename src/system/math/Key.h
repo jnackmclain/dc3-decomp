@@ -1,4 +1,5 @@
 #pragma once
+#include "os/Debug.h"
 #include "utl/BinStream.h"
 #include "utl/TextStream.h"
 #include <vector>
@@ -118,7 +119,29 @@ public:
      * @returns The index in the vector where this keyframe resides.
      */
     int
-    AtFrame(float frame, const Key<T1> *&prev, const Key<T1> *&next, float &ref) const;
+    AtFrame(float frame, const Key<T1> *&prev, const Key<T1> *&next, float &ref) const {
+        if (empty()) {
+            prev = next = nullptr;
+            ref = 0;
+            return -1;
+        } else if (frame < front().frame) {
+            prev = next = &front();
+            ref = 0;
+            return -1;
+        } else if (frame >= back().frame) {
+            prev = next = &back();
+            ref = 0;
+            return size() - 1;
+        } else {
+            int frameIdx = KeyLessEq(frame);
+            prev = &(*this)[frameIdx];
+            next = &(*this)[frameIdx + 1];
+            float den = next->frame - prev->frame;
+            MILO_ASSERT(den != 0, 0xFF);
+            ref = (frame - prev->frame) / den;
+            return frameIdx;
+        }
+    }
 
     /** Get the first frame of the keys. */
     float FirstFrame() const {

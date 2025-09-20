@@ -340,7 +340,7 @@
             "system/hamobj/HamIKEffector.cpp": "MISSING",
             "system/hamobj/HamIKSkeleton.cpp": "MISSING",
             "system/hamobj/HamIconMan.cpp": "MISSING",
-            "system/hamobj/HamLabel.cpp": "MISSING",
+            "system/hamobj/HamLabel.cpp": "NonMatching",
             "system/hamobj/HamList.cpp": "MISSING",
             "system/hamobj/HamListRibbon.cpp": "MISSING",
             "system/hamobj/HamMaster.cpp": "MISSING",
