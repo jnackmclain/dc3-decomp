@@ -5,6 +5,8 @@
 #include "obj/DataUtl.h"
 #include "os/Debug.h"
 
+Difficulty DefaultDifficulty() { return kDifficultyEasy; }
+
 Symbol DifficultyToSym(Difficulty d) {
     MILO_ASSERT((0) <= (d) && (d) < (kNumDifficulties), 0x28);
     return DataGetMacro("DIFF_SYMBOLS")->Sym(d);

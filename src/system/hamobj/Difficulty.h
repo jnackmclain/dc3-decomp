@@ -16,3 +16,4 @@ bool IsHarderDifficulty(Difficulty, Difficulty);
 Difficulty DifficultyOneHarder(Difficulty);
 Difficulty DifficultyOneEasier(Difficulty);
 void DifficultyInit();
+Difficulty DefaultDifficulty();
