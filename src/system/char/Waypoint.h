@@ -20,6 +20,11 @@ public:
 
     OBJ_MEM_OVERLOAD(0x14)
     NEW_OBJ(Waypoint)
+    void SetRadius(float r) { mRadius = r; }
+    void SetStrictRadiusDelta(float r) { mStrictRadiusDelta = r; }
+    void SetAngRadius(float r) { mAngRadius = r; }
+    void SetStrictAngDelta(float d) { mStrictAngDelta = d; }
+    void SetYRadius(float r) { mYRadius = r; }
 
     static void Init();
     static void Terminate();

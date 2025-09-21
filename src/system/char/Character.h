@@ -63,8 +63,6 @@ public:
     virtual void Exit();
     // ObjectDir
     virtual void SyncObjects();
-    virtual void AddedObject(Hmx::Object *);
-    virtual void RemovingObject(Hmx::Object *);
     virtual void
     CollideListSubParts(const Segment &, std::list<RndDrawable::Collision> &);
 
@@ -90,10 +88,14 @@ public:
     void EnableBlinks(bool, bool);
     void SetSelfShadow(bool selfshadow) { mSelfShadow = selfshadow; }
     void SetLodType(LODType lod) { mForceLod = lod; }
+    void ForceBlink();
 
     static void Init();
 
 protected:
+    virtual void AddedObject(Hmx::Object *);
+    virtual void RemovingObject(Hmx::Object *);
+
     void UnhookShadow();
 
     static Character *sCurrent;

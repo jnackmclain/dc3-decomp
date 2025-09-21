@@ -4,6 +4,7 @@
 #include "char/CharWeightable.h"
 #include "obj/Dir.h"
 #include "obj/Object.h"
+#include "obj/Utl.h"
 #include "rndobj/Poll.h"
 
 CharLipSyncDriver::CharLipSyncDriver()
@@ -102,7 +103,7 @@ bool CharLipSyncDriver::SetLipSync(CharLipSync *sync) {
     if (unk8c) {
         MILO_LOG(
             "CharLipSyncDriver::SetLipSync() - previous VO Lipsync was fading out.  Deleting now - Name:%s\n",
-            mLipSync ? mLipSync->Name() : "NULL"
+            SafeName(mLipSync)
         );
         RELEASE(unk88);
         mLipSync = nullptr;

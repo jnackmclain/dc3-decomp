@@ -2,6 +2,7 @@
 #include "CharEyeDartRuleset.h"
 #include "CharInterest.h"
 #include "char/CharFaceServo.h"
+#include "char/CharInterest.h"
 #include "char/CharLookAt.h"
 #include "char/CharPollable.h"
 #include "char/CharWeightSetter.h"
@@ -72,6 +73,7 @@ public:
     NEW_OBJ(CharEyes)
 
     void ForceBlink();
+    CharInterest *GetCurrentInterest();
 
 protected:
     CharEyes();

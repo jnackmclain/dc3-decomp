@@ -37,6 +37,7 @@ public:
     void SetBlinkClipRight(Symbol);
     float BlinkWeightLeft() const;
     void ApplyProceduralWeights();
+    CharClip *BaseClip() const { return mBaseClip; }
 
 protected:
     CharFaceServo();
