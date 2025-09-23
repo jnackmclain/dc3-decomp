@@ -57,11 +57,13 @@ public:
     virtual void PreLoad(BinStream &);
     virtual void PostLoad(BinStream &);
     // ObjectDir
-    virtual void SyncObjects();
+    virtual void SyncObjects() { RndDir::SyncObjects(); }
     // RndDrawable
     virtual void DrawShowing();
     // RndAnimatable
-    virtual void SetFrame(float frame, float blend);
+    virtual void SetFrame(float frame, float blend) {
+        RndAnimatable::SetFrame(frame, blend);
+    }
     virtual float StartFrame();
     virtual float EndFrame();
 
