@@ -1,6 +1,7 @@
 #pragma once
 #include "obj/Data.h"
 #include "obj/PropSync.h"
+#include "utl/BinStream.h"
 
 struct Range {
     Range() : start(0), end(0) {}
