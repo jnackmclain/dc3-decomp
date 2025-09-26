@@ -3,6 +3,7 @@
 #include "obj/Object.h"
 #include "utl/MemMgr.h"
 
+/** "Data used for Craze Hollaback" */
 class CrazeHollaback : public Hmx::Object {
 public:
     // Hmx::Object
@@ -21,6 +22,8 @@ public:
 protected:
     CrazeHollaback();
 
+    /** "Music loop start and end" */
     Range mMusicRange; // 0x2c
+    /** "Playable range of hollaback" */
     Range mPlayRange; // 0x34
 };
