@@ -770,27 +770,27 @@ extern DataArray *SystemConfig(Symbol, Symbol, Symbol);
 #define LOAD_REVS(bs)                                                                    \
     int revs;                                                                            \
     bs >> revs;                                                                          \
-    int gRev = getHmxRev(revs);                                                          \
-    int gAltRev = getAltRev(revs);                                                       \
-    BinStreamRev bsrev(bs, gRev, gAltRev);
+    BinStreamRev bsrev(bs, revs);                                                        \
+    int gRev = bsrev.rev;                                                                \
+    int gAltRev = bsrev.altRev;
 
 #define ASSERT_REVS(rev1, rev2)                                                          \
     static const unsigned short gRevs[4] = { rev1, 0, rev2, 0 };                         \
-    if (gRev > rev1) {                                                                   \
+    if (bsrev.rev > rev1) {                                                              \
         MILO_FAIL(                                                                       \
             "%s can't load new %s version %d > %d",                                      \
             PathName(this),                                                              \
             ClassName(),                                                                 \
-            gRev,                                                                        \
+            bsrev.rev,                                                                   \
             gRevs[0]                                                                     \
         );                                                                               \
     }                                                                                    \
-    if (gAltRev > rev2) {                                                                \
+    if (bsrev.altRev > rev2) {                                                           \
         MILO_FAIL(                                                                       \
             "%s can't load new %s alt version %d > %d",                                  \
             PathName(this),                                                              \
             ClassName(),                                                                 \
-            gAltRev,                                                                     \
+            bsrev.altRev,                                                                \
             gRevs[2]                                                                     \
         );                                                                               \
     }

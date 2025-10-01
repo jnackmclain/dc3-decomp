@@ -179,7 +179,6 @@ inline int packRevs(unsigned short alt, unsigned short rev) {
 
 class BinStreamRev {
 public:
-    BinStreamRev(BinStream &bs, int r, int alt) : rev(r), altRev(alt), stream(bs) {}
     BinStreamRev(BinStream &bs, int revs)
         : rev(getHmxRev(revs)), altRev(getAltRev(revs)), stream(bs) {}
 

@@ -162,18 +162,18 @@ BEGIN_LOADS(RndTexRenderer)
         FilePath fp;
         bs >> fp;
     } else {
-        bsrev >> mDrawable;
+        mDrawable.Load(bs, false, nullptr);
     }
     if (gRev > 3) {
-        bsrev >> mCamera;
+        bs >> mCamera;
     } else {
-        mCamera = 0;
+        mCamera = nullptr;
     }
-    bsrev >> mOutputTexture;
+    bs >> mOutputTexture;
     InitTexture();
     if (gRev > 1) {
         bsrev >> mForce;
-        bsrev >> mImpostorHeight;
+        bs >> mImpostorHeight;
     }
     if (gRev > 4) {
         bsrev >> mDrawResponsible;
@@ -195,17 +195,17 @@ BEGIN_LOADS(RndTexRenderer)
         bsrev >> mForce;
     }
     if (gRev > 9) {
-        bsrev >> mMirrorCam;
+        bs >> mMirrorCam;
     }
     if (gRev > 10) {
         bsrev >> mNoPoll;
     }
     if (gRev > 11) {
-        bsrev >> mEnviron;
+        bs >> mEnviron;
     }
     if (gRev > 12) {
         bsrev >> mClearBuffer;
-        bsrev >> mClearColor;
+        bs >> mClearColor;
     }
     unk_0x58 = true;
 END_LOADS
