@@ -356,7 +356,7 @@
             "system/hamobj/HamRibbon.cpp": "NonMatching",
             "system/hamobj/HamScrollBehavior.cpp": "MISSING",
             "system/hamobj/HamScrollSpeedIndicator.cpp": "NonMatching",
-            "system/hamobj/HamSkeletonConverter.cpp": "MISSING",
+            "system/hamobj/HamSkeletonConverter.cpp": "NonMatching",
             "system/hamobj/HamSong.cpp": "MISSING",
             "system/hamobj/HamSongData.cpp": "MISSING",
             "system/hamobj/HamSupereasyData.cpp": "MISSING",
