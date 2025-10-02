@@ -1,4 +1,5 @@
 #pragma once
+#include "HamRegulate.h"
 #include "char/CharEyes.h"
 #include "char/CharLipSync.h"
 #include "char/CharServoBone.h"
@@ -6,6 +7,7 @@
 #include "char/Character.h"
 #include "char/FileMerger.h"
 #include "char/Waypoint.h"
+#include "hamobj/HamDriver.h"
 #include "obj/Data.h"
 #include "obj/Dir.h"
 #include "obj/Object.h"
@@ -94,6 +96,9 @@ public:
     int SongAnimation();
     ObjectDir *GetNeutralSkeleton();
     void SetFaceOverrideClip(Symbol, bool);
+    HamDriver *SongDriver();
+    HamRegulate *Regulator();
+    Waypoint *GetWaypoint() const { return mWaypoint; }
 
 protected:
     virtual void AddedObject(Hmx::Object *);

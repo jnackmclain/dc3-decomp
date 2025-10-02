@@ -56,7 +56,6 @@ public:
     NEW_OBJ(HamDirector)
 
     WorldDir *GetWorld();
-
     float GetMainFaceOverrideWeight();
     void SetMainFaceOverrideWeight(float);
     Symbol GetMainFaceOverrideClip() const;
@@ -105,6 +104,7 @@ public:
     void LoadRoutineBuilderData(std::set<const MoveVariant *> &, bool);
     bool InPracticeMode();
     void MoveKeys(Difficulty, class MoveDir *, std::vector<HamMoveKey> &);
+    ObjectDir *ClipDir() const { return mClipDir; }
 
     DataNode OnGetDancerVisemes(DataArray *);
 
