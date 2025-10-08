@@ -17,7 +17,7 @@ I don’t blame you, it's a phenomenal game - arguably one of HMX’s best works
 ## Workflow
 ### Initial Setup
 - Initialize the decomp by following the build instructions on the main page of the repo. If the build went successfully, you should see the current progress percentage on your terminal.
-  - **DISCLAIMER**: If you are not on Windows, you will have to build the repo under Wine. As of the time of me writing this guide, the preferred Wine alternative [Wibo](https://github.com/decompals/wibo) does not currently support the Xbox 360 compiler. There is ongoing work to add support for it, but it is not ready to use.
+
 ### Select and Initialize a TU (Translation Unit)
 - Now, you decomp. You start this process by doing the following:
 - Pick a TU you'd like to work on, and find that corresponding TU in `config/373307D9/objects.json`. If it's marked as `MISSING`, change it to `NonMatching` and re-run ninja. This will allow ninja to watch for that TU's .cpp file so it can be tracked in future builds.
