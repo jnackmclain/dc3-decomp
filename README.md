@@ -108,6 +108,10 @@ Select an object from the left sidebar to begin diffing. Changes to the project 
 
 ![](assets/objdiff.png)
 
+Questions?
+==========
+Please see [the FAQ](docs/FAQ.md).
+
 Want to contribute?
 ===================
 If you are interested in contributing, please see [the CONTRIBUTING walkthrough and guidelines](docs/CONTRIBUTING.md).
