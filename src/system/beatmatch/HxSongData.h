@@ -8,7 +8,7 @@ class HxSongData {
 public:
     HxSongData() {}
     virtual ~HxSongData() {}
-    virtual SongPos CalcSongPos(float) = 0;
+    virtual SongPos CalcSongPos(class HxMaster *, float) = 0;
     virtual TempoMap *GetTempoMap() const = 0;
     virtual BeatMap *GetBeatMap() const = 0;
     virtual MeasureMap *GetMeasureMap() const = 0;

@@ -92,6 +92,7 @@ public:
     Fader *MasterFader() const { return mMasterFader; }
     void RemovePlayHandler(Hmx::Object *);
     bool CheckCommonBank(bool);
+    void SetDir(ObjectDir *dir) { unk64 = dir; }
 
     template <class T>
     T *Find(const char *name, bool fail) {
