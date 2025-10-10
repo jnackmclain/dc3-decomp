@@ -1696,7 +1696,6 @@ system/math/Trig.cpp:
 	.rdata      start:0x8205EBA0 end:0x8205EBD4
 	.pdata      start:0x822C9AB0 end:0x822C9AF0
 	.text       start:0x82532740 end:0x82532D08
-	.data       start:0x82F0F68C end:0x82F0F6A4
 
 system/math/Rot.cpp:
 	.rdata      start:0x8205EBD4 end:0x8205EC20
@@ -1708,7 +1707,7 @@ system/math/Geo.cpp:
 	.rdata      start:0x8205EC20 end:0x8205F1A8
 	.pdata      start:0x822C9BB0 end:0x822C9DE0
 	.text       start:0x825342A8 end:0x82538B70
-	.data       start:0x82F0F6A4 end:0x82F0F720
+	.data       start:0x82F0F68C end:0x82F0F720
 
 system/math/mtx.cpp:
 	.rdata      start:0x8205F1A8 end:0x8205F1C0

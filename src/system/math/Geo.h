@@ -112,3 +112,5 @@ void Multiply(const Plane &, const Transform &, Plane &);
 
 DataNode SetBSPParams(DataArray *da);
 void GeoInit();
+
+extern float gUnitsPerMeter;

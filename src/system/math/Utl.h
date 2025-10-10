@@ -124,7 +124,7 @@ inline const T Abs(T x) {
         return -x;
 }
 
-inline bool IsNaN(float f) { return (f == f) ? false : true; }
+inline bool IsNaN(float f) { return !(f == f); }
 
 inline int Mod(int num, int modbase) {
     if (modbase == 0)

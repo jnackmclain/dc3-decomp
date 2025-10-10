@@ -1,6 +1,7 @@
 #include "Rot.h"
 #include "math/Mtx.h"
 #include "math/Vec.h"
+#include "os/Debug.h"
 #include <cmath>
 
 TextStream &operator<<(TextStream &ts, const Hmx::Quat &v) {
@@ -48,6 +49,42 @@ float GetZAngle(const Hmx::Matrix3 &m) {
     return -res;
 }
 
+void MakeEuler(const Hmx::Matrix3 &m, Vector3 &v) {
+    if (fabsf(m.y.z) > 0.99999988f) {
+        v.x = m.y.z > 0 ? PI / 2 : -PI / 2;
+        v.z = std::atan2(m.x.y, m.x.x);
+        v.y = 0;
+    } else {
+        v.z = std::atan2(-m.y.x, m.y.y);
+        v.x = std::asin(m.y.z);
+        v.y = GetYAngle(m);
+    }
+}
+
+void MakeScale(const Hmx::Matrix3 &m, Vector3 &v) {
+    float zlen = Length(m.z);
+    Vector3 cross;
+    Cross(m.y, m.z, cross);
+    float det = Dot(m.x, cross);
+    if (det <= 0) {
+        zlen = -zlen;
+    }
+    v.x = Length(m.x);
+    v.y = Length(m.y);
+    v.z = zlen;
+}
+
+void Normalize(const Hmx::Quat &qin, Hmx::Quat &qout) {
+    float res = qin.w * qin.w + qin.z * qin.z + qin.x * qin.x + qin.y * qin.y;
+    if (res == 0) {
+        MILO_NOTIFY_ONCE("trying to normalize zero quat, probable error");
+        qout.Reset();
+    } else {
+        res = 1 / std::sqrt(res);
+        qout.Set(qin.x * res, qin.y * res, qin.z * res, qin.w * res);
+    }
+}
+
 void Interp(const Hmx::Quat &q1, const Hmx::Quat &q2, float r, Hmx::Quat &qres) {
     Nlerp(q1, q2, r, qres);
 }
@@ -59,3 +96,19 @@ void Interp(const Hmx::Matrix3 &m1, const Hmx::Matrix3 &m2, float r, Hmx::Matrix
     Nlerp(q40, q50, r, q60);
     MakeRotMatrix(q60, res);
 }
+
+void MakeEuler(const Hmx::Quat &q, Vector3 &v) {
+    Hmx::Matrix3 m;
+    MakeRotMatrix(q, m);
+    MakeEuler(m, v);
+}
+
+// void MakeEuler(Quat *param_1,Vector3 *param_2)
+
+// {
+//   Matrix3 MStack_40;
+
+//   MakeRotMatrix(param_1,&MStack_40);
+//   MakeEuler(&MStack_40,param_2);
+//   return;
+// }

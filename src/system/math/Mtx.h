@@ -326,3 +326,5 @@ inline void Scale(const Vector3 &vec, const Hmx::Matrix3 &mtx, Hmx::Matrix3 &res
     Scale(mtx.y, vec.y, res.y);
     Scale(mtx.z, vec.z, res.z);
 }
+
+float Det(const Hmx::Matrix3 &m);

@@ -8,6 +8,7 @@
 #include "os/System.h"
 #include "utl/BinStream.h"
 
+float gUnitsPerMeter = 39.370079f;
 float gBSPPosTol = 0.01f;
 float gBSPDirTol = 0.985f;
 int gBSPMaxDepth = 20;
