@@ -2,6 +2,7 @@
 #include "math/Mtx.h"
 #include "math/Sphere.h"
 #include "math/Vec.h"
+#include "obj/Data.h"
 #include "utl/BinStream.h"
 #include "utl/MemMgr.h"
 #include "utl/PoolAlloc.h"
@@ -60,7 +61,6 @@ public:
         mMax = max;
     }
 
-    // fn_802D7468
     void GrowToContain(const Vector3 &vec, bool b);
     void Extend(float);
     bool Contains(const Vector3 &) const;
@@ -105,3 +105,10 @@ BinStream &operator<<(BinStream &, const BSPNode *);
 BinStream &operator>>(BinStream &, BSPNode *&);
 bool MakeBSPTree(BSPNode *&, std::list<BSPFace> &, int);
 bool CheckBSPTree(const BSPNode *, const Box &);
+void Multiply(const Box &, float, Box &);
+bool Intersect(const Transform &, const Hmx::Polygon &, const BSPNode *);
+void MultiplyEq(BSPNode *, const Transform &);
+void Multiply(const Plane &, const Transform &, Plane &);
+
+DataNode SetBSPParams(DataArray *da);
+void GeoInit();

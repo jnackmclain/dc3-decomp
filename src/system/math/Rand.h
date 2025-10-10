@@ -10,6 +10,9 @@ public:
     float Float(float, float);
     float Gaussian();
 
+    static Rand sRand;
+
+private:
     unsigned int mRandIndex1;
     unsigned int mRandIndex2;
     unsigned int mRandTable[256];

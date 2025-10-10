@@ -225,4 +225,26 @@ inline float Length(const Vector3 &v) {
     return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
 }
 
-void __cdecl Normalize(const Vector3 &, Vector3 &);
+inline float Dot(const Vector3 &v1, const Vector3 &v2) {
+    return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+}
+
+inline float Cross(const Vector2 &v1, const Vector2 &v2) {
+    return v1.x * v2.y - v1.y * v2.x;
+}
+
+inline void Cross(const Vector3 &v1, const Vector3 &v2, Vector3 &dst) {
+    float x1, x2, y2, z1, z2, y1;
+
+    x2 = v2.x;
+    y1 = v1.y;
+    y2 = v2.y;
+    z1 = v1.z;
+    x1 = v1.x;
+    z2 = v2.z;
+
+    dst.Set(y1 * z2 - z1 * y2, z1 * x2 - x1 * z2, x1 * y2 - y1 * x2);
+}
+
+void Normalize(const Vector3 &, Vector3 &);
+void ClosestPoint(const Vector3 &, const Vector3 &, const Vector3 &, Vector3 *);

@@ -242,14 +242,21 @@ public:
 class Plane {
 public:
     Plane() {}
-    Plane(const Vector3 &v1, const Vector3 &v2) { Set(v1, v2); }
 
-    void Set(const Vector3 &, const Vector3 &);
+    void Set(const Vector3 &, const Vector3 &, const Vector3 &);
+    void Set(float f1, float f2, float f3, float f4) {
+        a = f1;
+        b = f2;
+        c = f3;
+        d = f4;
+    }
     float Dot(const Vector3 &vec) const { return a * vec.x + b * vec.y + c * vec.z + d; }
     Vector3 On() const;
 
     float a, b, c, d;
 };
+
+void Normalize(const Plane &, Plane &);
 
 inline BinStream &operator<<(BinStream &bs, const Plane &p) {
     bs << p.a << p.b << p.c << p.d;

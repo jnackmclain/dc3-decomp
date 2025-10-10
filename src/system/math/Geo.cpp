@@ -1,8 +1,18 @@
 #include "math/Geo.h"
 #include "Vec.h"
+#include "math/Mtx.h"
 #include "math/Sphere.h"
 #include "math/Utl.h"
+#include "math/Vec.h"
+#include "obj/DataFunc.h"
+#include "os/System.h"
 #include "utl/BinStream.h"
+
+float gBSPPosTol = 0.01f;
+float gBSPDirTol = 0.985f;
+int gBSPMaxDepth = 20;
+int gBSPMaxCandidates = 40;
+float gBSPCheckScale = 1.1f;
 
 void NumNodes(const BSPNode *node, int &num, int &maxDepth) {
     static int depth = 0;
@@ -74,16 +84,184 @@ bool Box::Contains(const Triangle &t) const {
 
 float Box::SurfaceArea() const {
     float x = mMax.x - mMin.x;
-    float z = mMax.z - mMin.z;
     float y = mMax.y - mMin.y;
-    return x * y * 2 + x * z * 2 + y * z * 2;
+    float z = mMax.z - mMin.z;
+    float xy = x * y * 2;
+    float xz = x * z * 2;
+    float yz = y * z * 2;
+    return xy + xz + yz;
 }
 
 float Box::Volume() const {
     return (mMax.x - mMin.x) * (mMax.y - mMin.y) * (mMax.z - mMin.z);
 }
 
+void Box::GrowToContain(const Vector3 &vec, bool b) {
+    if (b) {
+        mMin = mMax = vec;
+    } else
+        for (int i = 0; i < 3; i++) {
+            MinEq(mMin[i], vec[i]);
+            MaxEq(mMax[i], vec[i]);
+        }
+}
+
 bool Box::Clamp(Vector3 &v) {
     return ClampEq(v.x, mMin.x, mMax.x) | ClampEq(v.y, mMin.y, mMax.y)
         | ClampEq(v.z, mMin.z, mMax.z);
+}
+
+void Normalize(const Plane &in, Plane &out) {
+    float mult = 0;
+    const Vector3 *v = reinterpret_cast<const Vector3 *>(&in);
+    float len = Length(*v);
+    if (len != 0) {
+        mult = 1 / len;
+    }
+    out.Set(in.a * mult, in.b * mult, in.c * mult, in.d * mult);
+}
+
+void ClosestPoint(const Vector3 &v1, const Vector3 &v2, const Vector3 &v3, Vector3 *vout) {
+    Vector3 diff31, diff21;
+    Subtract(v3, v1, diff31);
+    Subtract(v2, v1, diff21);
+    float f5 = Dot(diff31, diff21);
+    if (f5 <= 0) {
+        *vout = v1;
+    } else {
+        float dot21 = Dot(diff21, diff21);
+        if (f5 > dot21) {
+            *vout = v2;
+        } else {
+            f5 /= dot21;
+            diff21 *= f5;
+            Add(v1, diff21, *vout);
+        }
+    }
+}
+
+void Plane::Set(const Vector3 &v1, const Vector3 &v2, const Vector3 &v3) {
+    Vector3 diff31, diff21;
+    Subtract(v3, v1, diff31);
+    Subtract(v2, v1, diff21);
+    Vector3 cross;
+    Cross(diff21, diff31, cross);
+    Normalize(cross, cross);
+    a = cross.x;
+    b = cross.y;
+    c = cross.z;
+    d = -::Dot(cross, v1);
+}
+
+void SetBSPParams(float f1, float f2, int r3, int r4, float f3) {
+    gBSPPosTol = f1;
+    gBSPDirTol = f2;
+    gBSPMaxDepth = r3;
+    gBSPMaxCandidates = r4;
+    gBSPCheckScale = f3;
+}
+
+DataNode SetBSPParams(DataArray *da) {
+    SetBSPParams(da->Float(1), da->Float(2), da->Int(3), da->Int(4), da->Float(5));
+    return 0;
+}
+
+void GeoInit() {
+    DataArray *cfg = SystemConfig("math");
+    float scale = cfg->FindArray("bsp_check_scale")->Float(1);
+    int candidates = cfg->FindArray("bsp_max_candidates")->Int(1);
+    int depth = cfg->FindArray("bsp_max_depth")->Int(1);
+    float dirtol = cfg->FindArray("bsp_dir_tol")->Float(1);
+    float postol = cfg->FindArray("bsp_pos_tol")->Float(1);
+    SetBSPParams(postol, dirtol, depth, candidates, scale);
+    DataRegisterFunc("set_bsp_params", SetBSPParams);
+}
+
+bool CheckBSPTree(const BSPNode *node, const Box &box) {
+    if (!gBSPCheckScale)
+        return true;
+    Box box68;
+    Multiply(box, gBSPCheckScale, box68);
+    Hmx::Polygon polygon70;
+    polygon70.points.resize(4);
+    Transform tf50;
+    polygon70.points[0] = Vector2(box68.mMin.x, box68.mMin.y);
+    polygon70.points[1] = Vector2(box68.mMax.x, box68.mMin.y);
+    polygon70.points[2] = Vector2(box68.mMax.x, box68.mMax.y);
+    polygon70.points[3] = Vector2(box68.mMin.x, box68.mMax.y);
+    tf50.m.Identity();
+    tf50.v.Set(0, 0, box68.mMin.z);
+    if (Intersect(tf50, polygon70, node))
+        return false;
+    // first intersect check
+
+    polygon70.points.clear();
+    polygon70.points.resize(4);
+    polygon70.points[0] = Vector2(box68.mMin.x, -box68.mMax.y);
+    polygon70.points[1] = Vector2(box68.mMax.x, -box68.mMax.y);
+    polygon70.points[2] = Vector2(box68.mMax.x, -box68.mMin.y);
+    polygon70.points[3] = Vector2(box68.mMin.x, -box68.mMin.y);
+    float negone = -1.0f;
+    tf50.m.Set(1.0f, 0.0f, 0.0f, 0.0f, negone, 0.0f, 0.0f, 0.0f, 0.0f);
+    tf50.v.Set(0, 0, box68.mMax.z);
+    if (Intersect(tf50, polygon70, node))
+        return false;
+    // second intersect check
+
+    polygon70.points.clear();
+    polygon70.points.resize(4);
+    polygon70.points[0] = Vector2(box68.mMin.y, box68.mMin.z);
+    polygon70.points[1] = Vector2(box68.mMax.y, box68.mMin.z);
+    polygon70.points[2] = Vector2(box68.mMax.y, box68.mMax.z);
+    polygon70.points[3] = Vector2(box68.mMin.y, box68.mMax.z);
+    tf50.m.Set(1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    tf50.v.Set(box68.mMin.x, 0, 0);
+    if (Intersect(tf50, polygon70, node))
+        return false;
+    // third intersect check
+
+    polygon70.points.clear();
+    polygon70.points.resize(4);
+    polygon70.points[0] = Vector2(-box68.mMax.y, box68.mMin.z);
+    polygon70.points[1] = Vector2(-box68.mMin.y, box68.mMin.z);
+    polygon70.points[2] = Vector2(-box68.mMin.y, box68.mMax.z);
+    polygon70.points[3] = Vector2(-box68.mMax.y, box68.mMax.z);
+    tf50.m.Set(1.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    tf50.v.Set(box68.mMax.x, 0, 0);
+    if (Intersect(tf50, polygon70, node))
+        return false;
+    // fourth intersect check
+
+    polygon70.points.clear();
+    polygon70.points.resize(4);
+    polygon70.points[0] = Vector2(box68.mMin.x, box68.mMin.z);
+    polygon70.points[1] = Vector2(box68.mMax.x, box68.mMin.z);
+    polygon70.points[2] = Vector2(box68.mMax.x, box68.mMax.z);
+    polygon70.points[3] = Vector2(box68.mMin.x, box68.mMax.z);
+    tf50.m.Set(1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    tf50.v.Set(0, box68.mMax.y, 0);
+    if (Intersect(tf50, polygon70, node))
+        return false;
+    // fifth intersect check
+
+    polygon70.points.clear();
+    polygon70.points.resize(4);
+    polygon70.points[0] = Vector2(-box68.mMax.x, box68.mMin.z);
+    polygon70.points[1] = Vector2(-box68.mMin.x, box68.mMin.z);
+    polygon70.points[2] = Vector2(-box68.mMin.x, box68.mMax.z);
+    polygon70.points[3] = Vector2(-box68.mMax.x, box68.mMax.z);
+    tf50.m.Set(-1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    tf50.v.Set(0, box68.mMin.y, 0);
+    if (Intersect(tf50, polygon70, node))
+        return false;
+    return true;
+    // sixth and final intersect check
+}
+
+void MultiplyEq(BSPNode *n, const Transform &t) {
+    for (; n != nullptr; n = n->right) {
+        Multiply(n->plane, t, n->plane);
+        Normalize(n->plane, n->plane);
+        MultiplyEq(n->left, t);
+    }
 }
