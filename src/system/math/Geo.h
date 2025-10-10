@@ -1,6 +1,10 @@
 #pragma once
+#include "math/Mtx.h"
+#include "math/Sphere.h"
 #include "math/Vec.h"
 #include "utl/BinStream.h"
+#include "utl/MemMgr.h"
+#include "utl/PoolAlloc.h"
 
 class Segment {
 public:
@@ -27,7 +31,7 @@ namespace Hmx {
     public:
         Polygon() {}
         ~Polygon() {}
-        std::vector<Vector2> mPoints;
+        std::vector<Vector2> points;
     };
 
     struct Ray {
@@ -39,6 +43,12 @@ inline BinStream &operator<<(BinStream &bs, const Hmx::Rect &rect) {
     bs << rect.x << rect.y << rect.w << rect.h;
     return bs;
 }
+
+class Triangle {
+public:
+    Vector3 origin;
+    Hmx::Matrix3 frame;
+};
 
 class Box {
 public:
@@ -52,14 +62,13 @@ public:
 
     // fn_802D7468
     void GrowToContain(const Vector3 &vec, bool b);
-
-    // // fn_802D757C
-    // bool Clamp(Vector3 &vec) {
-    //     bool clamp_z = ClampEq(vec.z, mMin.z, mMax.z);
-    //     bool clamp_x = ClampEq(vec.x, mMin.x, mMax.x);
-    //     bool clamp_y = ClampEq(vec.y, mMin.y, mMax.y);
-    //     return clamp_x | clamp_y | clamp_z;
-    // }
+    void Extend(float);
+    bool Contains(const Vector3 &) const;
+    bool Contains(const Sphere &) const;
+    bool Contains(const Triangle &) const;
+    float SurfaceArea() const;
+    float Volume() const;
+    bool Clamp(Vector3 &);
 
     Vector3 mMin;
     Vector3 mMax;
@@ -70,8 +79,29 @@ inline BinStream &operator<<(BinStream &bs, const Box &box) {
     return bs;
 }
 
-class Triangle {
+class BSPNode {
 public:
-    Vector3 unk0;
-    // there's more
+    BSPNode() : left(nullptr), right(nullptr) {}
+
+    POOL_OVERLOAD(BSPNode, 0x216);
+
+    Plane plane; // 0x0
+    BSPNode *left; // 0x10 yes they're called front/back but BSP works L/R, not F/B
+    BSPNode *right; // 0x14
 };
+
+class BSPFace {
+public:
+    void Set(const Vector3 &, const Vector3 &, const Vector3 &);
+
+    Hmx::Polygon p; // 0x0
+    Transform t; // 0xc
+    float area; // 0x4c
+    std::list<Plane> planes; // 0x50
+};
+
+void NumNodes(const BSPNode *, int &, int &);
+BinStream &operator<<(BinStream &, const BSPNode *);
+BinStream &operator>>(BinStream &, BSPNode *&);
+bool MakeBSPTree(BSPNode *&, std::list<BSPFace> &, int);
+bool CheckBSPTree(const BSPNode *, const Box &);

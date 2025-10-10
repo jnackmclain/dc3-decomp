@@ -251,6 +251,16 @@ public:
     float a, b, c, d;
 };
 
+inline BinStream &operator<<(BinStream &bs, const Plane &p) {
+    bs << p.a << p.b << p.c << p.d;
+    return bs;
+}
+
+inline BinStream &operator>>(BinStream &bs, Plane &p) {
+    bs >> p.a >> p.b >> p.c >> p.d;
+    return bs;
+}
+
 class Frustum {
     // total size: 0x60
 public:
