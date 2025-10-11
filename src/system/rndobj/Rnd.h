@@ -147,6 +147,7 @@ protected:
     void UpdateRate();
     void UpdateHeap();
     float DrawTimers(float);
+    void CreateDefaults();
 
     DataNode OnShowConsole(const DataArray *);
     DataNode OnToggleTimers(const DataArray *);
@@ -166,10 +167,10 @@ protected:
     DataNode OnScaleObject(const DataArray *);
     DataNode OnReflect(const DataArray *);
     DataNode OnToggleHeap(const DataArray *);
-    DataNode OnTestDrawGroups(const DataArray *);
     DataNode OnOverlayPrint(const DataArray *);
     DataNode OnToggleShowMetaMatErrors(const DataArray *);
     DataNode OnToggleShowShaderErrors(const DataArray *);
+    DataNode OnToggleWatch(const DataArray *);
 
     Hmx::Color mClearColor; // 0x30
     int mWidth; // 0x40

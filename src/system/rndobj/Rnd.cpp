@@ -1,5 +1,9 @@
 #include "rndobj/Rnd.h"
+#include "os/System.h"
 #include "rndobj/Draw.h"
+#include "rndobj/HiResScreen.h"
+#include "rndobj/Mesh.h"
+#include "rndobj/ShaderMgr.h"
 #include "rndobj/Utl.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
@@ -13,6 +17,138 @@
 bool gNotifyKeepGoing;
 bool gFailKeepGoing;
 bool gFailRestartConsole;
+
+Rnd::Rnd()
+    : mClearColor(0.3f, 0.3f, 0.3f), mWidth(640), mHeight(480), mScreenBpp(16),
+      mDrawCount(0), mDrawTimer(), mTimersOverlay(0), mRateOverlay(0), mHeapOverlay(0),
+      mWatchOverlay(0), mStatsOverlay(0), mDefaultMat(0), mOverlayMat(0), mOverdrawMat(0),
+      mDefaultCam(0), mWorldCamCopy(0), mDefaultEnv(0), mDefaultLit(0), unk110(nullptr),
+      unk114(nullptr), unk118(0), unk120(5), mFrameID(0), mRateGate("    "),
+      mFont(nullptr), mSync(1), mGsTiming(0), mShowSafeArea(0), mDrawing(0),
+      mWorldEnded(1), mAspect(kWidescreen), unk13c(0), unk140(0), unk141(0),
+      mShrinkToSafe(1), mInGame(0), mVerboseTimers(0), mDisablePostProc(0), unk146(0),
+      unk147(0), unk148(0), unk14c(0), unk150(0), mPostProcOverride(this),
+      mPostProcBlackLightOverride(nullptr), unk18c(this), mDraws(this), unk1b4(0),
+      mProcCmds(kProcessAll), mLastProcCmds(kProcessAll) {
+    for (int i = 0; i < 8; i++)
+        mDefaultTex[i] = nullptr;
+}
+
+BEGIN_HANDLERS(Rnd)
+    HANDLE_ACTION(reset_postproc, RndPostProc::Reset())
+    HANDLE_ACTION(reset_dof_proc, RndPostProc::ResetDofProc())
+    HANDLE_ACTION(set_postproc_override, SetPostProcOverride(_msg->Obj<RndPostProc>(2)))
+    HANDLE_ACTION(
+        set_postproc_blacklight_override,
+        SetPostProcBlacklightOverride(_msg->Obj<RndPostProc>(2))
+    )
+    HANDLE_EXPR(get_postproc_override, GetPostProcOverride())
+    HANDLE_EXPR(get_selected_postproc, GetSelectedPostProc())
+    HANDLE_ACTION(
+        set_dof_depth_scale, RndPostProc::DOFOverrides().SetDepthScale(_msg->Float(2))
+    )
+    HANDLE_ACTION(
+        set_dof_depth_offset, RndPostProc::DOFOverrides().SetDepthOffset(_msg->Float(2))
+    )
+    HANDLE_ACTION(
+        set_dof_min_scale, RndPostProc::DOFOverrides().SetMinBlurScale(_msg->Float(2))
+    )
+    HANDLE_ACTION(
+        set_dof_min_offset, RndPostProc::DOFOverrides().SetMinBlurOffset(_msg->Float(2))
+    )
+    HANDLE_ACTION(
+        set_dof_max_scale, RndPostProc::DOFOverrides().SetMaxBlurScale(_msg->Float(2))
+    )
+    HANDLE_ACTION(
+        set_dof_max_offset, RndPostProc::DOFOverrides().SetMaxBlurOffset(_msg->Float(2))
+    )
+    HANDLE_ACTION(
+        set_dof_width_scale, RndPostProc::DOFOverrides().SetBlurWidthScale(_msg->Float(2))
+    )
+    HANDLE_ACTION(set_aspect, SetAspect((Aspect)_msg->Int(2)))
+    HANDLE_EXPR(aspect, mAspect)
+    HANDLE_EXPR(screen_width, mWidth)
+    HANDLE_EXPR(screen_height, mHeight)
+    HANDLE_EXPR(highlight_style, RndDrawable::GetHighlightStyle())
+    HANDLE_ACTION(
+        set_highlight_style, RndDrawable::SetHighlightStyle((HighlightStyle)_msg->Int(2))
+    )
+    HANDLE_EXPR(get_normal_display_length, RndDrawable::GetNormalDisplayLength())
+    HANDLE_ACTION(
+        set_normal_display_length, RndDrawable::SetNormalDisplayLength(_msg->Float(2))
+    )
+    HANDLE_EXPR(get_force_select_proxied_subparts, RndDrawable::GetForceSubpartSelection())
+    HANDLE_ACTION(
+        set_force_select_proxied_subparts,
+        RndDrawable::SetForceSubpartSelection(_msg->Int(2))
+    )
+    HANDLE_ACTION(set_sync, SetSync(_msg->Int(2)))
+    HANDLE_EXPR(get_sync, GetSync())
+    HANDLE_ACTION(set_shrink_to_safe, SetShrinkToSafeArea(_msg->Int(2)))
+    HANDLE(show_console, OnShowConsole)
+    HANDLE(toggle_timers, OnToggleTimers)
+    HANDLE(toggle_overlay_position, OnToggleOverlayPosition)
+    HANDLE(toggle_timers_verbose, OnToggleTimersVerbose)
+    HANDLE(toggle_overlay, OnToggleOverlay)
+    HANDLE_EXPR(show_safe_area, mShowSafeArea)
+    HANDLE_ACTION(set_show_safe_area, mShowSafeArea = _msg->Int(2))
+    HANDLE(show_overlay, OnShowOverlay)
+    HANDLE_EXPR(overlay_showing, RndOverlay::Find(_msg->Str(2), true)->Showing())
+    HANDLE(overlay_print, OnOverlayPrint)
+    HANDLE_ACTION(hi_res_screen, TheHiResScreen.TakeShot("ur_hi", _msg->Int(2)))
+    HANDLE_ACTION(proc_lock, SetProcAndLock(ProcAndLock() == 0))
+    HANDLE_ACTION(allow_per_pixel, TheShaderMgr.SetAllowPerPixel(_msg->Int(2)))
+    HANDLE_ACTION(reload_shaders, TheShaderMgr.Invalidate((ShaderType)_msg->Int(2)))
+    HANDLE_ACTION(reload_shaders_all, TheShaderMgr.Invalidate(kMaxShaderTypes)) {
+        static Symbol _s("toggle_error_shaders");
+        if (sym == _s) {
+            TheShaderMgr.SetShaderErrorDisplay(!TheShaderMgr.GetShaderErrorDisplay());
+            return TheShaderMgr.GetShaderErrorDisplay();
+        }
+    }
+    HANDLE_ACTION(set_in_game, SetInGame(_msg->Int(2)))
+    HANDLE_ACTION(toggle_in_game, SetInGame(!mInGame))
+    HANDLE(clear_color_r, OnClearColorR)
+    HANDLE(clear_color_g, OnClearColorG)
+    HANDLE(clear_color_b, OnClearColorB)
+    HANDLE(clear_color_packed, OnClearColorPacked)
+    HANDLE(set_clear_color, OnSetClearColor)
+    HANDLE(set_clear_color_packed, OnSetClearColorPacked)
+    HANDLE(screen_dump, OnScreenDump)
+    HANDLE(screen_dump_unique, OnScreenDumpUnique)
+    HANDLE(scale_object, OnScaleObject)
+    HANDLE(reflect, OnReflect)
+    HANDLE(toggle_heap, OnToggleHeap)
+    HANDLE(toggle_watch, OnToggleWatch)
+    HANDLE_ACTION(
+        fix_vert_order, FixVertOrder(_msg->Obj<RndMesh>(2), _msg->Obj<RndMesh>(3))
+    )
+    HANDLE(test_draw_groups, OnTestDrawGroups)
+    HANDLE_ACTION(
+        test_texture_size,
+        TestTextureSize(
+            _msg->Obj<ObjectDir>(2),
+            _msg->Int(3),
+            _msg->Int(4),
+            _msg->Int(5),
+            _msg->Int(6),
+            _msg->Int(7)
+        )
+    )
+    HANDLE_ACTION(test_texture_paths, TestTexturePaths(_msg->Obj<ObjectDir>(2)))
+    HANDLE_ACTION(test_material_textures, TestMaterialTextures(_msg->Obj<ObjectDir>(2)))
+    HANDLE_ACTION(set_gfx_mode, SetGfxMode((GfxMode)_msg->Int(2)))
+    HANDLE_EXPR(default_cam, mDefaultCam)
+    HANDLE_EXPR(last_proc_cmds, mLastProcCmds)
+    HANDLE_EXPR(toggle_all_postprocs, mDisablePostProc = !mDisablePostProc)
+    HANDLE_ACTION(recreate_defaults, CreateDefaults())
+    HANDLE_ACTION(
+        reload_mat_materials, RndMat::ReloadAndUpdateMat(_msg->Obj<ObjectDir>(2))
+    )
+    HANDLE(toggle_show_metamat_errors, OnToggleShowMetaMatErrors)
+    HANDLE(toggle_show_shader_errors, OnToggleShowShaderErrors)
+    HANDLE_SUPERCLASS(Hmx::Object)
+END_HANDLERS
 
 struct SortPostProc {
     bool operator()(PostProcessor *p1, PostProcessor *p2) const {
@@ -308,70 +444,6 @@ DataNode Rnd::OnScaleObject(const DataArray *da) {
     return 0;
 }
 
-BEGIN_HANDLERS(Rnd)
-    HANDLE_ACTION(reset_postproc, RndPostProc::Reset())
-    HANDLE_ACTION(reset_dof_proc, RndPostProc::ResetDofProc())
-    HANDLE_ACTION(set_postproc_override, SetPostProcOverride(_msg->Obj<RndPostProc>(2)))
-    HANDLE_ACTION(
-        set_postproc_blacklight_override,
-        SetPostProcBlacklightOverride(_msg->Obj<RndPostProc>(2))
-    )
-    HANDLE_EXPR(get_postproc_override, GetPostProcOverride())
-    HANDLE_EXPR(get_selected_postproc, GetSelectedPostProc())
-    HANDLE_ACTION(
-        set_dof_depth_scale, RndPostProc::DOFOverrides().SetDepthScale(_msg->Float(2))
-    )
-    HANDLE_ACTION(
-        set_dof_depth_offset, RndPostProc::DOFOverrides().SetDepthOffset(_msg->Float(2))
-    )
-    HANDLE_ACTION(
-        set_dof_min_scale, RndPostProc::DOFOverrides().SetMinBlurScale(_msg->Float(2))
-    )
-    HANDLE_ACTION(
-        set_dof_min_offset, RndPostProc::DOFOverrides().SetMinBlurOffset(_msg->Float(2))
-    )
-    HANDLE_ACTION(
-        set_dof_max_scale, RndPostProc::DOFOverrides().SetMaxBlurScale(_msg->Float(2))
-    )
-    HANDLE_ACTION(
-        set_dof_max_offset, RndPostProc::DOFOverrides().SetMaxBlurOffset(_msg->Float(2))
-    )
-    HANDLE_ACTION(
-        set_dof_width_scale, RndPostProc::DOFOverrides().SetBlurWidthScale(_msg->Float(2))
-    )
-    HANDLE_ACTION(set_aspect, SetAspect((Aspect)_msg->Int(2)))
-    HANDLE_EXPR(aspect, mAspect)
-    HANDLE_EXPR(screen_width, mWidth)
-    HANDLE_EXPR(screen_height, mHeight)
-    HANDLE_EXPR(highlight_style, RndDrawable::GetHighlightStyle())
-    HANDLE_ACTION(
-        set_highlight_style, RndDrawable::SetHighlightStyle((HighlightStyle)_msg->Int(2))
-    )
-    HANDLE_EXPR(get_normal_display_length, RndDrawable::GetNormalDisplayLength())
-    HANDLE_ACTION(
-        set_normal_display_length, RndDrawable::SetNormalDisplayLength(_msg->Float(2))
-    )
-    HANDLE_EXPR(get_force_select_proxied_subparts, RndDrawable::GetForceSubpartSelection())
-    HANDLE_ACTION(
-        set_force_select_proxied_subparts,
-        RndDrawable::SetForceSubpartSelection(_msg->Int(2))
-    )
-    HANDLE_ACTION(set_sync, SetSync(_msg->Int(2)))
-    HANDLE_EXPR(get_sync, GetSync())
-    HANDLE_ACTION(set_shrink_to_safe, SetShrinkToSafeArea(_msg->Int(2)))
-    HANDLE(show_console, OnShowConsole)
-    HANDLE(toggle_timers, OnToggleTimers)
-    HANDLE(toggle_overlay_position, OnToggleOverlayPosition)
-    HANDLE(toggle_timers_verbose, OnToggleTimersVerbose)
-    HANDLE(toggle_overlay, OnToggleOverlay)
-    HANDLE_EXPR(show_safe_area, mShowSafeArea)
-    HANDLE_ACTION(set_show_safe_area, mShowSafeArea = _msg->Int(2))
-    HANDLE(show_overlay, OnShowOverlay)
-    HANDLE_EXPR(overlay_showing, RndOverlay::Find(_msg->Str(2), true)->Showing())
-    HANDLE(overlay_print, OnOverlayPrint)
-    // HANDLE_ACTION(hi_res_screen, TheHiResScreen.TakeShot("ur_hi", _msg->Int(2)))
-END_HANDLERS
-
 void Rnd::UnregisterPostProcessor(PostProcessor *proc) { mPostProcessors.remove(proc); }
 
 void PreClearCompilerHelper(ObjPtrList<RndDrawable> &list, RndDrawable *draw) {
@@ -387,20 +459,4 @@ void Rnd::RegisterPostProcessor(PostProcessor *proc) {
     sPostProcPanelCount++;
     mPostProcessors.push_back(proc);
     mPostProcessors.sort(SortPostProc());
-}
-
-Rnd::Rnd()
-    : mClearColor(0.3f, 0.3f, 0.3f), mWidth(640), mHeight(480), mScreenBpp(16),
-      mDrawCount(0), mDrawTimer(), mTimersOverlay(0), mRateOverlay(0), mHeapOverlay(0),
-      mWatchOverlay(0), mStatsOverlay(0), mDefaultMat(0), mOverlayMat(0), mOverdrawMat(0),
-      mDefaultCam(0), mWorldCamCopy(0), mDefaultEnv(0), mDefaultLit(0), unk110(nullptr),
-      unk114(nullptr), unk118(0), unk120(5), mFrameID(0), mRateGate("    "),
-      mFont(nullptr), mSync(1), mGsTiming(0), mShowSafeArea(0), mDrawing(0),
-      mWorldEnded(1), mAspect(kWidescreen), unk13c(0), unk140(0), unk141(0),
-      mShrinkToSafe(1), mInGame(0), mVerboseTimers(0), mDisablePostProc(0), unk146(0),
-      unk147(0), unk148(0), unk14c(0), unk150(0), mPostProcOverride(this),
-      mPostProcBlackLightOverride(nullptr), unk18c(this), mDraws(this), unk1b4(0),
-      mProcCmds(kProcessAll), mLastProcCmds(kProcessAll) {
-    for (int i = 0; i < 8; i++)
-        mDefaultTex[i] = nullptr;
 }

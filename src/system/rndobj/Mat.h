@@ -1,6 +1,7 @@
 #pragma once
 #include "math/Color.h"
 #include "obj/Data.h"
+#include "obj/Dir.h"
 #include "obj/Object.h"
 #include "rndobj/BaseMaterial.h"
 #include "rndobj/MetaMaterial.h"
@@ -78,7 +79,12 @@ public:
     void SetMetaMat(MetaMaterial *, bool);
     MetaMaterial *CreateMetaMaterial(bool);
 
+    static void ReloadMetaMaterials();
     static void UpdateAllMatPropertiesFromMetaMat(ObjectDir *);
+    static void ReloadAndUpdateMat(ObjectDir *dir) {
+        ReloadMetaMaterials();
+        UpdateAllMatPropertiesFromMetaMat(dir);
+    }
 
 protected:
     RndMat();

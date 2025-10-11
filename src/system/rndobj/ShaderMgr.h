@@ -1,6 +1,7 @@
 #pragma once
 #include "math/Mtx.h"
 #include "rndobj/Mat.h"
+#include "rndobj/ShaderOptions.h"
 #include <list>
 
 class RndShaderProgram;
@@ -45,6 +46,12 @@ public:
     bool GetShaderErrorDisplay();
     unsigned long InitShaders();
     void SetTransform(const Transform &);
+    void SetAllowPerPixel(bool allow) { unk40 = allow; }
+    void Invalidate(ShaderType);
+    bool ToggleShaderErrorDisplay() {
+        SetShaderErrorDisplay(!GetShaderErrorDisplay());
+        return GetShaderErrorDisplay();
+    }
 
 protected:
     virtual void LoadShaders(const char *);
