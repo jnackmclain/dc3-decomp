@@ -1,30 +1,11 @@
 Dance Central 3
+[![Build Status]][actions] [![Code Progress]][progress] [![Discord Badge]][discord]
 =============
 
-<!-- put these in between DC3 and the =='s once you get them working>
-<!--
-[![Build Status]][actions] [![Code Progress]][progress] [![Data Progress]][progress] [![Discord Badge]][discord]
--->
-
-<!--
-Replace with your repository's URL.
--->
-<!--
-[Build Status]: https://github.com/zeldaret/tww/actions/workflows/build.yml/badge.svg
-[actions]: https://github.com/zeldaret/tww/actions/workflows/build.yml
--->
-<!--
-decomp.dev progress badges
-See https://decomp.dev/api for an API overview.
--->
-<!--
-[Code Progress]: https://decomp.dev/zeldaret/tww.svg?mode=shield&measure=code&label=Code
-[Data Progress]: https://decomp.dev/zeldaret/tww.svg?mode=shield&measure=data&label=Data
-[progress]: https://decomp.dev/zeldaret/tww
--->
-<!--
-Replace with your Discord server's ID and invite URL.
--->
+[Build Status]: https://github.com/rjkiv/dc3-decomp/actions/workflows/build.yml/badge.svg
+[actions]: https://github.com/rjkiv/dc3-decomp/actions/workflows/build.yml
+[Code Progress]: https://decomp.dev/rjkiv/dc3-decomp.svg?mode=shield&measure=code&label=Code
+[progress]: https://decomp.dev/rjkiv/dc3-decomp
 [Discord Badge]: https://img.shields.io/discord/727908905392275526?color=%237289DA&logo=discord&logoColor=%23FFFFFF
 [discord]: https://discord.gg/milohax
 
