@@ -1,5 +1,6 @@
 #pragma once
 #include "math/Color.h"
+#include "math/Mtx.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
 #include "obj/Object.h"
@@ -142,6 +143,7 @@ public:
     RndTex *NormalMap() const { return mNormalMap; }
     ZMode GetZMode() const { return mZMode; }
     bool IsNextPass(BaseMaterial *m);
+    const Transform &TexXfm() const { return mTexXfm; }
 
 protected:
     BaseMaterial();
@@ -310,3 +312,5 @@ protected:
     /** "Multiplier to apply to bloom" */
     float mBloomMultiplier; // 0x1f4
 };
+
+BaseMaterial::Blend CheckBlendMode(BaseMaterial::Blend b, BaseMaterial *);

@@ -6,6 +6,7 @@
 #include "rndobj/BaseMaterial.h"
 #include "rndobj/MetaMaterial.h"
 #include "rndobj/Tex.h"
+#include "utl/BinStream.h"
 
 struct MatShaderOptions {
     MatShaderOptions() : unk0(0x12), unk4(0) {}
@@ -38,8 +39,9 @@ public:
     NEW_OBJ(RndMat);
     OBJ_MEM_OVERLOAD(69); // nice
 
-    float GetRefractStrength() { return mRefractStrength; }
-    RndTex *GetRefractNormalMap() { return mRefractNormalMap; }
+    bool GetRefractEnabled(bool);
+    float GetRefractStrength();
+    RndTex *GetRefractNormalMap();
     void SetZMode(ZMode mode) {
         mZMode = mode;
         mDirty |= 2;
@@ -105,6 +107,7 @@ protected:
     MatPropEditAction GetMetaMatPropAction(Symbol);
     bool OnGetPropertyDisplay(PropDisplay, Symbol);
     void UpdatePropertiesFromMetaMat();
+    void LoadOld(BinStreamRev &);
 
     DataNode OnGetMetaMaterials(const DataArray *);
     DataNode OnGetMetaMaterialsDir(const DataArray *);
