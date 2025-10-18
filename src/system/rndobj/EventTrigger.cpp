@@ -1,12 +1,209 @@
 #include "rndobj/EventTrigger.h"
+#include "math/Rand.h"
 #include "obj/Data.h"
 #include "obj/DataFunc.h"
+#include "obj/Object.h"
+#include "obj/Msg.h"
 #include "os/Debug.h"
 #include "os/System.h"
 #include "rndobj/Anim.h"
 #include "utl/BinStream.h"
 
 DataArray *gSupportedEvents;
+
+EventTrigger::EventTrigger()
+    : mAnims(this), mSpawnedTasks(this), mProxyCalls(this), mSounds(this), mShows(this),
+      mResetTriggers(this), mHideDelays(this), mNextLink(this), mPartLaunchers(this),
+      unkd0(false), mAnimTrigger(kTriggerAnimNone), mAnimFrame(0), mEnabled(true),
+      mEnabledAtStart(true), mWaiting(false), mHidden(this), mShown(this),
+      mTriggered(false), mTriggerOrder(kTriggerRandom), mLastTriggerIndex(-1) {
+    RegisterEvents();
+}
+
+bool EventTrigger::Replace(ObjRef *from, Hmx::Object *to) {
+    for (ObjList<Anim>::iterator it = mAnims.begin(); it != mAnims.end(); ++it) {
+        if (from == &it->mAnim) {
+            if (!it->mAnim.SetObj(to)) {
+                mAnims.erase(it);
+            }
+            return true;
+        }
+    }
+    for (ObjList<HideDelay>::iterator it = mHideDelays.begin(); it != mHideDelays.end();
+         ++it) {
+        if (from == &it->mHide) {
+            if (!it->mHide.SetObj(to)) {
+                mHideDelays.erase(it);
+            }
+            return true;
+        }
+    }
+    for (ObjList<ProxyCall>::iterator it = mProxyCalls.begin(); it != mProxyCalls.end();
+         ++it) {
+        if ((from == &it->mEvent && !it->mEvent.SetObj(to))
+            || (from == &it->mProxy && !it->mProxy.SetObj(to))) {
+            mProxyCalls.erase(it);
+            return true;
+        }
+    }
+    return Hmx::Object::Replace(from, to);
+}
+
+BEGIN_HANDLERS(EventTrigger)
+    HANDLE(trigger, OnTrigger)
+    HANDLE_ACTION(enable, mEnabled = true)
+    HANDLE_ACTION(disable, mEnabled = false)
+    HANDLE_ACTION_IF(wait_for, mWaiting, Trigger())
+    HANDLE(proxy_calls, OnProxyCalls)
+    HANDLE_EXPR(supported_events, SupportedEvents())
+    HANDLE_ACTION(basic_cleanup, BasicReset())
+    HANDLE_SUPERCLASS(RndAnimatable)
+    HANDLE_SUPERCLASS(Hmx::Object)
+END_HANDLERS
+
+void ResetAnim(EventTrigger::Anim &anim) {
+    if (anim.mAnim) {
+        anim.mRate = anim.mAnim->GetRate();
+        anim.mStart = anim.mAnim->StartFrame();
+        anim.mEnd = anim.mAnim->EndFrame();
+        anim.mPeriod = 0.0f;
+        anim.mScale = 1.0f;
+        static Symbol range("range");
+        static Symbol loop("loop");
+        anim.mType = anim.mAnim->Loop() ? loop : range;
+    }
+}
+
+BEGIN_CUSTOM_PROPSYNC(EventTrigger::Anim)
+    SYNC_PROP_MODIFY(anim, o.mAnim, ResetAnim(o))
+    SYNC_PROP(blend, o.mBlend)
+    SYNC_PROP(wait, o.mWait)
+    SYNC_PROP(delay, o.mDelay)
+    SYNC_PROP(enable, o.mEnable)
+    SYNC_PROP(rate, (int &)o.mRate)
+    SYNC_PROP(start, o.mStart)
+    SYNC_PROP(end, o.mEnd)
+    SYNC_PROP(scale, o.mScale)
+    SYNC_PROP(period, o.mPeriod)
+    SYNC_PROP(type, o.mType)
+END_CUSTOM_PROPSYNC
+
+BEGIN_CUSTOM_PROPSYNC(EventTrigger::ProxyCall)
+    SYNC_PROP_MODIFY(proxy, o.mProxy, o.mCall = "")
+    SYNC_PROP(call, o.mCall)
+    SYNC_PROP(event, o.mEvent)
+END_CUSTOM_PROPSYNC
+
+BEGIN_CUSTOM_PROPSYNC(EventTrigger::HideDelay)
+    SYNC_PROP(hide, o.mHide)
+    SYNC_PROP(delay, o.mDelay)
+    SYNC_PROP(rate, o.mRate)
+END_CUSTOM_PROPSYNC
+
+#define SYNC_PROP_TRIGGER(s, member)                                                     \
+    {                                                                                    \
+        _NEW_STATIC_SYMBOL(s)                                                            \
+        if (sym == _s) {                                                                 \
+            if (!(_op & (kPropSize | kPropGet)))                                         \
+                UnregisterEvents();                                                      \
+            if (PropSync(member, _val, _prop, _i + 1, _op)) {                            \
+                if (!(_op & (kPropSize | kPropGet))) {                                   \
+                    RegisterEvents();                                                    \
+                }                                                                        \
+                return true;                                                             \
+            } else {                                                                     \
+                return false;                                                            \
+            }                                                                            \
+        }                                                                                \
+    }
+
+BEGIN_PROPSYNCS(EventTrigger)
+    SYNC_PROP_TRIGGER(trigger_events, mTriggerEvents)
+    SYNC_PROP_MODIFY(anims, mAnims, CheckAnims())
+    SYNC_PROP(proxy_calls, mProxyCalls)
+    SYNC_PROP(sounds, mSounds)
+    SYNC_PROP(shows, mShows)
+    SYNC_PROP(hide_delays, mHideDelays)
+    SYNC_PROP(part_launchers, mPartLaunchers)
+    SYNC_PROP_TRIGGER(enable_events, mEnableEvents)
+    SYNC_PROP_TRIGGER(disable_events, mDisableEvents)
+    SYNC_PROP(enabled, mEnabled)
+    SYNC_PROP_MODIFY(enabled_at_start, mEnabledAtStart, mEnabled = mEnabledAtStart)
+    SYNC_PROP_TRIGGER(wait_for_events, mWaitForEvents)
+    SYNC_PROP_SET(next_link, mNextLink.Ptr(), SetNextLink(_val.Obj<EventTrigger>()))
+    SYNC_PROP(trigger_order, (int &)mTriggerOrder)
+    SYNC_PROP(triggers_to_reset, mResetTriggers)
+    SYNC_PROP(anim_trigger, (int &)mAnimTrigger)
+    SYNC_PROP(anim_frame, mAnimFrame)
+    SYNC_SUPERCLASS(RndAnimatable)
+    SYNC_SUPERCLASS(Hmx::Object)
+END_PROPSYNCS
+
+BinStream &operator<<(BinStream &bs, const EventTrigger::HideDelay &e) {
+    bs << e.mHide << e.mDelay << e.mRate;
+    return bs;
+}
+
+BinStream &operator<<(BinStream &bs, const EventTrigger::Anim &e) {
+    bs << e.mAnim << e.mBlend << e.mWait << e.mDelay;
+    bs << e.mEnable;
+    bs << e.mRate << e.mStart;
+    bs << e.mEnd << e.mPeriod;
+    bs << e.mType;
+    bs << e.mScale;
+    return bs;
+}
+
+BinStream &operator<<(BinStream &bs, const EventTrigger::ProxyCall &e) {
+    bs << e.mProxy;
+    bs << e.mCall;
+    bs << e.mEvent;
+    return bs;
+}
+
+BEGIN_SAVES(EventTrigger)
+    SAVE_REVS(0x11, 0)
+    SAVE_SUPERCLASS(Hmx::Object)
+    SAVE_SUPERCLASS(RndAnimatable)
+    bs << mTriggerEvents << mAnims << mSounds << mShows << mHideDelays;
+    bs << mEnableEvents << mDisableEvents << mWaitForEvents;
+    bs << mNextLink << mProxyCalls << mTriggerOrder << mResetTriggers << mEnabledAtStart
+       << mAnimTrigger << mAnimFrame;
+    bs << mPartLaunchers;
+END_SAVES
+
+BEGIN_COPYS(EventTrigger)
+    COPY_SUPERCLASS(Hmx::Object)
+    COPY_SUPERCLASS(RndAnimatable)
+    CREATE_COPY(EventTrigger)
+    BEGIN_COPYING_MEMBERS
+        UnregisterEvents();
+        COPY_MEMBER(mTriggerEvents)
+        COPY_MEMBER(mAnims)
+        COPY_MEMBER(mSounds)
+        COPY_MEMBER(mProxyCalls)
+        COPY_MEMBER(mShows)
+        COPY_MEMBER(mHideDelays)
+        COPY_MEMBER(mEnableEvents)
+        COPY_MEMBER(mDisableEvents)
+        COPY_MEMBER(mWaitForEvents)
+        COPY_MEMBER(mNextLink)
+        COPY_MEMBER(mTriggerOrder)
+        COPY_MEMBER(mResetTriggers)
+        COPY_MEMBER(mEnabledAtStart)
+        COPY_MEMBER(mAnimTrigger)
+        COPY_MEMBER(mAnimFrame)
+        COPY_MEMBER(mPartLaunchers)
+        RegisterEvents();
+        CleanupHideShow();
+    END_COPYING_MEMBERS
+END_COPYS
+
+void EventTrigger::SetName(const char *cc, class ObjectDir *dir) {
+    UnregisterEvents();
+    Hmx::Object::SetName(cc, dir);
+    RegisterEvents();
+}
 
 void EventTrigger::StartAnim() {
     mFrame = kHugeFloat;
@@ -33,6 +230,65 @@ void EventTrigger::SetFrame(float frame, float blend) {
     }
 }
 
+void EventTrigger::Trigger() {
+    mWaiting = false;
+    if (!mNextLink) {
+        TriggerSelf();
+    } else {
+        EventTrigger *it = this;
+        int num = 1;
+        while ((it = it->mNextLink) != nullptr) {
+            num++;
+        }
+        switch (mTriggerOrder) {
+        case kTriggerRandom:
+            num = RandomInt(0, num);
+            break;
+        case kTriggerSequence:
+            num = (mLastTriggerIndex + 1) % num;
+            break;
+        default:
+            MILO_NOTIFY("Unknown trigger order for %s", Name());
+            break;
+        }
+        mLastTriggerIndex = num;
+        it = this;
+        while (num-- != 0) {
+            it = it->mNextLink;
+        }
+        it->TriggerSelf();
+    }
+}
+
+void EventTrigger::BasicReset() {
+    mSpawnedTasks.DeleteAll();
+    for (ObjPtrList<RndDrawable>::iterator it = mShown.begin(); it != mShown.end();
+         ++it) {
+        (*it)->SetShowing(false);
+    }
+    for (ObjPtrList<RndDrawable>::iterator it = mHidden.begin(); it != mHidden.end();
+         ++it) {
+        (*it)->SetShowing(true);
+    }
+    CleanupHideShow();
+    for (ObjList<ProxyCall>::iterator it = mProxyCalls.begin(); it != mProxyCalls.end();
+         ++it) {
+        if (it->mProxy && it->mEvent) {
+            it->mEvent->BasicReset();
+        }
+    }
+    for (ObjPtrList<Sequence>::iterator it = mSounds.begin(); it != mSounds.end(); ++it) {
+        (*it)->Stop(false);
+    }
+    if (TypeDef()) {
+        static Message reset("reset");
+        Hmx::Object::Handle(reset, false);
+    }
+    if (mNextLink) {
+        mNextLink->BasicReset();
+    }
+}
+
 DataArray *EventTrigger::SupportedEvents() {
     DataArray *cfg;
     if (Type() == "endgame_action") {
@@ -44,41 +300,6 @@ DataArray *EventTrigger::SupportedEvents() {
     }
     gSupportedEvents = cfg->Array(1);
     return gSupportedEvents;
-}
-
-void ResetAnim(EventTrigger::Anim &anim) {
-    if (anim.mAnim) {
-        anim.mRate = anim.mAnim->GetRate();
-        anim.mStart = anim.mAnim->StartFrame();
-        anim.mEnd = anim.mAnim->EndFrame();
-        anim.mPeriod = 0.0f;
-        anim.mScale = 1.0f;
-        static Symbol range("range");
-        static Symbol loop("loop");
-        anim.mType = anim.mAnim->Loop() ? loop : range;
-    }
-}
-
-BinStream &operator<<(BinStream &bs, const EventTrigger::HideDelay &e) {
-    bs << e.mHide << e.mDelay << e.mRate;
-    return bs;
-}
-
-BinStream &operator<<(BinStream &bs, const EventTrigger::Anim &e) {
-    bs << e.mAnim << e.mBlend << e.mWait << e.mDelay;
-    bs << e.mEnable;
-    bs << e.mRate << e.mStart;
-    bs << e.mEnd << e.mPeriod;
-    bs << e.mType;
-    bs << e.mScale;
-    return bs;
-}
-
-BinStream &operator<<(BinStream &bs, const EventTrigger::ProxyCall &e) {
-    bs << e.mProxy;
-    bs << e.mCall;
-    bs << e.mEvent;
-    return bs;
 }
 
 void EventTrigger::RegisterEvents() {
@@ -159,12 +380,6 @@ DataNode EventTrigger::OnTrigger(DataArray *) {
     return 0;
 }
 
-void EventTrigger::SetName(const char *cc, class ObjectDir *dir) {
-    UnregisterEvents();
-    Hmx::Object::SetName(cc, dir);
-    RegisterEvents();
-}
-
 EventTrigger::Anim::Anim(Hmx::Object *o)
     : mAnim(o), mBlend(0), mDelay(0), mWait(0), mEnable(0), mRate(k30_fps), mStart(0),
       mEnd(0), mPeriod(0), mScale(1) {
@@ -185,18 +400,6 @@ void RemoveNullEvents(std::list<Symbol> &vec) {
     }
 }
 
-BEGIN_HANDLERS(EventTrigger)
-    HANDLE(trigger, OnTrigger)
-    HANDLE_ACTION(enable, mEnabled = true)
-    HANDLE_ACTION(disable, mEnabled = false)
-    HANDLE_ACTION_IF(wait_for, mWaiting, Trigger())
-    HANDLE(proxy_calls, OnProxyCalls)
-    HANDLE_EXPR(supported_events, SupportedEvents())
-    HANDLE_ACTION(basic_cleanup, BasicReset())
-    HANDLE_SUPERCLASS(RndAnimatable)
-    HANDLE_SUPERCLASS(Hmx::Object)
-END_HANDLERS
-
 void EventTrigger::SetNextLink(EventTrigger *trig) {
     for (EventTrigger *it = trig; it != nullptr; it = it->mNextLink) {
         if (it == this) {
@@ -210,95 +413,10 @@ void EventTrigger::SetNextLink(EventTrigger *trig) {
     mNextLink = trig;
 }
 
-BEGIN_CUSTOM_PROPSYNC(EventTrigger::Anim)
-    SYNC_PROP_MODIFY(anim, o.mAnim, ResetAnim(o))
-    SYNC_PROP(blend, o.mBlend)
-    SYNC_PROP(wait, o.mWait)
-    SYNC_PROP(delay, o.mDelay)
-    SYNC_PROP(enable, o.mEnable)
-    SYNC_PROP(rate, (int &)o.mRate)
-    SYNC_PROP(start, o.mStart)
-    SYNC_PROP(end, o.mEnd)
-    SYNC_PROP(scale, o.mScale)
-    SYNC_PROP(period, o.mPeriod)
-    SYNC_PROP(type, o.mType)
-END_CUSTOM_PROPSYNC
-
-BEGIN_CUSTOM_PROPSYNC(EventTrigger::ProxyCall)
-    SYNC_PROP_MODIFY(proxy, o.mProxy, o.mCall = "")
-    SYNC_PROP(call, o.mCall)
-    SYNC_PROP(event, o.mEvent)
-END_CUSTOM_PROPSYNC
-
-BEGIN_CUSTOM_PROPSYNC(EventTrigger::HideDelay)
-    SYNC_PROP(hide, o.mHide)
-    SYNC_PROP(delay, o.mDelay)
-    SYNC_PROP(rate, o.mRate)
-END_CUSTOM_PROPSYNC
-
-void EventTrigger::Save(BinStream &bs) {
-    bs << 0x11;
-    SAVE_SUPERCLASS(Hmx::Object)
-    SAVE_SUPERCLASS(RndAnimatable)
-    bs << mTriggerEvents << mAnims << mSounds << mShows << mHideDelays;
-    bs << mEnableEvents << mDisableEvents << mWaitForEvents;
-    bs << mNextLink << mProxyCalls << mTriggerOrder << mResetTriggers;
-    bs << mEnabledAtStart << mAnimTrigger << mAnimFrame;
-    bs << mPartLaunchers;
-}
-
 void EventTrigger::CleanupHideShow() {
     mTriggered = false;
     mShown.clear();
     mHidden.clear();
-}
-
-#define SYNC_PROP_TRIGGER(s, member)                                                     \
-    {                                                                                    \
-        _NEW_STATIC_SYMBOL(s)                                                            \
-        if (sym == _s) {                                                                 \
-            if (!(_op & (kPropSize | kPropGet)))                                         \
-                UnregisterEvents();                                                      \
-            if (PropSync(member, _val, _prop, _i + 1, _op)) {                            \
-                if (!(_op & (kPropSize | kPropGet))) {                                   \
-                    RegisterEvents();                                                    \
-                }                                                                        \
-                return true;                                                             \
-            } else {                                                                     \
-                return false;                                                            \
-            }                                                                            \
-        }                                                                                \
-    }
-
-BEGIN_PROPSYNCS(EventTrigger)
-    SYNC_PROP_TRIGGER(trigger_events, mTriggerEvents)
-    SYNC_PROP_MODIFY(anims, mAnims, CheckAnims())
-    SYNC_PROP(proxy_calls, mProxyCalls)
-    SYNC_PROP(sounds, mSounds)
-    SYNC_PROP(shows, mShows)
-    SYNC_PROP(hide_delays, mHideDelays)
-    SYNC_PROP(part_launchers, mPartLaunchers)
-    SYNC_PROP_TRIGGER(enable_events, mEnableEvents)
-    SYNC_PROP_TRIGGER(disable_events, mDisableEvents)
-    SYNC_PROP(enabled, mEnabled)
-    SYNC_PROP_MODIFY(enabled_at_start, mEnabledAtStart, mEnabled = mEnabledAtStart)
-    SYNC_PROP_TRIGGER(wait_for_events, mWaitForEvents)
-    SYNC_PROP_SET(next_link, mNextLink.Ptr(), SetNextLink(_val.Obj<EventTrigger>()))
-    SYNC_PROP(trigger_order, (int &)mTriggerOrder)
-    SYNC_PROP(triggers_to_reset, mResetTriggers)
-    SYNC_PROP(anim_trigger, (int &)mAnimTrigger)
-    SYNC_PROP(anim_frame, mAnimFrame)
-    SYNC_SUPERCLASS(RndAnimatable)
-    SYNC_SUPERCLASS(Hmx::Object)
-END_PROPSYNCS
-
-EventTrigger::EventTrigger()
-    : mAnims(this), mSpawnedTasks(this), mProxyCalls(this), mSounds(this), mShows(this),
-      mResetTriggers(this), mHideDelays(this), mNextLink(this), mPartLaunchers(this),
-      unkd0(false), mAnimTrigger(kTriggerAnimNone), mAnimFrame(0), mEnabled(true),
-      mEnabledAtStart(true), mWaiting(false), mHidden(this), mShown(this),
-      mTriggered(false), mTriggerOrder(kTriggerRandom), unk110(-1) {
-    RegisterEvents();
 }
 
 void EventTrigger::Init() {

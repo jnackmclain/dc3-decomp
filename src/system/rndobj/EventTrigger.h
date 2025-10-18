@@ -147,5 +147,5 @@ protected:
     ObjPtrList<RndDrawable> mShown; // 0xf4
     bool mTriggered; // 0x108
     TriggerOrder mTriggerOrder; // 0x10c
-    int unk110;
+    int mLastTriggerIndex; // 0x110
 };
