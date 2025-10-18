@@ -1,6 +1,7 @@
 #pragma once
 #include "math/Color.h"
 #include "math/Mtx.h"
+#include "math/Vec.h"
 #include "obj/Object.h"
 #include "rndobj/Anim.h"
 #include "rndobj/Draw.h"
@@ -201,6 +202,11 @@ public:
     void SetLife(float x, float y) { mLife.Set(x, y); }
     const Vector2 &StartSize() const { return mStartSize; }
     void SetStartSize(float x, float y) { mStartSize.Set(x, y); }
+    const Vector2 &DeltaSize() const { return mDeltaSize; }
+    const Vector2 &Pitch() const { return mPitch; }
+    const Vector2 &Yaw() const { return mYaw; }
+    const Vector3 &BoxExtent1() const { return mBoxExtent1; }
+    const Vector3 &BoxExtent2() const { return mBoxExtent2; }
 
     void SetBoxExtent(const Vector3 &v1, const Vector3 &v2) {
         mBoxExtent1 = v1;
@@ -235,6 +241,10 @@ public:
     void SetEndOffset(float f1, float f2) { mEndOffset.Set(f1, f2); }
     void SetDrag(float f) { mDrag = f; }
     void SetStretchScale(float f) { mStretchScale = f; }
+
+    const Hmx::Color &MidColorLow() const { return mMidColorLow; }
+    const Hmx::Color &MidColorHigh() const { return mMidColorHigh; }
+    RndMesh *GetMesh() const { return mMeshEmitter; }
 
 protected:
     RndParticleSys();

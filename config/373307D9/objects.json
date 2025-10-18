@@ -752,7 +752,7 @@
             "system/rndobj/Overlay.cpp": "NonMatching",
             "system/rndobj/Part.cpp": "NonMatching",
             "system/rndobj/PartAnim.cpp": "MISSING",
-            "system/rndobj/PartLauncher.cpp": "MISSING",
+            "system/rndobj/PartLauncher.cpp": "NonMatching",
             "system/rndobj/Poll.cpp": "NonMatching",
             "system/rndobj/PollAnim.cpp": "NonMatching",
             "system/rndobj/PostProc.cpp": "NonMatching",

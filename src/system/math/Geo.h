@@ -79,6 +79,11 @@ inline BinStream &operator<<(BinStream &bs, const Box &box) {
     return bs;
 }
 
+inline BinStream &operator>>(BinStream &bs, Box &box) {
+    bs >> box.mMin >> box.mMax;
+    return bs;
+}
+
 class BSPNode {
 public:
     BSPNode() : left(nullptr), right(nullptr) {}
