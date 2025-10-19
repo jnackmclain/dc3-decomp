@@ -40,10 +40,10 @@ END_COPYS
 BEGIN_LOADS(FlowSequence)
     LOAD_REVS(bs)
     ASSERT_REVS(1, 0)
-    LOAD_SUPERCLASS(FlowNode)
-    bsrev >> mLooping;
+    FlowNode::Load(bs);
+    d >> mLooping;
     bs >> mRepeats;
-    if (gRev > 0)
+    if (d.rev > 0)
         bs >> (int &)mStopMode;
 END_LOADS
 
