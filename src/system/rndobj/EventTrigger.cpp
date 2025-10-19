@@ -7,6 +7,7 @@
 #include "os/Debug.h"
 #include "os/System.h"
 #include "rndobj/Anim.h"
+#include "rndobj/PartLauncher.h"
 #include "utl/BinStream.h"
 #include "utl/Loader.h"
 
@@ -599,4 +600,50 @@ void EventTrigger::LoadOldAnim(BinStream &bs, RndAnimatable *anim) {
         eventAnim.mAnim = anim;
         mAnims.push_back(eventAnim);
     }
+}
+
+void EventTrigger::ConvertParticleTriggerType() {
+    if (!unkd0) {
+        if (Type() == "particle_trigger") {
+            MILO_NOTIFY(
+                "Converting particle trigger %s to standard EventTrigger; should re-save %s",
+                Name(),
+                Dir()->GetPathName()
+            );
+            DataArray *propArr = Property("systems", true)->Array();
+            for (int i = 0; i < propArr->Size(); i++) {
+                RndPartLauncher *p = propArr->Obj<RndPartLauncher>(i);
+                if (p) {
+                    mPartLaunchers.push_back(p);
+                }
+            }
+            SetTypeDef(nullptr);
+        }
+    }
+    unkd0 = true;
+}
+
+DataNode EventTrigger::OnProxyCalls(DataArray *) {
+    DataArray *miloArr = DataVariable("milo_prop_path").Array();
+    DataNode node2 = miloArr->Node(2);
+    miloArr->Node(2) = Symbol("proxy");
+    Hmx::Object *propDir = Property(miloArr, true)->Obj<ObjectDir>();
+    miloArr->Node(2) = node2;
+
+    DataArrayPtr ptr(new DataArray(0x200));
+    int idx = 0;
+    ptr->Node(idx++) = Symbol();
+    if (propDir) {
+        const DataArray *tdef = propDir->TypeDef();
+        if (tdef) {
+            for (int i = 1; i < tdef->Size(); i++) {
+                DataArray *curArr = tdef->Array(i);
+                if (curArr->Size() > 1 && curArr->Type(1) == kDataCommand) {
+                    ptr->Node(idx++) = curArr->Sym(0);
+                }
+            }
+        }
+    }
+    ptr->Resize(idx);
+    return ptr;
 }
