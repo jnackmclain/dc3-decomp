@@ -71,6 +71,7 @@ public:
     RndDrawable *Collide(const Segment &, float &, Plane &);
     bool CollideSphere(const Segment &);
     void SetSphere(const Sphere &s) { mSphere = s; }
+    const Sphere &GetSphere() const { return mSphere; }
 
     static void DumpLoad(BinStream &bs);
     static HighlightStyle GetHighlightStyle() { return sHighlightStyle; }

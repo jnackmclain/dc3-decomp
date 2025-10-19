@@ -1,5 +1,6 @@
 #pragma once
 #include "math/Color.h"
+#include "math/Utl.h"
 #include "obj/Object.h"
 #include "rndobj/Draw.h"
 #include "rndobj/FontBase.h"
@@ -63,8 +64,21 @@ public:
 
     class Style {
     public:
-        Style(Hmx::Object *);
+        Style(Hmx::Object *owner)
+            : mSize(30), mTextColor(1, 1, 1), mFontColorOverride(false),
+              mFontColor(1, 1, 1), mItalics(0), mKerning(0), mZOffset(0), mFont(owner),
+              mBlacklight(false) {}
+
+        Style &operator=(const Style &s) {
+            mFont = s.mFont;
+            mBlacklight = s.mBlacklight;
+            memcpy(this, &s, 0x34);
+            return *this;
+        }
+
         void SetAlpha(float alpha) { mFontColor.alpha = alpha; }
+
+        // perhaps the memory from 0x0 to 0x34 is another struct
         /** "Size of the text" */
         float mSize; // 0x0
         /** "Color of the text, put into mesh verts.
@@ -91,6 +105,10 @@ public:
     };
 
     class StyleState {
+    public:
+    };
+
+    class BlacklightPacket {
     public:
     };
 
@@ -142,7 +160,7 @@ public:
     class FontMap3d : public FontMapBase {};
 
     // Hmx::Object
-    virtual ~RndText() {}
+    virtual ~RndText();
     OBJ_CLASSNAME(Text);
     OBJ_SET_TYPE(Text);
     virtual DataNode Handle(DataArray *, bool);
@@ -171,8 +189,17 @@ public:
 
     static void Init();
 
+    int GetTextSize() const { return Max<int>(mFixedLength, mText.length()); }
+    void UpdateText();
+    void SetText(const char *);
+
 protected:
     RndText();
+
+    static bool sBlacklightModeEnabled;
+    static int sBlacklightPacketCount;
+    static std::vector<BlacklightPacket> sBlacklightPacketPool;
+    static std::list<FontMapBase *> sFontMapCache;
 
     /** "Text value" */
     String mText; // 0x8
@@ -215,7 +242,7 @@ protected:
     int unk50;
     int unk54;
     float unk58;
-    float unk5c;
+    int unk5c;
     int unk60;
     /** "Space between continuous scrolling messages.
         This value is only considered when the fit type

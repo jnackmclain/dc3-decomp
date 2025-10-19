@@ -1,5 +1,47 @@
 #include "rndobj/Text.h"
+#include "Text.h"
 #include "obj/Object.h"
+#include "os/Debug.h"
+#include "os/System.h"
+#include "rndobj/Draw.h"
+#include "rndobj/Font.h"
+#include "rndobj/Mat.h"
+#include "rndobj/Trans.h"
+#include "utl/BinStream.h"
+#include "utl/UTF8.h"
+#include "wordwrap.h"
+
+std::vector<RndText::BlacklightPacket> RndText::sBlacklightPacketPool;
+std::list<RndText::FontMapBase *> RndText::sFontMapCache;
+int TEXT_REV = 0;
+float gSuperscriptScale = 0.7f;
+float gGuitarScale = 0.7f;
+float gGuitarZOffset = 0.2f;
+
+RndText::RndText()
+    : mWidth(0), mHeight(0), mCircle(0), mAlign(kMiddleCenter), mFitType(kFitWrap),
+      mCapsMode(kCapsModeNone), mLeading(1), mFixedLength(0), mMarkup(true),
+      mBasicMarkup(true), mScrollDelay(0), mScrollRate(1), mScrollPause(0), unk40(0),
+      unk58(0), unk5c(0), unk60(0), mIndentation(0), unk78(nullptr), unk8c(0), unk90(-1),
+      unk94(-1), mStyles(this), unkb4(0), unkb8(0), unkbc(0), unkc0(0), unkc4(0),
+      unkc8(0) {
+    mStyles.resize(1);
+    mFontMaps.reserve(1);
+}
+
+RndText::~RndText() {
+    FOREACH (it, mFontMaps) {
+        delete *it;
+    }
+}
+
+BEGIN_HANDLERS(RndText)
+    HANDLE_EXPR(get_text_size, GetTextSize())
+    HANDLE_ACTION(update_text, UpdateText())
+    HANDLE_SUPERCLASS(RndDrawable)
+    HANDLE_SUPERCLASS(RndTransformable)
+    HANDLE_SUPERCLASS(Hmx::Object)
+END_HANDLERS
 
 BEGIN_CUSTOM_PROPSYNC(RndText::Style)
     SYNC_PROP(font, o.mFont)
@@ -37,4 +79,256 @@ BEGIN_PROPSYNCS(RndText)
     SYNC_SUPERCLASS(Hmx::Object)
 END_PROPSYNCS
 
-RndText::RndText() : unk78(this), mStyles(this) {}
+BinStream &operator<<(BinStream &bs, const RndText::Style &s) {
+    bs << s.mFont;
+    bs << s.mSize;
+    bs << s.mTextColor;
+    bs << s.mFontColorOverride;
+    bs << s.mFontColor;
+    bs << s.mItalics;
+    bs << s.mKerning;
+    bs << s.mZOffset;
+    bs << s.mBlacklight;
+    return bs;
+}
+
+BEGIN_SAVES(RndText)
+    SAVE_REVS(0x1C, 1)
+    SAVE_SUPERCLASS(Hmx::Object)
+    SAVE_SUPERCLASS(RndDrawable)
+    SAVE_SUPERCLASS(RndTransformable)
+    bs << mAlign;
+    bs << mText;
+    bs << mWidth;
+    bs << mLeading;
+    bs << mFixedLength;
+    bs << mMarkup;
+    bs << mCapsMode;
+    bs << mHeight;
+    bs << mCircle;
+    bs << mFitType;
+    bs << mStyles;
+    bs << mScrollDelay;
+    bs << mScrollRate;
+    bs << mScrollPause;
+    bs << mIndentation;
+    bs << mBasicMarkup;
+END_SAVES
+
+BEGIN_COPYS(RndText)
+    COPY_SUPERCLASS(Hmx::Object)
+    COPY_SUPERCLASS(RndDrawable)
+    COPY_SUPERCLASS(RndTransformable)
+    if (ty != kCopyFromMax) {
+        CREATE_COPY(RndText)
+        BEGIN_COPYING_MEMBERS
+            COPY_MEMBER(mAlign)
+            COPY_MEMBER(mCapsMode)
+            COPY_MEMBER(mFitType)
+            COPY_MEMBER(mWidth)
+            COPY_MEMBER(mHeight)
+            COPY_MEMBER(mCircle)
+            COPY_MEMBER(mLeading)
+            COPY_MEMBER(mMarkup)
+            SetFixedLength(c->mFixedLength);
+            SetText(c->mText.c_str());
+            COPY_MEMBER(mStyles)
+            COPY_MEMBER(mScrollDelay)
+            COPY_MEMBER(mScrollRate)
+            COPY_MEMBER(mScrollPause)
+            COPY_MEMBER(mIndentation)
+        END_COPYING_MEMBERS
+        UpdateText();
+    }
+END_COPYS
+
+BinStream &operator>>(BinStream &bs, RndText::Style &s) {
+    bs >> s.mFont;
+    bs >> s.mSize;
+    bs >> s.mTextColor;
+    bs >> s.mFontColorOverride;
+    bs >> s.mFontColor;
+    bs >> s.mItalics;
+    bs >> s.mKerning;
+    bs >> s.mZOffset;
+    if (TEXT_REV >= 0x19) {
+        bs >> s.mBlacklight;
+    }
+    return bs;
+}
+
+BEGIN_LOADS(RndText)
+    LOAD_REVS(bs)
+    ASSERT_REVS(0x1C, 1)
+    Style style(this);
+    TEXT_REV = d.rev;
+    if (d.rev > 0xF) {
+        Hmx::Object::Load(bs);
+    }
+    RndDrawable::Load(bs);
+    if (d.rev < 7) {
+        ObjPtrList<Hmx::Object> objects(this);
+        int x;
+        bs >> x;
+        bs >> objects;
+    }
+    if (d.rev > 1) {
+        RndTransformable::Load(bs);
+    }
+    if (d.rev < 0x16) {
+        bs >> style.mFont;
+    }
+    if (d.rev < 3) {
+        int idx;
+        bs >> idx;
+        Alignment align_choices[6] = { kTopLeft,    kTopCenter,    kTopRight,
+                                       kBottomLeft, kBottomCenter, kBottomRight };
+        mAlign = align_choices[idx];
+    } else {
+        bs >> (int &)mAlign;
+    }
+    if (d.rev < 2) {
+        Vector2 v2;
+        bs >> v2;
+        SetLocalPos(Vector3(v2.x, 0, -v2.y * 0.75f));
+    }
+    bs >> mText;
+    if (d.rev < 0x14) {
+        std::vector<unsigned short> vec;
+        ASCIItoWideVector(vec, mText.c_str());
+        WideVectorToUTF8(vec, mText);
+    }
+    if (d.rev > 0 && d.rev < 0x16) {
+        bs >> style.mTextColor;
+    }
+    if (d.rev > 0xC) {
+        bs >> mWidth;
+    } else if (d.rev > 3) {
+        bool b;
+        d >> b;
+        bs >> mWidth;
+        if (!b)
+            mWidth = 0.0f;
+        if (d.rev < 5 && (mWidth < 0.0f || mWidth > 1000.0f))
+            mWidth = 0.0f;
+    }
+    if (d.rev == 5) {
+        String str;
+        bs >> str;
+    }
+    if (d.rev >= 5 && d.rev <= 10) {
+        bool b;
+        d >> b;
+        if (style.mFont) {
+            RndFont *oldfont2d = dynamic_cast<RndFont *>(style.mFont.Ptr());
+            MILO_ASSERT(oldfont2d, 0xBC1);
+            // oldfont2d stuff
+        }
+    }
+    if (d.rev > 7) {
+        bs >> mLeading;
+    }
+    if (d.rev >= 0xC) {
+        int len;
+        bs >> len;
+        SetFixedLength(len);
+    } else if (d.rev > 8) {
+        bool b;
+        d >> b;
+        if (b) {
+            SetFixedLength(mText.length());
+        } else if (mFixedLength != 0) {
+            mFixedLength = 0;
+        }
+    }
+    // more here...
+    if (d.rev >= 0x1A) {
+        bs >> mScrollDelay;
+        bs >> mScrollRate;
+        bs >> mScrollPause;
+    }
+    if (d.rev >= 0x1B) {
+        bs >> mIndentation;
+    }
+    if (d.rev >= 0x1C) {
+        d >> mBasicMarkup;
+    }
+    UpdateText();
+END_LOADS
+
+void RndText::UpdateSphere() {
+    Sphere s;
+    s.Zero();
+    FOREACH (it, mFontMaps) {
+        for (int i = 0; i < (*it)->NumMeshes(); i++) {
+            RndMesh *mesh = (*it)->Mesh(i);
+            if (mesh) {
+                mesh->UpdateSphere();
+                s.GrowToContain(mesh->GetSphere());
+            }
+        }
+    }
+    SetSphere(s);
+}
+
+void RndText::Mats(std::list<class RndMat *> &mats, bool) {
+    FOREACH (it, mFontMaps) {
+        for (int i = 0; i < (*it)->NumMaterials(); i++) {
+            RndMat *mat = (*it)->Material(i);
+            if (mat) {
+                mats.push_back(mat);
+            }
+        }
+    }
+}
+
+RndDrawable *RndText::CollideShowing(const Segment &s, float &f, Plane &p) {
+    FOREACH (it, mFontMaps) {
+        for (int i = 0; i < (*it)->NumMeshes(); i++) {
+            RndMesh *mesh = (*it)->Mesh(i);
+            if (mesh && mesh->CollideShowing(s, f, p)) {
+                return this;
+            }
+        }
+    }
+    return nullptr;
+}
+
+int RndText::CollidePlane(const Plane &p) {
+    int ret = 0;
+    FOREACH (it, mFontMaps) {
+        for (int i = 0; i < (*it)->NumMeshes(); i++) {
+            RndMesh *mesh = (*it)->Mesh(i);
+            if (mesh) {
+                int meshCol = mesh->CollidePlane(p);
+                if (meshCol == 0) {
+                    return 0;
+                }
+                if (meshCol > 0) {
+                    if (ret < 0) {
+                        return 0;
+                    } else {
+                        ret = meshCol;
+                    }
+                } else if (ret > 0) {
+                    return 0;
+                } else {
+                    ret = meshCol;
+                }
+            }
+        }
+    }
+    return ret;
+}
+
+void RndText::Init() {
+    REGISTER_OBJ_FACTORY(RndText)
+    SystemConfig("rnd")->FindData("text_superscript_scale", gSuperscriptScale, false);
+    SystemConfig("rnd")->FindData("text_guitar_scale", gGuitarScale, false);
+    SystemConfig("rnd")->FindData("text_guitar_z_offset", gGuitarZOffset, false);
+    unsigned int ui = 1;
+    static Symbol kor("kor");
+    if (SystemLanguage() == kor)
+        ui = 5;
+    WordWrap_SetOption(ui);
+}
