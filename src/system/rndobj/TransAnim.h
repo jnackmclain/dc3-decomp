@@ -26,6 +26,7 @@ public:
     OBJ_MEM_OVERLOAD(0x19)
     NEW_OBJ(RndTransAnim)
     static void Init() { REGISTER_OBJ_FACTORY(RndTransAnim) }
+    RndTransformable *Trans() const { return mTrans; }
 
 protected:
     RndTransAnim();

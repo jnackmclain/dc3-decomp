@@ -290,10 +290,17 @@ bool operator>(const Sphere &, const Frustum &);
 
 void Normalize(const Hmx::Matrix3 &, Hmx::Matrix3 &);
 void Multiply(const Hmx::Matrix3 &, const Hmx::Matrix3 &, Hmx::Matrix3 &);
-void MultiplyInverse(const Transform &, const Transform &, Transform &);
 void Multiply(const Transform &, const Transform &, Transform &);
 void MultiplyTranspose(const Vector3 &, const Transform &, Vector3 &);
 void Multiply(const Vector3 &, const Transform &, Vector3 &);
+
+inline void Multiply(const Vector3 &v, const Hmx::Matrix3 &m, Vector3 &vout) {
+    vout.Set(
+        m.x.x * v.x + m.y.x * v.y + m.z.x * v.z,
+        m.x.y * v.x + m.y.y * v.y + m.z.y * v.z,
+        m.x.z * v.x + m.y.z * v.y + m.z.z * v.z
+    );
+}
 
 void Invert(const Transform &, Transform &);
 void FastInvert(const Transform &, Transform &);
@@ -301,6 +308,17 @@ void Invert(const Hmx::Matrix4 &, Hmx::Matrix4 &);
 void Transpose(const Hmx::Matrix4 &, Hmx::Matrix4 &);
 void Multiply(const Frustum &, const Transform &, Frustum &);
 void Transpose(const Transform &, Transform &);
+void Invert(const Hmx::Matrix3 &, Hmx::Matrix3 &);
+void Multiply(const Hmx::Matrix3 &, const Hmx::Matrix3 &, Hmx::Matrix3 &);
+
+inline void MultiplyInverse(const Transform &t1, const Transform &t2, Transform &tres) {
+    Hmx::Matrix3 m50;
+    Invert(t2.m, m50);
+    Multiply(t1.m, m50, tres.m);
+    Vector3 diff;
+    Subtract(t1.v, t2.v, diff);
+    Multiply(diff, m50, tres.v);
+}
 
 void MakeRotMatrix(const Hmx::Quat &, Hmx::Matrix3 &);
 

@@ -6,6 +6,7 @@
 #include "rndobj/Trans.h"
 #include "math/Vec.h"
 #include "math/Color.h"
+#include "rndobj/TransAnim.h"
 #include <vector>
 
 void SetLocalScale(RndTransformable *, const Vector3 &);
@@ -33,6 +34,9 @@ void FixVertOrder(const RndMesh *, RndMesh *);
 void UtilDrawSphere(const Vector3 &, float, const Hmx::Color &, RndMat *);
 void UtilDrawLine(const Vector2 &, const Vector2 &, const Hmx::Color &);
 void UtilDrawString(const char *, const Vector3 &, const Hmx::Color &);
+void UtilDrawAxes(const Transform &, float, const Hmx::Color &);
+
+void TransformKeys(RndTransAnim *, const Transform &);
 
 void TestTextureSize(ObjectDir *, int, int, int, int, int);
 void TestTexturePaths(ObjectDir *);

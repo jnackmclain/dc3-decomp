@@ -1,7 +1,6 @@
 #pragma once
 #include "math/Mtx.h"
 #include "obj/Data.h"
-
 #include "rndobj/Highlight.h"
 #include "utl/MemMgr.h"
 
@@ -88,7 +87,14 @@ public:
         SetDirty();
     }
 
-    const Transform &WorldXfm() { return !mDirty ? mWorldXfm : WorldXfm_Force(); }
+    __forceinline const Transform &WorldXfm() {
+        return !mDirty ? mWorldXfm : WorldXfm_Force();
+    }
+
+    bool HasDynamicConstraint() {
+        return mConstraint >= kConstraintBillboardZ
+            || (mConstraint >= kConstraintLookAtTarget && mTarget);
+    }
 
     void GetLocalRot(Vector3 &) const;
     void SetWorldXfm(const Transform &);
@@ -99,6 +105,7 @@ public:
     void SetLocalRotIndex(int, float);
     void ComputeLocalXfm(const Transform &tf);
     void DistributeChildren(bool, float);
+    void TransformTransAnims(const Transform &);
 
     static void Init();
     NEW_OBJ(RndTransformable);
@@ -112,6 +119,7 @@ private:
     }
     void SetDirty_Force();
     const Transform &WorldXfm_Force();
+    void ApplyDynamicConstraint();
 
     DataNode OnCopyLocalTo(const DataArray *);
     DataNode OnGetLocalPos(const DataArray *);
