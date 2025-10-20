@@ -18,6 +18,8 @@ DataNode OnTestDrawGroups(DataArray *);
 void ResetColors(std::vector<Hmx::Color> &colors, int newNumColors);
 void RndScaleObject(Hmx::Object *, float, float);
 
+float ConvertFov(float, float);
+
 bool SortDraws(RndDrawable *, RndDrawable *);
 bool SortPolls(const RndPollable *, const RndPollable *);
 

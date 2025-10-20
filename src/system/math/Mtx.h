@@ -293,6 +293,7 @@ void Multiply(const Hmx::Matrix3 &, const Hmx::Matrix3 &, Hmx::Matrix3 &);
 void Multiply(const Transform &, const Transform &, Transform &);
 void MultiplyTranspose(const Vector3 &, const Transform &, Vector3 &);
 void Multiply(const Vector3 &, const Transform &, Vector3 &);
+void Multiply(const Plane &, const Transform &, Plane &);
 
 inline void Multiply(const Vector3 &v, const Hmx::Matrix3 &m, Vector3 &vout) {
     vout.Set(
@@ -306,7 +307,14 @@ void Invert(const Transform &, Transform &);
 void FastInvert(const Transform &, Transform &);
 void Invert(const Hmx::Matrix4 &, Hmx::Matrix4 &);
 void Transpose(const Hmx::Matrix4 &, Hmx::Matrix4 &);
-void Multiply(const Frustum &, const Transform &, Frustum &);
+inline void Multiply(const Frustum &fin, const Transform &tf, Frustum &fout) {
+    Multiply(fin.front, tf, fout.front);
+    Multiply(fin.back, tf, fout.back);
+    Multiply(fin.left, tf, fout.left);
+    Multiply(fin.right, tf, fout.right);
+    Multiply(fin.top, tf, fout.top);
+    Multiply(fin.bottom, tf, fout.bottom);
+}
 void Transpose(const Transform &, Transform &);
 void Invert(const Hmx::Matrix3 &, Hmx::Matrix3 &);
 void Multiply(const Hmx::Matrix3 &, const Hmx::Matrix3 &, Hmx::Matrix3 &);

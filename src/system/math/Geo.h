@@ -45,6 +45,11 @@ inline BinStream &operator<<(BinStream &bs, const Hmx::Rect &rect) {
     return bs;
 }
 
+inline BinStream &operator>>(BinStream &bs, Hmx::Rect &rect) {
+    bs >> rect.x >> rect.y >> rect.w >> rect.h;
+    return bs;
+}
+
 class Triangle {
 public:
     Vector3 origin;

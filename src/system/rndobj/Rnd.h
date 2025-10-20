@@ -134,6 +134,7 @@ public:
     int Bpp() const { return mScreenBpp; }
     bool WorldEnded() const { return mWorldEnded; }
     bool GetUnk1b4() { return unk1b4; } // When named, can replace
+    Aspect GetAspect() const { return mAspect; }
     void ShowConsole(bool);
     bool ConsoleShowing();
     void EndWorld();

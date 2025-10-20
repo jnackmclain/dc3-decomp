@@ -3,6 +3,7 @@
 #include "math/Vec.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
+#include "rndobj/Rnd.h"
 #include "rndobj/Tex.h"
 #include "rndobj/Trans.h"
 #include "math/Geo.h"
@@ -34,9 +35,15 @@ public:
     void SetFrustum(float, float, float, float);
     void GetViewProjectXfms(Transform &, Hmx::Matrix4 &) const;
     void GetDepthRangeValues(Vector4 &) const;
+    void GetInfiniteViewProj(Hmx::Matrix4 &) const;
     Transform &LocalProjectXfm() { return mLocalProjectXfm; }
     RndTex *TargetTex() const { return mTargetTex; }
     const Frustum &WorldFrustum() const { return mWorldFrustum; }
+    void SetZRange(float f1, float f2) { mZRange.Set(f1, f2); }
+    void SetScreenRect(const Hmx::Rect &rect) {
+        mScreenRect = rect;
+        UpdateLocal();
+    }
 
     NEW_OBJ(RndCam);
     OBJ_MEM_OVERLOAD(0x1B);
@@ -103,7 +110,7 @@ protected:
     Vector2 mZRange; // 0x2d0
     Hmx::Rect mScreenRect; // 0x2d8
     ObjPtr<RndTex> mTargetTex; // 0x2e8
-    int unk2fc;
-    Hmx::Matrix4 unk300;
-    Hmx::Matrix4 unk340;
+    Rnd::Aspect mAspect; // 0x2fc
+    Hmx::Matrix4 unk300; // 0x300
+    Hmx::Matrix4 unk340; // 0x340
 };
