@@ -141,6 +141,9 @@ public:
         virtual void UpdateScrolling(float) = 0;
 
         MEM_OVERLOAD(FontMapBase, 0xD7);
+
+        bool mBlacklight; // 0x4
+        RndFont *mFont; // 0x8
     };
 
     // size 0x18
@@ -189,15 +192,43 @@ public:
         virtual void SetupScrolling();
         virtual void UpdateScrolling(float);
 
-        static Symbol StaticClassName() { return "FontMap"; }
+        static Symbol StaticClassName() {
+            static Symbol name("FontMap");
+            return name;
+        }
 
-        bool unk4; // 0x4
-        RndFont *mFont; // 0x8
         std::vector<Page *> mPages; // 0xc
     };
 
     // size 0x20
-    class FontMap3d : public FontMapBase {};
+    class FontMap3d : public FontMapBase {
+    public:
+        virtual ~FontMap3d();
+        virtual Symbol ClassName() const;
+        virtual void SetFont(RndFontBase *);
+        virtual RndFontBase *Font() const;
+        virtual int NumMeshes() const;
+        virtual RndMesh *Mesh(int idx) const;
+        virtual int NumMaterials() const;
+        virtual RndMat *Material(int idx) const;
+        virtual void ResetDisplayableChars();
+        virtual void IncrementDisplayableChars(unsigned short);
+        virtual void AllocateMeshes(RndText *, int);
+        virtual void CleanupSyncMeshes();
+        virtual void SetupCharacter(
+            unsigned short,
+            float &,
+            float,
+            const StyleState &,
+            unsigned short,
+            float,
+            FitType,
+            float
+        );
+        virtual bool SupportsScrolling() const { return false; }
+        virtual void SetupScrolling() {}
+        virtual void UpdateScrolling(float) {}
+    };
 
     // Hmx::Object
     virtual ~RndText();
@@ -232,10 +263,16 @@ public:
     int GetTextSize() const { return Max<int>(mFixedLength, mText.length()); }
     void UpdateText();
     void SetText(const char *);
+    int FontMapIndex(RndFontBase *, bool);
+    float ComputeHeight(int, float, float &);
 
 protected:
     RndText();
 
+    void DoBasicMarkup();
+    void BuildFontMaps(bool);
+
+    static FontMapBase *AcquireFontMap(RndFontBase *);
     static bool sBlacklightModeEnabled;
     static int sBlacklightPacketCount;
     static std::vector<BlacklightPacket> sBlacklightPacketPool;

@@ -5,10 +5,12 @@
 #include "os/System.h"
 #include "rndobj/Draw.h"
 #include "rndobj/Font.h"
+#include "rndobj/FontBase.h"
 #include "rndobj/Mat.h"
 #include "rndobj/Mesh.h"
 #include "rndobj/Trans.h"
 #include "utl/BinStream.h"
+#include "utl/MemMgr.h"
 #include "utl/UTF8.h"
 #include "wordwrap.h"
 
@@ -334,6 +336,13 @@ void RndText::Init() {
     WordWrap_SetOption(ui);
 }
 
+RndText::FontMap::~FontMap() {
+    while (!mPages.empty()) {
+        delete mPages.back();
+        mPages.pop_back();
+    }
+}
+
 void RndText::FontMap::SetFont(RndFontBase *f) {
     MILO_ASSERT(f->ClassName() == RndFont::StaticClassName(), 0x75);
     mFont = static_cast<RndFont *>(f);
@@ -428,4 +437,110 @@ void RndText::FontMap::UpdateScrolling(float f1) {
         if (mesh) {
         }
     }
+}
+
+void RndText::SetFixedLength(int len) {
+    if (mFixedLength != len) {
+        mFixedLength = len;
+        if (mFixedLength != 0) {
+            const char *p = mText.c_str();
+            int newLen;
+            for (newLen = 0; *p != '\0' && newLen < mFixedLength; newLen++) {
+                unsigned short us;
+                p += DecodeUTF8(us, p);
+            }
+            mText.resize((int)p + mFixedLength - newLen - (int)mText.c_str());
+        }
+    }
+}
+
+void RndText::DoBasicMarkup() {
+    while (mText.contains("\\q")) {
+        mText.replace(mText.find("\\q"), 2, "\"");
+    }
+}
+
+int RndText::FontMapIndex(RndFontBase *f, bool b) {
+    for (int i = 0; i < mFontMaps.size(); i++) {
+        if (mFontMaps[i]->Font() == f && mFontMaps[i]->mBlacklight == b) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+float RndText::ComputeHeight(int i1, float f2, float &f3) {
+    float f1;
+    if (mStyles[0].mFont) {
+        f1 = mStyles[0].mFont->AspectRatio() * mStyles[0].mSize * f2;
+    } else {
+        f1 = 0;
+    }
+    f3 = mLeading * f1;
+    return ((i1 - 1) * mLeading + 1.0f) * f1;
+}
+
+void RndText::SetText(const char *str) {
+    if (mFixedLength != 0) {
+        MILO_ASSERT(mText.capacity() >= mFixedLength, 0x75E);
+        const char *p = str;
+        for (int newLen = 0; *p != '\0' && newLen < mFixedLength; newLen++) {
+            unsigned short us;
+            p += DecodeUTF8(us, p);
+        }
+        int newLen = p - str;
+        if (mText.capacity() < newLen) {
+            mText.resize(newLen);
+        }
+        strncpy((char *)mText.c_str(), str, newLen);
+        char *last = (char *)mText.c_str() + newLen;
+        *last = '\0';
+    } else {
+        mText = str;
+    }
+    if (mBasicMarkup) {
+        DoBasicMarkup();
+    }
+}
+
+String RndText::TextASCII() const {
+    String str;
+    {
+        MemTemp tmp;
+        str.resize(UTF8StrLen(mText.c_str()) + 1);
+    }
+    UTF8toASCIIs((char *)str.c_str(), str.capacity(), mText.c_str(), '*');
+    return str;
+}
+
+void RndText::BuildFontMaps(bool b1) {
+    if (b1) {
+        for (auto it = mFontMaps.begin(); it != mFontMaps.end();
+             it = mFontMaps.erase(it)) {
+            sFontMapCache.push_back(*it);
+        }
+    }
+    if (mFontMaps.empty()) {
+        for (int i = 0; i < mStyles.size(); i++) {
+            RndFontBase *font = mStyles[i].mFont;
+            if (font) {
+                if (FontMapIndex(font, mStyles[i].mBlacklight) == -1) {
+                    FontMapBase *map = AcquireFontMap(font);
+                    map->mBlacklight = mStyles[i].mBlacklight;
+                    mFontMaps.push_back(map);
+                }
+            }
+        }
+    }
+}
+
+void RndText::SetTextASCII(const char *cstr) {
+    String str;
+    {
+        MemTemp tmp;
+        std::vector<unsigned short> vec;
+        ASCIItoWideVector(vec, cstr);
+        WideVectorToUTF8(vec, str);
+    }
+    SetText(str.c_str());
 }

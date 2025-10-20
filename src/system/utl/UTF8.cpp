@@ -113,10 +113,10 @@ const char *WideCharToChar(const unsigned short *us) {
     }
 }
 
-int UTF8StrLen(const char *str) {
-    int len = 0;
+unsigned int UTF8StrLen(const char *str) {
     unsigned short us;
     const char *p = str;
+    unsigned int len = 0;
     while (*p != '\0') {
         us = 0;
         len++;
