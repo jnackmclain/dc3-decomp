@@ -154,7 +154,7 @@ inline bool IsFloatOne(float f) {
     return fabs(f - 1.0f) < 0.000099999997f ? true : false;
 }
 
-inline bool IsFabsZero(float f) { return fabs(f) < 0.000099999997f ? true : false; }
+inline bool NearlyZero(float f) { return fabs(f) < 0.000099999997f; }
 
 inline bool NearlyEqual(float f1, float f2) { return fabs(f1 - f2) < 0.000099999997f; }
 

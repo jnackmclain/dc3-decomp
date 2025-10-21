@@ -1,4 +1,5 @@
 #pragma once
+#include "obj/Data.h"
 #include "rndobj/Poll.h"
 #include "rndobj/PostProc.h"
 #include "utl/MemMgr.h"
@@ -7,7 +8,7 @@
 class RndPostProcMgr : public RndPollable {
 public:
     // Hmx::Object
-    virtual ~RndPostProcMgr() {}
+    virtual ~RndPostProcMgr();
     OBJ_CLASSNAME(PostProcMgr);
     OBJ_SET_TYPE(PostProcMgr);
     virtual DataNode Handle(DataArray *, bool);
@@ -23,6 +24,15 @@ public:
     OBJ_MEM_OVERLOAD(0x22);
     NEW_OBJ(RndPostProcMgr)
     static void Init() { REGISTER_OBJ_FACTORY(RndPostProcMgr) }
+    void CopyFromPostProc(RndPostProc *);
+    void BlendToPostProc(RndPostProc *, float);
+
+private:
+    bool IsEnabled() const;
+    RndPostProc *MsgToPostProc(DataArray *);
+
+    DataNode OnCopyFromPostProc(DataArray *);
+    DataNode OnBlendToPostProc(DataArray *);
 
 protected:
     RndPostProcMgr();

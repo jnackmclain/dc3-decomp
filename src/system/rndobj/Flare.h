@@ -1,4 +1,6 @@
 #pragma once
+#include "math/Geo.h"
+#include "math/Vec.h"
 #include "obj/Object.h"
 #include "rndobj/Draw.h"
 #include "rndobj/Mat.h"
@@ -32,9 +34,14 @@ public:
     Vector2 &Range() { return mRange; }
     int GetSteps() const { return mSteps; }
     void SetSteps(int steps);
+    void SetPointTest(bool);
 
 protected:
     RndFlare();
+
+    void CalcScale();
+    Hmx::Rect &CalcRect(Vector2 &, float &);
+    bool RectOffscreen(const Hmx::Rect &) const;
 
     bool mPointTest; // 0x100
     bool mAreaTest; // 0x101
