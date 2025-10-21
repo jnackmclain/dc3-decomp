@@ -11,6 +11,7 @@
  */
 class RndPropAnim : public RndAnimatable {
 public:
+    // Hmx::Object
     virtual ~RndPropAnim();
     virtual bool Replace(ObjRef *, Hmx::Object *);
     OBJ_CLASSNAME(PropAnim);
@@ -21,6 +22,7 @@ public:
     virtual void Copy(const Hmx::Object *, Hmx::Object::CopyType);
     virtual void Load(BinStream &);
     virtual void Print();
+    // RndAnimatable
     virtual bool Loop() { return mLoop; }
     virtual void StartAnim();
     virtual void EndAnim() {}
@@ -164,11 +166,11 @@ protected:
     bool mInSetFrame; // 0x1c
     /** "Do I self loop on SetFrame" */
     bool mLoop; // 0x1d
-    // "fire flow labels in sync with the anim"
+    /** "fire flow labels in sync with the anim" */
     Symbol mFireFlowLabel; // 0x20
-    // "Scales all animation keyframe values by this #"
+    /** "Scales all animation keyframe values by this #" */
     float mIntensity; // 0x24
-    // "the names of possible flow labels you can place on this timeline (i.e.
-    // 'footstep')"
+    /** "the names of possible flow labels you can place on this timeline
+        (i.e. 'footstep')" */
     std::list<String> mFlowLabels; // 0x28
 };

@@ -14,6 +14,8 @@ bool sReplaceKey;
 bool sReplaceFrame;
 float sFrameReplace;
 
+#pragma region Hmx::Object
+
 RndPropAnim::RndPropAnim()
     : mLastFrame(0), mInSetFrame(false), mLoop(false), mFireFlowLabel(""), mIntensity(1) {
 }
@@ -147,20 +149,60 @@ BEGIN_COPYS(RndPropAnim)
     END_COPYING_MEMBERS
 END_COPYS
 
-void RndPropAnim::RemoveKeys() { DeleteAll(mPropKeys); }
-
-void RndPropAnim::AdvanceFrame(float frame) {
-    if (mLoop) {
-        frame = ModRange(StartFrame(), EndFrame(), frame);
+void RndPropAnim::Print() {
+    int idx = 0;
+    for (std::list<PropKeys *>::iterator it = mPropKeys.begin(); it != mPropKeys.end();
+         ++it) {
+        TheDebug << "   Keys " << idx << "\n";
+        (*it)->Print();
+        idx++;
     }
-    RndAnimatable::SetFrame(frame, 1.0f);
+}
+
+#pragma endregion
+#pragma region RndAnimatable
+
+void RndPropAnim::StartAnim() {
+    for (std::list<PropKeys *>::iterator it = mPropKeys.begin(); it != mPropKeys.end();
+         ++it) {
+        (*it)->ResetLastKeyFrameIndex();
+    }
+}
+
+void RndPropAnim::SetFrame(float frame, float blend) {
+    if (!mInSetFrame) {
+        mInSetFrame = true;
+        AdvanceFrame(frame);
+        float myframe = GetFrame();
+        for (std::list<PropKeys *>::iterator it = mPropKeys.begin();
+             it != mPropKeys.end();
+             ++it) {
+            if ((*it)->GetExceptionID() == PropKeys::kDirEvent) {
+                ObjKeys *objkeys = (*it)->AsObjectKeys();
+                for (int i = 0; i < objkeys->size(); i++) {
+                    float objFrame = (*objkeys)[i].frame;
+                    if (objFrame > myframe)
+                        break;
+                    if (objFrame >= mLastFrame && mLastFrame != myframe) {
+                        EventTrigger *trig =
+                            dynamic_cast<EventTrigger *>((*objkeys)[i].value.Ptr());
+                        if (trig)
+                            trig->Trigger();
+                    }
+                }
+            }
+            (*it)->SetFrame(myframe, blend, mIntensity);
+        }
+        mLastFrame = myframe;
+        mInSetFrame = false;
+    }
 }
 
 float RndPropAnim::StartFrame() {
     float frame = 0.0f;
     for (std::list<PropKeys *>::iterator it = mPropKeys.begin(); it != mPropKeys.end();
          ++it) {
-        frame = Min(frame, (*it)->StartFrame());
+        frame = Min((*it)->StartFrame(), frame);
     }
     return frame;
 }
@@ -181,42 +223,16 @@ void RndPropAnim::SetKey(float frame) {
     }
 }
 
-void RndPropAnim::StartAnim() {
-    for (std::list<PropKeys *>::iterator it = mPropKeys.begin(); it != mPropKeys.end();
-         ++it) {
-        (*it)->ResetLastKeyFrameIndex();
-    }
-}
+#pragma endregion
+#pragma region RndPropAnim
 
-void RndPropAnim::Print() {
-    int idx = 0;
-    for (std::list<PropKeys *>::iterator it = mPropKeys.begin(); it != mPropKeys.end();
-         ++it) {
-        TheDebug << "   Keys " << idx << "\n";
-        (*it)->Print();
-        idx++;
-    }
-}
+void RndPropAnim::RemoveKeys() { DeleteAll(mPropKeys); }
 
-DataNode RndPropAnim::OnListFlowLabels(DataArray *arr) {
-    if (mFlowLabels.size() != 0) {
-        DataArray *flowArr = new DataArray(mFlowLabels.size());
-        int i = 0;
-        for (std::list<String>::iterator it = mFlowLabels.begin();
-             it != mFlowLabels.end();
-             ++it, ++i) {
-            flowArr->Node(i) = Symbol(it->c_str());
-        }
-        DataNode ret = flowArr;
-        flowArr->Release();
-        return ret;
-    } else {
-        DataArray *flowArr = new DataArray(1);
-        flowArr->Node(0) = Symbol();
-        DataNode ret = flowArr;
-        flowArr->Release();
-        return ret;
+void RndPropAnim::AdvanceFrame(float frame) {
+    if (mLoop) {
+        frame = ModRange(StartFrame(), EndFrame(), frame);
     }
+    RndAnimatable::SetFrame(frame, 1.0f);
 }
 
 PropKeys *
@@ -533,35 +549,6 @@ void RndPropAnim::SetKeyVal(
     }
 }
 
-void RndPropAnim::SetFrame(float frame, float blend) {
-    if (!mInSetFrame) {
-        mInSetFrame = true;
-        AdvanceFrame(frame);
-        float myframe = GetFrame();
-        for (std::list<PropKeys *>::iterator it = mPropKeys.begin();
-             it != mPropKeys.end();
-             ++it) {
-            if ((*it)->GetExceptionID() == PropKeys::kDirEvent) {
-                ObjKeys *objkeys = (*it)->AsObjectKeys();
-                for (int i = 0; i < objkeys->size(); i++) {
-                    float objFrame = (*objkeys)[i].frame;
-                    if (objFrame > myframe)
-                        break;
-                    if (objFrame >= mLastFrame && mLastFrame != myframe) {
-                        EventTrigger *trig =
-                            dynamic_cast<EventTrigger *>((*objkeys)[i].value.Ptr());
-                        if (trig)
-                            trig->Trigger();
-                    }
-                }
-            }
-            (*it)->SetFrame(myframe, blend, mIntensity);
-        }
-        mLastFrame = myframe;
-        mInSetFrame = false;
-    }
-}
-
 bool RndPropAnim::ChangePropPath(Hmx::Object *o, DataArray *a1, DataArray *a2) {
     if (!a2 || a2->Size() == 0)
         return RemoveKeys(o, a1);
@@ -573,6 +560,30 @@ bool RndPropAnim::ChangePropPath(Hmx::Object *o, DataArray *a1, DataArray *a2) {
             return true;
         } else
             return false;
+    }
+}
+
+#pragma endregion
+#pragma region Handlers
+
+DataNode RndPropAnim::OnListFlowLabels(DataArray *arr) {
+    if (mFlowLabels.size() != 0) {
+        DataArray *flowArr = new DataArray(mFlowLabels.size());
+        int i = 0;
+        for (std::list<String>::iterator it = mFlowLabels.begin();
+             it != mFlowLabels.end();
+             ++it, ++i) {
+            flowArr->Node(i) = Symbol(it->c_str());
+        }
+        DataNode ret = flowArr;
+        flowArr->Release();
+        return ret;
+    } else {
+        DataArray *flowArr = new DataArray(1);
+        flowArr->Node(0) = Symbol();
+        DataNode ret = flowArr;
+        flowArr->Release();
+        return ret;
     }
 }
 

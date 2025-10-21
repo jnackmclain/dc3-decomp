@@ -204,7 +204,24 @@ public:
      * @param [in] frame The supplied frame.
      * @returns The index of the keyframe that satisfies the condition above.
      */
-    int KeyLessEq(float frame) const;
+    int KeyLessEq(float frame) const {
+        if (empty() || (frame < front().frame))
+            return -1;
+        else {
+            int cnt = 0;
+            int threshold = size();
+            while (threshold > cnt + 1) {
+                int newCnt = (cnt + threshold) >> 1;
+                if (frame < (*this)[newCnt].frame)
+                    threshold = newCnt;
+                else
+                    cnt = newCnt;
+            }
+            while (cnt + 1 < size() && (*this)[cnt + 1].frame == (*this)[cnt].frame)
+                cnt++;
+            return cnt;
+        }
+    }
 
     void KeysLessEq(float f, int &iref1, int &iref2) const {
         iref2 = -1;

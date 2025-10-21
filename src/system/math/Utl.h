@@ -148,15 +148,9 @@ inline int Mod(int num, int modbase) {
         return div;
 }
 
-inline bool IsFloatZero(float f) { return fabs(f) < 0.0001f; }
-
-inline bool IsFloatOne(float f) {
-    return fabs(f - 1.0f) < 0.000099999997f ? true : false;
-}
-
-inline bool NearlyZero(float f) { return fabs(f) < 0.000099999997f; }
-
-inline bool NearlyEqual(float f1, float f2) { return fabs(f1 - f2) < 0.000099999997f; }
+inline bool NearlyOne(float f) { return fabs(f - 1.0f) < 0.0001f; }
+inline bool NearlyZero(float f) { return fabs(f) < 0.0001f; }
+inline bool NearlyEqual(float f1, float f2) { return fabs(f1 - f2) < 0.0001f; }
 
 inline float Mod(float f1, float f2) {
     if (f2 == 0.0f)

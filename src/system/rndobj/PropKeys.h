@@ -248,7 +248,7 @@ protected:
     /** The handler name of any propagated interp messages. */
     Symbol mInterpHandler; // 0x2c
     /** The index of the last keyframe that was modified. */
-    unsigned int mLastKeyFrameIndex; // 0x30
+    int mLastKeyFrameIndex; // 0x30
     bool unk34; // 0x34
 };
 
