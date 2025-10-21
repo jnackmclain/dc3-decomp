@@ -36,6 +36,11 @@ public:
     }
 };
 
+/**
+ * @brief A "timeline" for a PropAnim.
+ * Holds a reference to the target object
+ * as well as the property path.
+ */
 class PropKeys : public ObjRefOwner {
 public:
     enum AnimKeysType {

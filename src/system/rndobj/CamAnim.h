@@ -12,6 +12,9 @@
  */
 class RndCamAnim : public RndAnimatable {
 public:
+    // Hmx::Object
+    virtual ~RndCamAnim();
+    virtual bool Replace(ObjRef *, Hmx::Object *);
     OBJ_CLASSNAME(CamAnim);
     OBJ_SET_TYPE(CamAnim);
     virtual DataNode Handle(DataArray *, bool);
@@ -19,13 +22,11 @@ public:
     virtual void Save(BinStream &);
     virtual void Copy(const Hmx::Object *, Hmx::Object::CopyType);
     virtual void Load(BinStream &);
-    virtual ~RndCamAnim();
+    // RndAnimatable
     virtual void SetFrame(float, float);
     virtual float EndFrame();
     virtual Hmx::Object *AnimTarget() { return mCam; }
     virtual void SetKey(float);
-    virtual bool Replace(ObjRef *, Hmx::Object *);
-    virtual void Print();
 
     OBJ_MEM_OVERLOAD(0x16);
     NEW_OBJ(RndCamAnim)

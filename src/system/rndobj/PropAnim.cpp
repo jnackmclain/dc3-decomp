@@ -782,3 +782,5 @@ DataNode RndPropAnim::ForAllKeyframes(const DataArray *da) {
     }
     return 0;
 }
+
+#pragma endregion

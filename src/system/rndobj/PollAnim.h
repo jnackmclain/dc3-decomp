@@ -12,6 +12,7 @@ class RndPollAnim : public virtual RndAnimatable,
                     public virtual RndPollable,
                     public virtual Hmx::Object {
 public:
+    // Hmx::Object
     OBJ_CLASSNAME(PollAnim);
     OBJ_SET_TYPE(PollAnim);
     virtual DataNode Handle(DataArray *, bool);
@@ -19,8 +20,10 @@ public:
     virtual void Save(BinStream &);
     virtual void Copy(const Hmx::Object *, Hmx::Object::CopyType);
     virtual void Load(BinStream &);
+    // RndAnimatable
     virtual float EndFrame();
     virtual void ListAnimChildren(std::list<RndAnimatable *> &) const;
+    // RndPollable
     virtual void Poll();
     virtual void Enter();
     virtual void Exit();
