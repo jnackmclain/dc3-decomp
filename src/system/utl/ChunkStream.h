@@ -81,3 +81,4 @@ private:
 
 BinStream &MarkChunk(BinStream &);
 void SetActiveChunkObject(Hmx::Object *obj);
+BinStream &WriteChunks(BinStream &, const void *, int, int);

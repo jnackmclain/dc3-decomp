@@ -79,13 +79,6 @@ public:
     int PaletteBytes() const;
 
     int DxtRowBytes() const;
-    /** Get the index of the color in the palette that most closely matches the supplied
-     * RGBA values.
-     * @param [in] r, g, b, a The input RGBA values.
-     * @returns The index of the closest matching color in the color palette.
-     */
-    unsigned char
-    NearestColor(unsigned char r, unsigned char g, unsigned char b, unsigned char a) const;
     /** Clear the buffer and reset metadata to default values. */
     void Reset();
     /** Create this RndBitmap using the supplied parameters.
@@ -131,13 +124,10 @@ public:
     void
     PaletteColor(int, unsigned char &, unsigned char &, unsigned char &, unsigned char &)
         const;
-    int PixelOffset(int, int, bool &) const;
     unsigned char PixelIndex(int, int) const;
     void SetPixelIndex(int, int, unsigned char);
-    void ConvertToAlpha();
     void SetAlpha(AlphaFlag);
     void SetPreMultipliedAlpha();
-    void SelfMip();
     /** Generate a mipmap for this RndBitmap using its current member info. */
     void GenerateMips();
     /** Detach the next mip (and subsequent mips) from this RndBitmap.
@@ -221,14 +211,6 @@ public:
      * The bytes make up the actual pixels part of the .bmp file.
      */
     void SaveBmpPixels(BinStream *) const;
-    void DxtColor(
-        int x,
-        int y,
-        unsigned char &r,
-        unsigned char &g,
-        unsigned char &b,
-        unsigned char &a
-    ) const;
     /** Get the actual offset in memory corresponding to the index of the color palette.
      * @param [in] idx The zero-indexed number color of the palette to retrieve the memory
      * address of.
@@ -255,6 +237,24 @@ public:
     bool HasName() const { return mName.mCRC; }
 
 private:
+    void ConvertToAlpha();
+    void DxtColor(
+        int x,
+        int y,
+        unsigned char &r,
+        unsigned char &g,
+        unsigned char &b,
+        unsigned char &a
+    ) const;
+    void SelfMip();
+    int PixelOffset(int, int, bool &) const;
+    /** Get the index of the color in the palette that most closely matches the supplied
+     * RGBA values.
+     * @param [in] r, g, b, a The input RGBA values.
+     * @returns The index of the closest matching color in the color palette.
+     */
+    unsigned char
+    NearestColor(unsigned char r, unsigned char g, unsigned char b, unsigned char a) const;
     /** Read the metadata (not the actual buffer contents) from the BinStream.
      * @param [out] numMips The number of mips this RndBitmap has in its mipmap.
      */

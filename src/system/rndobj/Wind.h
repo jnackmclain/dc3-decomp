@@ -22,7 +22,7 @@ public:
     OBJ_MEM_OVERLOAD(0x1A);
     static void Init();
 
-    void SetWindOwner(RndWind *wind); // { mWindOwner = wind ? wind : this; }
+    void SetWindOwner(RndWind *wind);
     // void Zero();
     // void SetDefaults();
     // float GetWind(float);
