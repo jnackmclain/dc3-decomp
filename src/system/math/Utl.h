@@ -94,8 +94,7 @@ inline T Clamp(T min, T max, T value) {
 // float specialization for the use of fsel instructions
 template <>
 inline float Clamp(float min, float max, float value) {
-    float tmp = ((max - value) >= 0 ? value : max);
-    return ((tmp - min) >= 0 ? tmp : min);
+    return Min(Max(min, value), max);
 }
 
 template <class T>
