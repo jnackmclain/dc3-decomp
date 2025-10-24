@@ -10,19 +10,14 @@ void InterpTangent(
     float f,
     Vector3 &vout
 ) {
-    float ftimes6;
-    float scale3;
-    float scale;
-    ftimes6 = f * 6.0f;
-    scale = f * f;
-    Scale(v1, (scale * 6.0f) - ftimes6, vout);
+    float scale = f * f;
+    Scale(v1, (scale * 6.0f) - (f * 6.0f), vout);
     Vector3 vtmp;
-    scale3 = scale * 3.0f;
-    Scale(v2, 1.0f + (scale3 - (f * 4.0f)), vtmp);
+    Scale(v2, 1.0f + ((scale * 3.0f) - (f * 4.0f)), vtmp);
     Add(vout, vtmp, vout);
-    Scale(v3, (scale * -6.0f) + ftimes6, vtmp);
+    Scale(v3, (scale * -6.0f) + (f * 6.0f), vtmp);
     Add(vout, vtmp, vout);
-    Scale(v4, (scale3 - (f * 2.0f)), vtmp);
+    Scale(v4, ((scale * 3.0f) - (f * 2.0f)), vtmp);
     Add(vout, vtmp, vout);
 }
 
@@ -127,5 +122,24 @@ void QuatSpline(
     MILO_ASSERT(keys.size(), 0x9B);
     if (prev == next) {
         qout = prev->value;
+    } else {
+        int idx = prev - &keys.front();
+        Hmx::Quat prevQuat = prev->value;
+        Hmx::Quat nextQuat = next->value;
+        Hmx::Quat q88 = idx == 0 ? prevQuat : keys[idx - 1].value;
+        Hmx::Quat q58 = idx + 1 == keys.size() - 1 ? nextQuat : keys[idx + 1].value;
+        NormalizeTo(prevQuat, q88);
+        NormalizeTo(prevQuat, nextQuat);
+        NormalizeTo(prevQuat, q58);
+        for (int i = 0; i < 4; i++) {
+            qout[i] = ref * ref * ref
+                    * (q58[i] + -(nextQuat[i] * 3.0f - (nextQuat[i] * 3.0f - q88[i])))
+                + ref * ref
+                    * ((nextQuat[i] * 4.0f + (q88[i] * 2.0f - prevQuat[i] * 5.0f))
+                       - q58[i])
+                + prevQuat[i] * 2.0f + ref * (nextQuat[i] - q88[i]) * 0.5f;
+            ;
+        }
+        Normalize(qout, qout);
     }
 }

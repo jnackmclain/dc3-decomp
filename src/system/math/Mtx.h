@@ -156,6 +156,9 @@ namespace Hmx {
             return x != q.x || y != q.y || z != q.z || w != q.w;
         }
 
+        const float &operator[](int i) const { return *(&x + i); }
+        float &operator[](int i) { return *(&x + i); }
+
         float x;
         float y;
         float z;
@@ -340,6 +343,8 @@ inline void MultiplyInverse(const Transform &t1, const Transform &t2, Transform 
 }
 
 void MakeRotMatrix(const Hmx::Quat &, Hmx::Matrix3 &);
+void Normalize(const Hmx::Quat &, Hmx::Quat &);
+void NormalizeTo(const Hmx::Quat &, Hmx::Quat &);
 
 void Scale(const Hmx::Matrix3 &mtx, const Vector3 &vec, Hmx::Matrix3 &res);
 
