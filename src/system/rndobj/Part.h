@@ -173,6 +173,7 @@ public:
     void ExplicitParticles(int, bool, PartOverride &);
     void InitParticle(RndParticle *, const Transform *);
     void SetMat(RndMat *mat) { mMat = mat; }
+    RndMat *GetMat() const { return mMat; }
 
     float CalcFrame() {
         if (mFrameDrive)

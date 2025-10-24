@@ -60,6 +60,9 @@ public:
     /** "Sort objects by draw_order and material" */
     void SortDraws();
     int MoveObject(Hmx::Object *, int);
+    bool HasObject(Hmx::Object *obj) { return mObjects.find(obj) != mObjects.end(); }
+    const ObjPtrList<Hmx::Object> &Objects() const { return mObjects; }
+    const std::vector<RndDrawable *> &Draws() const { return mDraws; }
 
     /** Handler to get all RndDrawables in this RndGroup.
      * @returns A DataNode housing a DataArray of each RndDrawable.

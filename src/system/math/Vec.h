@@ -271,3 +271,9 @@ inline float Distance(const Vector3 &v1, const Vector3 &v2) {
     Subtract(v1, v2, diff);
     return Length(diff);
 }
+
+inline void ScaleAdd(const Vector3 &v1, const Vector3 &v2, float f, Vector3 &vres) {
+    vres.x = v2.x * f + v1.x;
+    vres.y = v2.y * f + v1.y;
+    vres.z = v2.z * f + v1.z;
+}

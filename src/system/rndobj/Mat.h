@@ -9,10 +9,48 @@
 #include "rndobj/Tex.h"
 #include "utl/BinStream.h"
 
+struct bf {
+    uint val;
+};
+
 struct MatShaderOptions {
-    MatShaderOptions() : unk0(0x12), unk4(0) {}
-    unsigned int unk0;
-    bool unk4;
+    MatShaderOptions();
+    union {
+        struct {
+            int itop : 24;
+            int mHasAOCalc : 1;
+            int mHasBones : 1;
+            int i5 : 1;
+            int i4 : 1;
+            int i3 : 1;
+            int i2 : 1;
+            int i1 : 1;
+            int i0 : 1;
+        } shader_struct;
+        u32 pack;
+
+        // from bank 5
+        uint value;
+        bf shaderType;
+        bf billboard;
+        bf skinned;
+        bf useAO;
+    }; // 0x0
+    bool mTempMat;
+
+    // TODO: rename this once you have a better idea of what it does
+    // i think this is some sort of enum/opcode
+    void SetLast5(int mask) { pack = (pack & ~0x1f) | (mask & 0x1f); }
+
+    void SetHasBones(bool bones) {
+        shader_struct.mHasBones = 0;
+        shader_struct.mHasBones = bones;
+    }
+
+    void SetHasAOCalc(bool calc) {
+        shader_struct.mHasAOCalc = 0;
+        shader_struct.mHasAOCalc = calc;
+    }
 };
 
 class RndMat : public BaseMaterial {
@@ -103,6 +141,7 @@ public:
     void SetSpecularMap(RndTex *);
     void SetMetaMat(MetaMaterial *, bool);
     MetaMaterial *CreateMetaMaterial(bool);
+    MetaMaterial *GetMetaMaterial() const { return mMetaMaterial; }
 
     static void Init();
     static void Terminate();

@@ -23,6 +23,7 @@ namespace std {
     using ::strcspn;
     using ::strlen;
     using ::strncmp;
+    using ::strnicmp;
     using ::strpbrk;
     using ::strrchr;
     using ::strspn;

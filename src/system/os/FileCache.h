@@ -5,6 +5,11 @@
 #include "utl/FilePath.h"
 #include "utl/Loader.h"
 
+class FileCacheHelper {
+public:
+    virtual ~FileCacheHelper() {}
+};
+
 class FileCacheEntry {
 public:
     FileCacheEntry(FilePath const &, FilePath const &, int);
@@ -72,6 +77,8 @@ public:
     bool unk19;
 
 protected:
+    static FileCacheHelper *sResourceCacheHelper;
+
     File *GetFile(char const *);
     int CurSize() const;
     void DumpOverSize(int);

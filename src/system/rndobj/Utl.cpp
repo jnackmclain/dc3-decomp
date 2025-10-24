@@ -1,0 +1,444 @@
+#include "Rnd.h"
+#include "math/Color.h"
+#include "math/Mtx.h"
+#include "math/Utl.h"
+#include "math/Vec.h"
+#include "obj/DataFunc.h"
+#include "obj/Object.h"
+#include "os/Debug.h"
+#include "os/FileCache.h"
+#include "os/Platform.h"
+#include "os/System.h"
+#include "rndobj/Cam.h"
+#include "rndobj/Dir.h"
+#include "rndobj/Draw.h"
+#include "rndobj/Env.h"
+#include "rndobj/Flare.h"
+#include "rndobj/Group.h"
+#include "rndobj/Mat.h"
+#include "rndobj/Mesh.h"
+#include "rndobj/MetaMaterial.h"
+#include "rndobj/MultiMesh.h"
+#include "rndobj/Part.h"
+#include "utl/Std.h"
+#include "rndobj/Utl.h"
+
+typedef void (*SplashFunc)(void);
+
+FileCacheHelper gResourceFileCacheHelper;
+float gLimitUVRange;
+int gDxtCacher;
+ObjectDir *sSphereDir;
+RndMesh *sSphereMesh;
+ObjectDir *sCylinderDir;
+RndMesh *sCylinderMesh;
+// std::list<BuildPoly> gChildPolys;
+// std::list<BuildPoly> gParentPolys;
+SplashFunc gSplashPoll;
+SplashFunc gSplashSuspend;
+SplashFunc gSplashResume;
+
+RndGroup *GroupOwner(Hmx::Object *o) {
+    if (o) {
+        FOREACH (it, o->Refs()) {
+            RndGroup *grp = dynamic_cast<RndGroup *>(it->RefOwner());
+            if (grp) {
+                if (grp->HasObject(o)) {
+                    return grp;
+                }
+            }
+        }
+    }
+    return nullptr;
+}
+
+DataNode OnGroupOwner(DataArray *da) { return GroupOwner(da->Obj<Hmx::Object>(1)); }
+
+RndEnviron *FindEnviron(RndDrawable *d) {
+    RndGroup *owner = GroupOwner(d);
+    if (owner) {
+        int i = owner->Draws().size();
+        while (--i > 0) {
+            if (owner->Draws()[i] == d && i >= 0) {
+                for (; i >= 0; i--) {
+                    RndEnviron *env = dynamic_cast<RndEnviron *>(owner->Draws()[i]);
+                    if (env) {
+                        return env;
+                    }
+                }
+            }
+        }
+        return FindEnviron(owner);
+    } else {
+        RndDir *rdir = dynamic_cast<RndDir *>(d->Dir());
+        if (rdir) {
+            std::list<RndDrawable *> children;
+            rdir->ListDrawChildren(children);
+            if (ListFind(children, d)) {
+                return rdir->GetEnv();
+            }
+        }
+        MILO_NOTIFY("Need to find environment of draw parent");
+    }
+    return nullptr;
+}
+
+DataNode DataFindEnviron(DataArray *da) { return FindEnviron(da->Obj<RndDrawable>(1)); }
+
+bool GroupedUnder(RndGroup *grp, Hmx::Object *o) {
+    FOREACH (it, grp->Objects()) {
+        if (*it == o)
+            return true;
+        RndGroup *casted = dynamic_cast<RndGroup *>(*it);
+        if (casted && GroupedUnder(casted, o))
+            return true;
+    }
+    return false;
+}
+
+void SetRndSplasherCallback(SplashFunc func1, SplashFunc func2, SplashFunc func3) {
+    gSplashPoll = func1;
+    gSplashSuspend = func2;
+    gSplashResume = func3;
+}
+
+void RndSplasherPoll() {
+    if (gSplashPoll)
+        gSplashPoll();
+}
+
+void RndSplasherSuspend() {
+    if (gSplashSuspend)
+        gSplashSuspend();
+}
+
+void RndSplasherResume() {
+    if (gSplashResume)
+        gSplashResume();
+}
+
+const char *CacheResource(const char *, const Hmx::Object *);
+
+Loader *ResourceFactory(const FilePath &f, LoaderPos p) {
+    return new FileLoader(
+        f, CacheResource(f.c_str(), nullptr), p, 0, false, true, nullptr, nullptr
+    );
+}
+
+void RndUtlPreInit() {
+    SystemConfig("rnd")->FindData("limit_uv_range", gLimitUVRange, true);
+    TheLoadMgr.RegisterFactory("bmp", ResourceFactory);
+    TheLoadMgr.RegisterFactory("png", ResourceFactory);
+    TheLoadMgr.RegisterFactory("xbv", ResourceFactory);
+    TheLoadMgr.RegisterFactory("jpg", ResourceFactory);
+    TheLoadMgr.RegisterFactory("tif", ResourceFactory);
+    TheLoadMgr.RegisterFactory("tiff", ResourceFactory);
+    TheLoadMgr.RegisterFactory("psd", ResourceFactory);
+    TheLoadMgr.RegisterFactory("gif", ResourceFactory);
+    TheLoadMgr.RegisterFactory("tga", ResourceFactory);
+    DataRegisterFunc("find_environ", DataFindEnviron);
+    DataRegisterFunc("group_owner", OnGroupOwner);
+}
+
+void RndUtlInit() {
+    FileCache::RegisterResourceCacheHelper(&gResourceFileCacheHelper);
+    if (!UsingCD()) {
+        sCylinderDir = DirLoader::LoadObjects(
+            FilePath(FileSystemRoot(), "rndobj/cylinder.milo"), 0, 0
+        );
+    }
+    sSphereDir =
+        DirLoader::LoadObjects(FilePath(FileSystemRoot(), "rndobj/sphere.milo"), 0, 0);
+    if (sSphereDir) {
+        sSphereMesh = sSphereDir->Find<RndMesh>("sphere.mesh", true);
+    }
+    if (sCylinderDir) {
+        sCylinderMesh = sSphereDir->Find<RndMesh>("Cylinder.mesh", true);
+    }
+}
+
+void RndUtlTerminate() {
+    RELEASE(sSphereDir);
+    sSphereMesh = nullptr;
+    RELEASE(sCylinderDir);
+    sCylinderMesh = nullptr;
+}
+
+MatShaderOptions GetDefaultMatShaderOpts(const Hmx::Object *obj, RndMat *mat) {
+    MatShaderOptions opts;
+    const RndMesh *mesh = dynamic_cast<const RndMesh *>(obj);
+    if (mesh) {
+        if (mesh->Mat() == mat) {
+            opts.SetLast5(0x12);
+            opts.SetHasBones(mesh->NumBones() != 0);
+            opts.SetHasAOCalc(mesh->HasAOCalc());
+        }
+    } else {
+        const RndMultiMesh *multimesh = dynamic_cast<const RndMultiMesh *>(obj);
+        if (multimesh) {
+            const RndMesh *mesh = multimesh->Mesh();
+            if (mesh && mesh->Mat()) {
+                if (mesh->Mat() == mat) {
+                    int mask = mesh->TransConstraint()
+                            == RndTransformable::kConstraintFastBillboardXYZ
+                        ? 0xD
+                        : 0xC;
+                    opts.SetLast5(mask);
+                    opts.SetHasBones(false);
+                    opts.SetHasAOCalc(mesh->HasAOCalc());
+                }
+            }
+        } else {
+            const RndParticleSys *partSys = dynamic_cast<const RndParticleSys *>(obj);
+            if (partSys) {
+                if (partSys->GetMat() == mat) {
+                    opts.SetLast5(0xE);
+                }
+            } else {
+                const RndFlare *flare = dynamic_cast<const RndFlare *>(obj);
+                if (flare) {
+                    if (flare->GetMat() == mat) {
+                        opts.SetLast5(6);
+                    }
+                }
+            }
+        }
+    }
+    return opts;
+}
+
+const char *MovieExtension(const char *name, Platform p) {
+    const char *ext;
+    if (stricmp(name, "xbv") == 0) {
+        // xbox, pc, ps3, or wii only
+        if (p >= kPlatformXBox && p <= kPlatformWii) {
+            return "xbv";
+        }
+        return name;
+    } else
+        return nullptr;
+}
+
+float ConvertFov(float a, float b) {
+    float x = tanf(0.5f * a);
+    return atanf(b * x) * 2;
+}
+
+void PreMultiplyAlpha(Hmx::Color &c) {
+    c.red *= c.alpha;
+    c.green *= c.alpha;
+    c.blue *= c.alpha;
+}
+
+int GenerationCount(RndTransformable *t1, RndTransformable *t2) {
+    if (t1 && t2) {
+        int count = 0;
+        for (; t2 != nullptr; t2 = t2->TransParent()) {
+            if (t2 == t1)
+                return count;
+            count++;
+        }
+    }
+    return 0;
+}
+
+void CreateAndSetMetaMat(RndMat *mat) {
+    MILO_ASSERT(mat, 0x124A);
+    if (!mat->GetMetaMaterial()) {
+        MetaMaterial *metaMat = mat->CreateMetaMaterial(false);
+        mat->SetMetaMat(metaMat, true);
+    }
+}
+
+bool ShouldStrip(RndTransformable *trans) {
+    if (trans) {
+        const char *name = trans->Name();
+        if (name) {
+            return strnicmp("bone_", name, 5) == 0 || strnicmp("exo_", name, 4) == 0
+                || strncmp("spot_", name, 5) == 0;
+        } else
+            return false;
+    } else
+        return false;
+}
+
+bool AnimContains(const RndAnimatable *anim1, const RndAnimatable *anim2) {
+    if (anim1 == anim2)
+        return true;
+    else {
+        std::list<RndAnimatable *> children;
+        anim1->ListAnimChildren(children);
+        for (std::list<RndAnimatable *>::iterator it = children.begin();
+             it != children.end();
+             ++it) {
+            if (AnimContains(*it, anim2))
+                return true;
+        }
+        return false;
+    }
+}
+
+RndMat *GetMat(RndDrawable *draw) {
+    std::list<RndMat *> mats;
+    draw->Mats(mats, false);
+    RndMat *ret;
+    if (mats.empty())
+        ret = 0;
+    else
+        ret = mats.front();
+    return ret;
+}
+
+bool SortDraws(RndDrawable *draw1, RndDrawable *draw2) {
+    if (draw1->GetOrder() != draw2->GetOrder())
+        return draw1->GetOrder() < draw2->GetOrder();
+    else {
+        RndMat *mat1 = GetMat(draw1);
+        RndMat *mat2 = GetMat(draw2);
+        if (mat1 != mat2) {
+            return mat1 < mat2;
+        } else
+            return strcmp(draw1->Name(), draw2->Name()) < 0;
+    }
+}
+
+bool SortPolls(const RndPollable *p1, const RndPollable *p2) {
+    if (p1->PollEnabled() != p2->PollEnabled()) {
+        return p1->PollEnabled();
+    } else {
+        return strcmp(p1->Name(), p2->Name()) < 0;
+    }
+}
+
+bool LeftHanded(const Hmx::Matrix3 &m) {
+    float det = m.z.x * (m.x.y * m.y.z - m.x.z * m.y.y)
+        + m.z.y * (m.x.z * m.y.x - m.x.x * m.y.z)
+        + m.z.z * (m.x.x * m.y.y - m.x.y * m.y.x);
+    return det < 0;
+}
+
+bool BadUV(Vector2 &v) {
+    if (fabsf(v.x) > 1000.0f || fabsf(v.y) > 1000.0f) {
+        return true;
+    } else {
+        if (NearlyZero(v.x)) {
+            v.x = 0;
+        }
+        if (NearlyZero(v.y)) {
+            v.y = 0;
+        }
+        return false;
+    }
+}
+
+void SetLocalScale(RndTransformable *t, const Vector3 &vec) {
+    Hmx::Matrix3 m;
+    Normalize(t->LocalXfm().m, m);
+    Scale(vec, m, m);
+    t->SetLocalRot(m);
+}
+
+void CalcBox(RndMesh *m, Box &b) {
+    FOREACH (it, m->Verts()) {
+        Vector3 vec;
+        Multiply(it->pos, m->WorldXfm(), vec);
+        b.GrowToContain(vec, it == m->Verts().begin());
+    }
+}
+
+void ClearAO(RndMesh *m) {
+    if (m->HasAOCalc()) {
+        for (uint i = 0; i < m->Verts().size(); i++) {
+            m->Verts(i).color.Set(1, 1, 1, 1);
+        }
+        m->SetHasAOCalc(false);
+        m->Sync(0x1F);
+    }
+}
+
+void ListDrawGroups(RndDrawable *draw, ObjectDir *dir, std::list<RndGroup *> &gList) {
+    for (ObjDirItr<RndGroup> it(dir, true); it != 0; ++it) {
+        if (VectorFind(it->Draws(), draw)) {
+            gList.push_back(it);
+        }
+    }
+}
+
+void ResetColors(std::vector<Hmx::Color> &colors, int newNumColors) {
+    Hmx::Color reset(1, 1, 1, 1);
+    colors.resize(newNumColors);
+    for (int i = 0; i < newNumColors; i++) {
+        colors[i] = reset;
+    }
+}
+
+void UtilDrawString(const char *c, const Vector3 &v, const Hmx::Color &col) {
+    Vector2 v2;
+    if (RndCam::Current()->WorldToScreen(v, v2) > 0) {
+        v2.x *= TheRnd.Width();
+        v2.y *= TheRnd.Height();
+        TheRnd.DrawString(c, v2, col, true);
+    }
+}
+
+void UtilDrawBox(const Transform &tf, const Box &box, const Hmx::Color &col, bool b4) {
+    Vector3 vecs[8] = { Vector3(box.mMin.x, box.mMin.y, box.mMin.z),
+                        Vector3(box.mMin.x, box.mMax.y, box.mMin.z),
+                        Vector3(box.mMax.x, box.mMax.y, box.mMin.z),
+                        Vector3(box.mMax.x, box.mMin.y, box.mMin.z),
+                        Vector3(box.mMin.x, box.mMin.y, box.mMax.z),
+                        Vector3(box.mMin.x, box.mMax.y, box.mMax.z),
+                        Vector3(box.mMax.x, box.mMax.y, box.mMax.z),
+                        Vector3(box.mMax.x, box.mMin.y, box.mMax.z) };
+    for (int i = 0; i < 8; i++) {
+        Multiply(vecs[i], tf, vecs[i]);
+    }
+    TheRnd.DrawLine(vecs[0], vecs[1], col, b4);
+    TheRnd.DrawLine(vecs[1], vecs[2], col, b4);
+    TheRnd.DrawLine(vecs[2], vecs[3], col, b4);
+    TheRnd.DrawLine(vecs[3], vecs[0], col, b4);
+
+    TheRnd.DrawLine(vecs[0], vecs[4], col, b4);
+    TheRnd.DrawLine(vecs[1], vecs[5], col, b4);
+    TheRnd.DrawLine(vecs[2], vecs[6], col, b4);
+    TheRnd.DrawLine(vecs[3], vecs[7], col, b4);
+
+    TheRnd.DrawLine(vecs[4], vecs[5], col, b4);
+    TheRnd.DrawLine(vecs[5], vecs[6], col, b4);
+    TheRnd.DrawLine(vecs[6], vecs[7], col, b4);
+    TheRnd.DrawLine(vecs[7], vecs[4], col, b4);
+}
+
+void UtilDrawAxes(const Transform &tf, float f, const Hmx::Color &c) {
+    Vector3 vec38;
+    Hmx::Color c48;
+    ScaleAdd(tf.v, tf.m.x, f, vec38);
+    Interp(c, Hmx::Color(1, 0, 0), 0.8f, c48);
+    TheRnd.DrawLine(tf.v, vec38, c48, false);
+
+    ScaleAdd(tf.v, tf.m.y, f, vec38);
+    Interp(c, Hmx::Color(0, 1, 0), 0.8f, c48);
+    TheRnd.DrawLine(tf.v, vec38, c48, false);
+
+    ScaleAdd(tf.v, tf.m.z, f, vec38);
+    Interp(c, Hmx::Color(0, 0, 1), 0.8f, c48);
+    TheRnd.DrawLine(tf.v, vec38, c48, false);
+}
+
+void UtilDrawLine(const Vector2 &v1, const Vector2 &v2, const Hmx::Color &color) {
+    RndCam *cam = RndCam::Current();
+    float planeRatio = (cam->FarPlane() - cam->NearPlane()) / 10.0f + cam->NearPlane();
+    Vector3 v3_1, v3_2;
+    cam->ScreenToWorld(v1, planeRatio, v3_1);
+    cam->ScreenToWorld(v2, planeRatio, v3_2);
+    TheRnd.DrawLine(v3_1, v3_2, color, false);
+}
+
+void UtilDrawRect2D(const Vector2 &v1, const Vector2 &v2, const Hmx::Color &color) {
+    Vector2 cross1(v2.x, v1.y);
+    Vector2 cross2(v1.x, v2.y);
+    UtilDrawLine(v1, cross1, color);
+    UtilDrawLine(cross1, v2, color);
+    UtilDrawLine(v2, cross2, color);
+    UtilDrawLine(cross2, v1, color);
+}

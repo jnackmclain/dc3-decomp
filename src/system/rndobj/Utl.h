@@ -20,6 +20,7 @@ void ResetColors(std::vector<Hmx::Color> &colors, int newNumColors);
 void RndScaleObject(Hmx::Object *, float, float);
 
 float ConvertFov(float, float);
+void PreMultiplyAlpha(Hmx::Color &);
 
 bool SortDraws(RndDrawable *, RndDrawable *);
 bool SortPolls(const RndPollable *, const RndPollable *);
@@ -38,6 +39,8 @@ void UtilDrawSphere(const Vector3 &, float, const Hmx::Color &, RndMat *);
 void UtilDrawLine(const Vector2 &, const Vector2 &, const Hmx::Color &);
 void UtilDrawString(const char *, const Vector3 &, const Hmx::Color &);
 void UtilDrawAxes(const Transform &, float, const Hmx::Color &);
+void UtilDrawBox(const Transform &tf, const Box &box, const Hmx::Color &col, bool b4);
+void UtilDrawRect2D(const Vector2 &v1, const Vector2 &v2, const Hmx::Color &color);
 
 void TransformKeys(RndTransAnim *, const Transform &);
 void SpliceKeys(RndTransAnim *, RndTransAnim *, float, float);

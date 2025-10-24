@@ -68,6 +68,7 @@ public:
     void SetShowing(bool);
     bool Showing() const { return mShowing; }
     void SetOrder(float order) { mOrder = order; }
+    float GetOrder() const { return mOrder; }
     RndDrawable *Collide(const Segment &, float &, Plane &);
     bool CollideSphere(const Segment &);
     void SetSphere(const Sphere &s) { mSphere = s; }

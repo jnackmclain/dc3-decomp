@@ -60,6 +60,7 @@ public:
     static void Init() { REGISTER_OBJ_FACTORY(RndDir) }
 
     void SetEnv(RndEnviron *env) { mEnv = env; }
+    RndEnviron *GetEnv() const { return mEnv; }
     void SyncDrawables();
 
 protected:

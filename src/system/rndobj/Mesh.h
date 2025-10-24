@@ -170,6 +170,8 @@ public:
     int NumBones() const { return mBones.size(); }
     void SetMutable(int m) { mGeomOwner->mMutable = m; }
     int GetMutable() const { return mGeomOwner->mMutable; }
+    bool HasAOCalc() const { return mGeomOwner->mHasAOCalc; }
+    void SetHasAOCalc(bool calc) { mGeomOwner->mHasAOCalc = calc; }
     void InstanceGeomOwnerBones();
     void DeleteBones(bool);
     void BurnXfm();
