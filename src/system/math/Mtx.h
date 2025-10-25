@@ -335,6 +335,7 @@ inline void Multiply(const Frustum &fin, const Transform &tf, Frustum &fout) {
 }
 void Transpose(const Transform &, Transform &);
 void Invert(const Hmx::Matrix3 &, Hmx::Matrix3 &);
+void FastInvert(const Hmx::Matrix3 &, Hmx::Matrix3 &);
 void Multiply(const Hmx::Matrix3 &, const Hmx::Matrix3 &, Hmx::Matrix3 &);
 
 inline void MultiplyInverse(const Transform &t1, const Transform &t2, Transform &tres) {

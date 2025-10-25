@@ -66,6 +66,8 @@ namespace Hmx {
             blue = ((packed >> 0x10) & 255) / 255.0f;
             alpha = ((packed >> 0x18) & 255) / 255.0f;
         }
+
+        float &operator[](int i) { return *(&red + i); }
     };
 }
 

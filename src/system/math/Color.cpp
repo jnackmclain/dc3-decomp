@@ -7,36 +7,69 @@ TextStream &operator<<(TextStream &ts, const Hmx::Color &color) {
     return ts;
 }
 
-void MakeColor(float f1, float f2, float f3, Hmx::Color &color) {
-    if (f2 == 0) {
-        color.Set(f3, f3, f3);
+void MakeColor(float h, float s, float l, Hmx::Color &color) {
+    if (s == 0) {
+        color.Set(l, l, l);
         return;
     }
-    // more...
+    float q; // upper lightness mix
+    if (l < 0.5f) {
+        q = (s + 1.0f) * l;
+    } else {
+        q = -(s * l - (s + l));
+    }
+    float p = l * 2.0f - q; // lower lightness mix
+    for (int i = 0; i < 3; i++) {
+        float t; // hue offset per channel
+        if (i == 0) {
+            t = h + (1.0f / 3.0f);
+        } else if (i == 1) {
+            t = h;
+        } else {
+            t = h - (1.0f / 3.0f);
+        }
+
+        if (t < 0) {
+            t += 1;
+        } else if (t > 1) {
+            t -= 1;
+        }
+
+        if (t * 6.0f < 1.0f) {
+            color[i] = (q - p) * t * 6.0f + p;
+        } else if (t * 2.0f < 1.0f) {
+            color[i] = q;
+        } else if (t * 3.0f < 2.0f) {
+            t = (2.0f / 3.0f) - t;
+            color[i] = (q - p) * t * 6.0f + p;
+        } else {
+            color[i] = p;
+        }
+    }
 }
 
-void MakeHSL(const Hmx::Color &color, float &f1, float &f2, float &f3) {
+void MakeHSL(const Hmx::Color &color, float &h, float &s, float &l) {
     float maxCol = Max(color.red, color.green, color.blue);
     float minCol = Min(color.red, color.green, color.blue);
-    f3 = (maxCol + minCol) / 2.0f;
+    l = (maxCol + minCol) / 2.0f;
     if (maxCol == minCol) {
-        f1 = 0;
-        f2 = 0;
+        h = 0;
+        s = 0;
     } else {
         float deltaCol = maxCol - minCol;
-        if (f3 < 0.5f)
-            f2 = deltaCol / (minCol + maxCol);
+        if (l < 0.5f)
+            s = deltaCol / (minCol + maxCol);
         else
-            f2 = deltaCol / ((2.0f - maxCol) - minCol);
+            s = deltaCol / ((2.0f - maxCol) - minCol);
         if (color.red == maxCol) {
-            f1 = (color.green - color.blue) / deltaCol;
+            h = (color.green - color.blue) / deltaCol;
         } else if (color.green == maxCol) {
-            f1 = (color.blue - color.red) / deltaCol + 2.0f;
+            h = (color.blue - color.red) / deltaCol + 2.0f;
         } else {
-            f1 = (color.red - color.green) / deltaCol + 4.0f;
+            h = (color.red - color.green) / deltaCol + 4.0f;
         }
-        f1 /= 6.0f;
-        if (f1 < 0.0f)
-            f1 += 1.0f;
+        h /= 6.0f;
+        if (h < 0.0f)
+            h += 1.0f;
     }
 }
