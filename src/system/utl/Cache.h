@@ -1,6 +1,6 @@
 #pragma once
-
 #include "utl/MemMgr.h"
+
 enum OpType {
     kOpNone = 0,
     kOpDirectory = 1,

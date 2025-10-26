@@ -22,6 +22,7 @@ public:
     int Age() const { return mAge; }
     void IncrementAge() { mAge++; }
     void ResetAge() { mAge = 0; }
+    short Version() const { return mVersion; }
 
 private:
     static int sSaveVer;
