@@ -41,35 +41,66 @@ public:
     // SongMgr
     virtual void Init();
     virtual void Terminate() {}
-    virtual const SongMetadata *Data(int) const;
-    virtual SongInfo *SongAudioData(int) const = 0;
+    /** Get the song metadata associated with the supplied song ID.
+     * @param [in] songID The song ID.
+     * @returns The corresponding song metadata.
+     */
+    virtual const SongMetadata *Data(int songID) const;
+    /** Get the song audio data associated with the supplied song ID. */
+    virtual SongInfo *SongAudioData(int songID) const = 0;
     virtual char const *AlternateSongDir() const { return "songs/updates/"; }
-    virtual void GetContentNames(Symbol, std::vector<Symbol> &) const;
+    /** Add a song's content name to the given vector of names.
+     * @param [in] shortname The song's shortname.
+     * @param [out] names The collection of song content names.
+     */
+    virtual void GetContentNames(Symbol shortname, std::vector<Symbol> &names) const;
     virtual bool SongCacheNeedsWrite() const { return mSongCacheNeedsWrite; }
     virtual void ClearSongCacheNeedsWrite() { mSongCacheNeedsWrite = false; }
-    virtual void ClearCachedContent(void);
-    virtual Symbol GetShortNameFromSongID(int, bool) const = 0;
-    virtual int GetSongIDFromShortName(Symbol, bool) const = 0;
+    virtual void ClearCachedContent();
+    /** Get the song shortname associated with the supplied song ID.
+     * @param [in] songID The song ID.
+     * @param [in] fail If true, and the song can't be found, fail the system.
+     * @returns The corresponding song shortname.
+     */
+    virtual Symbol GetShortNameFromSongID(int songID, bool fail) const = 0;
+    /** Get the song ID associated with the supplied song shortname.
+     * @param [in] shortname The song shortname.
+     * @param [in] fail If true, and the song can't be found, fail the system.
+     * @returns The corresponding song ID.
+     */
+    virtual int GetSongIDFromShortName(Symbol shortname, bool fail) const = 0;
 
-    SongInfo *SongAudioData(Symbol) const;
+    /** Get the song audio data associated with the supplied shortname. */
+    SongInfo *SongAudioData(Symbol shortname) const;
     bool IsSongCacheWriteDone() const;
     char const *GetCachedSongInfoName() const;
-    char const *SongPath(Symbol, int) const;
+    char const *SongPath(Symbol shortname, int version) const;
     char const *SongFilePath(Symbol, char const *, int) const;
-    void DumpSongMgrContents(bool);
-    bool HasSong(int) const;
-    bool HasSong(Symbol, bool) const;
-    int GetCachedSongInfoSize(void) const;
+    /** Dump the contents of the SongMgr to the console.
+     * @param [in] all If true, print all the songs we have. Else, skip non-DLC songs.
+     */
+    void DumpSongMgrContents(bool all);
+    /** Do we have the supplied songID in our list of available songs? */
+    bool HasSong(int songID) const;
+    /** Do we have the supplied shortname in our list of available songs? */
+    bool HasSong(Symbol shortname, bool fail) const;
+    int GetCachedSongInfoSize() const;
     bool IsSongMounted(Symbol) const;
     bool SaveCachedSongInfo(BufStream &);
-    bool IsContentUsedForSong(Symbol, int) const;
+    /** Does the supplied content file name house the supplied song ID? */
+    bool IsContentUsedForSong(Symbol contentName, int songID) const;
     void StartSongCacheWrite();
-    void ClearFromCache(Symbol);
-    char const *ContentName(int) const;
-    char const *ContentName(Symbol, bool) const;
+    /** Remove the supplied content file name from the cache. */
+    void ClearFromCache(Symbol contentName);
+    /** Given a songID, get the name of the content file it comes from. */
+    const char *ContentName(int songID) const;
+    /** Given a shortname, get the name of the content file it comes from. */
+    const char *ContentName(Symbol shortname, bool fail) const;
     bool LoadCachedSongInfo(BufStream &);
-    bool SongIDInContent(Symbol key) {
-        return mSongIDsInContent.find(key) != mSongIDsInContent.end();
+
+    /** Do we have this content file name in our records? */
+    bool HasContent(Symbol contentName) {
+        return mSongIDsInContent.find(contentName) != mSongIDsInContent.end();
     }
 
 protected:
@@ -89,26 +120,31 @@ protected:
     char const *ContentNameRoot(Symbol) const;
     int NumSongsInContent(Symbol) const;
     void SetState(SongMgrState);
-    void OnCacheMountResult(int);
-    void OnCacheWriteResult(int);
-    void OnCacheUnmountResult(int);
+    void OnCacheMountResult(int result);
+    void OnCacheWriteResult(int result);
+    void OnCacheUnmountResult(int result);
     void CacheSongData(DataArray *, DataLoader *, ContentLocT, Symbol);
 
+    /** The available songs we can select in-game. Key = song ID */
     std::set<int> mAvailableSongs; // 0x30
     std::map<int, SongMetadata *> mUncachedSongMetadata; // 0x48
+    /** The current state of the SongMgr. */
     SongMgrState mState; // 0x60
     std::map<int, SongMetadata *> mCachedSongMetadata; // 0x64
+    /** A collection of content files (CON/LIVES), and the song IDs inside each file.
+        Key = content file name (i.e. RBMEGAPACK01OF10); Value = the song IDs.
+    */
     std::map<Symbol, std::vector<int> > mSongIDsInContent; // 0x7c
+    /** A collection of song IDs, and the contents they came from.
+        Key = song ID;
+        Value = the content file name (i.e. RBMEGAPACK01OF10) that houses this song
+    */
     std::map<int, Symbol> mContentUsedForSong; // 0x94
-    std::map<Symbol, String> unkmap5; // 0xac
+    // key = content file name. value = root name???
+    std::map<Symbol, String> unkmap5; // 0xac - mounted content?
     CacheID *mSongCacheID; // 0xc4
     Cache *mSongCache; // 0xc8
     bool unkcc; // 0xcc
     bool mSongCacheNeedsWrite; // 0xcd
     bool mSongCacheWriteAllowed; // 0xce
 };
-
-int GetSongID(DataArray *, DataArray *);
-int CountSongsInArray(DataArray *);
-
-extern SongMgr *TheBaseSongManager;

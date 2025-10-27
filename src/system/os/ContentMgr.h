@@ -55,7 +55,7 @@ public:
         Callback() {}
         virtual ~Callback() {}
         virtual void ContentStarted() {}
-        virtual bool ContentDiscovered(Symbol) { return true; }
+        virtual bool ContentDiscovered(Symbol contentName) { return true; }
         virtual bool ContentTitleDiscovered(unsigned int, Symbol) { return true; }
         virtual void ContentMountBegun(int) {}
         virtual void ContentAllMounted() {}
