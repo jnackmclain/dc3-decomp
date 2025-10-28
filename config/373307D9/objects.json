@@ -950,7 +950,7 @@
             "system/utl/Magnu.cpp": "NonMatching",
             "system/utl/MakeString.cpp": "NonMatching",
             "system/utl/MeasureMap.cpp": "NonMatching",
-            "system/utl/MemHeap.cpp": "MISSING",
+            "system/utl/MemHeap.cpp": "NonMatching",
             "system/utl/MemMgr.cpp": "NonMatching",
             "system/utl/MemPoint.cpp": "MISSING",
             "system/utl/MemStats.cpp": "NonMatching",

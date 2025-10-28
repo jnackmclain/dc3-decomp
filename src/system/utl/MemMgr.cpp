@@ -12,6 +12,9 @@
 #include "xdk/XAPILIB.h"
 #include <cstdlib>
 
+#define MAX_HEAPS 16
+#define MAX_BUF_THREADS 32
+
 const char *gStlAllocName = "StlAlloc";
 bool gStlAllocNameLookup = false;
 

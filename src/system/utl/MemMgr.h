@@ -5,9 +5,6 @@ extern bool gStlAllocNameLookup;
 extern class CriticalSection *gMemLock;
 extern class CriticalSection *gMemStackLock;
 
-#define MAX_HEAPS 16
-#define MAX_BUF_THREADS 32
-
 void PhysDelta(const char *);
 bool MemUseLowestMip();
 

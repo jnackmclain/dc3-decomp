@@ -27,13 +27,22 @@ public:
     void Print(class TextStream &, bool);
     void Init(const char *, int, int *, int, bool, Strategy, int, bool);
     int AllocSize(int *);
+    void FreeBlockStats(int &, int &, int &, int &, int &);
+    void FirstFit(int, int, FreeBlockInfo &);
+    void BestFit(int, int, FreeBlockInfo &);
+    void LRUFit(int, int, FreeBlockInfo &);
+    void LastFit(int, int, FreeBlockInfo &);
 
     const char *Name() const { return mName; }
     int SizeWords() const { return mSizeWords; }
     int *Start() const { return mStart; }
     int *End() const { return mStart + mSizeWords; }
 
+    static int GetSizeWords(int);
+
 private:
+    void InsertFreeBlock(FreeBlock *, int, FreeBlock *, FreeBlock *, int);
+
     FreeBlock *mFreeBlockChain; // 0x0
     int *mStart; // 0x4
     const char *mName; // 0x8
