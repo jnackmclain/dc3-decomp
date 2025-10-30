@@ -333,7 +333,7 @@ void DirLoader::WriteTypeMemDump(TextFileStream *file) {
         file->Print(it->first.c_str());
         *file << "," << pt.ToString(1) << "\n";
     }
-    file->mFile.Flush();
+    file->File().Flush();
 }
 
 void DirLoader::Cleanup(const char *str) {

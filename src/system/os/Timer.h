@@ -41,6 +41,9 @@ public:
         sSlowFrameWaiver = 0;
     }
 
+    static Timer &SlowFrameTimer() { return sSlowFrameTimer; }
+    static float SlowFrameWaiver() { return sSlowFrameWaiver; }
+
     Timer();
     Timer(DataArray *);
 
@@ -105,8 +108,13 @@ public:
     void Reset();
     void Restart();
 
+    Symbol Name() const { return mName; }
     float Ms() { return CyclesToMs(mCycles); }
     float GetLastMs() { return mLastMs; }
+    float GetWorstMs() { return mWorstMs; }
+    float Budget() const { return mBudget; }
+    bool Draw() const { return mDraw; }
+    void SetDraw(bool draw) { mDraw = draw; }
     void SetLastMs(float ms);
 };
 
@@ -127,6 +135,8 @@ private:
 public:
     TimerStats(DataArray *);
 
+    bool Critical() const { return mCritical; }
+
     void CollectStats(float, bool, int);
     void PrintPctile(float);
     void Dump(const char *, int);
@@ -135,33 +145,50 @@ public:
 
 typedef void (*AutoTimerCallback)(float elapsed, void *context);
 
+class AutoSlowFrame {
+public:
+    static int sDepth;
+
+    AutoSlowFrame(const char *reason, float);
+    ~AutoSlowFrame();
+};
+
+class AutoGlitchReport {
+public:
+    AutoGlitchReport(float, const char *);
+    ~AutoGlitchReport();
+    static void EnableCallback();
+    static void EndExternal(float, float, const char *, AutoTimerCallback, void *);
+    static void SendCallback(float, float, const char *, AutoTimerCallback, void *);
+    static int sDepth;
+};
+
 class AutoTimer {
 public:
-    AutoTimer(Timer *t, float limit, AutoTimerCallback callback, void *context);
-    //     : mTimer(t) {
-    //     if (mTimer) {
-    //         mTimeLimit = limit;
-    //         mCallback = callback;
-    //         mContext = context;
-    //         mTimer->Start();
-    //     }
-    // }
-    ~AutoTimer();
+    AutoTimer(Timer *t, float limit, AutoTimerCallback callback, void *context) {
+        mTimeLimit = limit;
+        mCallback = callback;
+        mContext = context;
+        mTimer = t;
+        if (mTimer) {
+            if (MainThread()) {
+                AutoGlitchReport::sDepth++;
+            }
+            mTimer->Start();
+        }
+    }
 
-    // ~AutoTimer() {
-    //     if (mTimer)
-    //         mTimer->Stop();
-    // }
-
-    Timer *mTimer;
-    float mTimeLimit;
-    AutoTimerCallback mCallback;
-    void *mContext;
-
-    static int sCritFrameCount;
-    static bool sCriticalFrame;
-    static bool sCollectingStats;
-    static std::vector<std::pair<Timer, TimerStats> > sTimers;
+    ~AutoTimer() {
+        if (mTimer) {
+            AutoGlitchReport::EndExternal(
+                Timer::CyclesToMs(mTimer->Stop()),
+                mTimeLimit,
+                mTimer->Name().Str(),
+                mCallback,
+                mContext
+            );
+        }
+    }
 
     static Timer *GetTimer(Symbol);
     static void DumpTimerStats();
@@ -172,6 +199,17 @@ public:
     static void PrintTimers(bool);
     static void Init();
     static void ResetTimers();
+
+private:
+    Timer *mTimer; // 0x0
+    float mTimeLimit; // 0x4
+    AutoTimerCallback mCallback; // 0x8
+    void *mContext; // 0xc
+
+    static bool sCriticalFrame;
+    static bool sCollectingStats;
+    static int sCritFrameCount;
+    static std::list<std::pair<Timer, TimerStats> > sTimers;
 };
 
 #ifdef MILO_DEBUG
@@ -189,20 +227,5 @@ public:
         START_AUTO_TIMER(name);                                                          \
         action;                                                                          \
     }
-
-class AutoSlowFrame {
-public:
-    static int sDepth;
-
-    AutoSlowFrame(const char *reason, float);
-    ~AutoSlowFrame();
-};
-
-class AutoGlitchReport {
-public:
-    AutoGlitchReport(float, const char *);
-    ~AutoGlitchReport();
-    static void EnableCallback();
-};
 
 const char *FormatTime(float);

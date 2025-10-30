@@ -1,4 +1,5 @@
 #include "os/Debug.h"
+#include "os/OSFuncs.h"
 #include "os/System.h"
 #include <vector>
 
@@ -46,13 +47,21 @@ Debug::Debug()
       mFailThreadMsg(0), mNotifyThreadMsg(0), unk10c(0), unk110(0) {}
 
 void Debug::RemoveExitCallback(ExitCallbackFunc *func) {
-    // TODO:
-    // target:
-    // ?remove@?$list@P6AXXZV?$StlNodeAlloc@P6AXXZ@stlpmtx_std@@@stlpmtx_std@@QAAXABQ6AXXZ@Z
-    // base: ?remove@?$_List_impl@PAXV?$allocator@PAX@stlp_std@@@stlp_std@@QAAXABQAX@Z
     if (!mExiting) {
         mExitCallbacks.remove(func);
     }
 }
 
 Debug::~Debug() { StopLog(); }
+
+void Debug::Print(const char *msg) {
+    if (mLog) {
+        mLog->Print(msg);
+        if (mAlwaysFlush) {
+            mLog->File().Flush();
+        }
+    }
+    if (MainThread() && mReflect) {
+        mReflect->Print(msg);
+    }
+}

@@ -27,7 +27,7 @@ u32 gMainThreadID = -1;
 
 void ThreadCallInit() {}
 
-void ThreadCall(ThreadCallFunc, ThreadCallCallbackFunc) {}
+void ThreadCall(ThreadCallFunc *, ThreadCallCallbackFunc *) {}
 
 void ThreadCallPreInit() { gMainThreadID = GetCurrentThreadId(); }
 

@@ -8,5 +8,8 @@ public:
     virtual ~TextFileStream() {}
     virtual void Print(const char *);
 
+    FileStream &File() { return mFile; }
+
+private:
     FileStream mFile;
 };
