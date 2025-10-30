@@ -11,11 +11,16 @@ typedef void FixedStringFunc(FixedString &);
 class Debug : public TextStream {
 public:
     enum ModalType {
+        kModalWarn = 0,
+        kModalNotify = 1,
+        kModalFail = 2
     };
 
     typedef void ModalCallbackFunc(ModalType &, FixedString &, bool);
 
 private:
+    void Modal(ModalType &, const char *, void *);
+
     bool mNoDebug; // 0x4
     bool mFailing; // 0x5
     bool mExiting; // 0x6
@@ -61,7 +66,6 @@ public:
     void Init();
     ModalCallbackFunc *SetModalCallback(ModalCallbackFunc *);
     void Exit(int, bool);
-    void Modal(bool &, const char *);
     void Warn(const char *msg);
     void Notify(const char *msg);
     void Fail(const char *msg, void *);

@@ -8,7 +8,20 @@
 #include "math/Utl.h"
 #include "utl/Std.h"
 
+bool AutoTimer::sCriticalFrame;
+bool AutoTimer::sCollectingStats;
 bool gGlitchCallback;
+int AutoTimer::sCritFrameCount;
+float Timer::sLowCycles2Ms;
+float Timer::sHighCycles2Ms;
+double Timer::sDoubleCycles2Ms;
+float Timer::sSlowFrameWaiver;
+int AutoSlowFrame::sDepth;
+const char *Timer::sSlowFrameReason;
+int AutoGlitchReport::sDepth;
+Timer Timer::sSlowFrameTimer;
+std::list<std::pair<Timer, TimerStats> > AutoTimer::sTimers;
+std::list<Symbol> sConditionalTimersEnabled;
 
 #pragma region Timer
 
