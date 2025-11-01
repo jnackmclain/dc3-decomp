@@ -8,3 +8,4 @@ void HolmesClientPrint(const char *);
 void HolmesClientTerminate();
 void HolmesClientInit();
 NetAddress HolmesResolveIP();
+void HolmesClientPollKeyboard();

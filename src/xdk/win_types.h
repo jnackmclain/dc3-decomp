@@ -10,6 +10,7 @@ extern "C" {
 
 typedef int BOOL;
 typedef u8 BYTE;
+typedef u16 WORD;
 typedef u32 DWORD;
 typedef u64 DWORDLONG;
 typedef u32 DWORD32;
@@ -17,6 +18,7 @@ typedef u64 DWORD64;
 
 typedef char CCHAR;
 typedef char CHAR;
+typedef wchar_t WCHAR;
 typedef s32 INT;
 typedef s32 INT_PTR;
 typedef s8 INT8;

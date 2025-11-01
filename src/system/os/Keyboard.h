@@ -23,3 +23,6 @@ bool GetShift() const { return mData->Int(3); }
 bool GetCtrl() const { return mData->Int(4); }
 bool GetAlt() const { return mData->Int(5); }
 END_MESSAGE
+
+DECLARE_MESSAGE(KeyboardKeyReleaseMsg, "key_release")
+END_MESSAGE

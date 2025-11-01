@@ -42,6 +42,7 @@ namespace std {
     using ::printf;
     using ::snprintf;
     using ::sprintf;
+    using ::_snprintf;
 
     using ::vfprintf;
     using ::vprintf;

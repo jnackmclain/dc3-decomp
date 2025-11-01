@@ -27,6 +27,7 @@ int printf(const char *format, ...);
 int fprintf(FILE *stream, const char *format, ...);
 int sprintf(char *buffer, const char *format, ...);
 int snprintf(char *buffer, size_t bufsz, const char *format, ...);
+int _snprintf(char *buffer, size_t bufsz, const char *format, ...);
 
 int vprintf(const char *format, va_list vlist);
 int vfprintf(FILE *stream, const char *format, va_list vlist);
