@@ -2,9 +2,12 @@
 #include "utl/Str.h"
 #include <stdlib.h>
 
+#define FILE_OPEN_WRITE 1
+#define FILE_OPEN_READ 2
 #define FILE_OPEN_NOARK 0x10000
 
 extern bool gNullFiles;
+extern bool gFakeFileErrors;
 
 class File {
 public:

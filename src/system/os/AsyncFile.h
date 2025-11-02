@@ -1,12 +1,9 @@
 #pragma once
 #include "os/File.h"
 
-#define FILE_OPEN_WRITE 1
-#define FILE_OPEN_READ 2
-
 class AsyncFile : public File {
 public:
-    AsyncFile(const char *, int);
+    AsyncFile(const char *filename, int mode);
     virtual ~AsyncFile();
     virtual class String Filename() const { return mFilename; }
     virtual int Read(void *, int);
