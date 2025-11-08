@@ -35,6 +35,9 @@ enum LoadState {
     kLS_Resync
 };
 
+enum NetLoaderPos {
+};
+
 struct NetLoaderRef {
 public:
     void Poll();
@@ -76,6 +79,7 @@ public:
     void Unload();
     void Load(NetCacheMgr::CacheSize);
     void DeleteNetCacheLoader(NetCacheLoader *);
+    NetLoader *AddNetLoader(const char *, NetLoaderPos);
 
     int unk2c;
     bool unk30;
