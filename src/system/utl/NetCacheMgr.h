@@ -128,8 +128,6 @@ protected:
     FileCache *mCache; // 0x58
     std::list<NetLoaderRef> mNetLoaderRefs; // 0x5c
     int mLoadCount; // 0x64
-    u32 unk68;
-    bool unk6c;
 };
 
 void NetCacheMgrTerminate();

@@ -11,6 +11,7 @@
 #include "utl/Loader.h"
 #include "utl/MemMgr.h"
 #include "utl/NetCacheMgr.h"
+#include "utl/NetLoader_Xbox.h"
 
 const float NetLoaderStub::kNetSimKbPerSecond = 32.0f;
 const float NetLoaderStub::kNetSimInitialDelay = 0.2f;
@@ -49,7 +50,13 @@ char *NetLoader::DetachBuffer() {
     }
 }
 
-NetLoader *NetLoader::Create(const String &) { return 0; }
+NetLoader *NetLoader::Create(const String &str) {
+    if (TheNetCacheMgr->IsServerLocal()) {
+        return new NetLoaderStub(str);
+    } else {
+        return new NetLoaderXbox(str);
+    }
+}
 
 bool NetLoader::IsLoaded() { return mIsLoaded; }
 int NetLoader::GetSize() { return mSize; }

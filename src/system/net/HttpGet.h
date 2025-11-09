@@ -1,6 +1,7 @@
 #pragma once
 
 #include "os/Timer.h"
+#include "utl/MemMgr.h"
 #include "utl/Str.h"
 class HttpPost {
 public:
@@ -35,6 +36,8 @@ public:
     void Poll();
     void SetTimeout(float);
     unsigned int GetBufferSize();
+
+    MEM_OVERLOAD(HttpGet, 0x1C);
 
     int unk8;
     String unkc;
