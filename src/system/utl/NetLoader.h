@@ -6,6 +6,7 @@
 #include "utl/Str.h"
 
 enum NetLoaderFailType {
+    // file not found = 1
 };
 
 class NetLoader {
@@ -20,6 +21,7 @@ public:
     bool IsLoaded();
     char *GetBuffer();
     const char *GetRemotePath() const;
+    NetLoaderFailType GetFailType() const { return mFailType; }
     MEM_OVERLOAD(NetLoader, 0x18);
     static NetLoader *Create(const String &);
 

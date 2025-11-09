@@ -1,20 +1,19 @@
 #pragma once
+#include "os/FileCache.h"
 #include "utl/Loader.h"
 #include "utl/MemMgr.h"
+#include "utl/NetLoader.h"
 #include "utl/Str.h"
+
 class NetCacheLoader {
 public:
-    enum State { // copied from NetCacheMgr, probably not the same
-        kS_Load,
-        kS_Ready,
-        kS_UnloadWaitForWrite,
-        kS_UnloadUnmount,
-        kS_Failure,
-        kS_Max,
+    enum State {
+        // loaded = 3
+        // failed = 4
         kS_Nil = -1
     };
 
-    NetCacheLoader(class FileCache *, String const &);
+    NetCacheLoader(FileCache *, const String &);
     ~NetCacheLoader();
     bool IsLoaded() const;
     bool HasFailed() const;
@@ -26,14 +25,14 @@ public:
 
     MEM_OVERLOAD(NetCacheLoader, 0x1C);
 
-    State mState;
-    FileCache *mCache;
-    String unk8;
-    FileLoader *unk10;
-    int unk14;
-    int unk18;
-    int unk1c;
-    int unk20;
+    State mState; // 0x0
+    FileCache *mCache; // 0x4
+    String mRemotePath; // 0x8
+    FileLoader *mFileLoader; // 0x10
+    char *mFileLoaderBuffer; // 0x14
+    NetLoader *mNetLoader; // 0x18
+    char *mNetLoaderBuffer; // 0x1c
+    int unk20; // 0x20
 
 protected:
     void SetState(NetCacheLoader::State);
