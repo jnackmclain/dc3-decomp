@@ -15,21 +15,21 @@ Pool &GetPool() {
 }
 
 AllocInfo::AllocInfo(
-    int i1,
-    int i2,
-    const char *cc1,
-    void *v1,
-    signed char sc,
-    bool b,
-    unsigned char uc,
+    int requestedSize,
+    int actualSize,
+    const char *type,
+    void *mem,
+    signed char heap,
+    bool pooled,
+    unsigned char strat,
     const char *cc2,
     int i3,
     String &str1,
     String &str2
 )
-    : mReqSize(i1), mActSize(i2), mType(cc1), mMem(v1), mHeap(sc), mPooled(b), mStrat(uc),
-      unk15(cc2), unk19(i3), unk1d(s_pTrie->store(str1.c_str())),
-      unk21(s_pTrie->store(str2.c_str())) {
+    : mReqSize(requestedSize), mActSize(actualSize), mType(type), mMem(mem), mHeap(heap),
+      mPooled(pooled), mStrat(strat), unk15(cc2), unk19(i3),
+      unk1d(s_pTrie->store(str1.c_str())), unk21(s_pTrie->store(str2.c_str())) {
     FillStackTrace();
 }
 

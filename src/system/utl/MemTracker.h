@@ -12,6 +12,12 @@ class MemTracker {
 public:
     MemTracker(int, int);
     const AllocInfo *GetInfo(void *) const;
+    void Alloc(
+        int, int, const char *, void *, signed char, bool, unsigned char, const char *, int
+    );
+
+    static void *operator new(unsigned int);
+    static void operator delete(void *);
 
 private:
     static DataNode SpitAllocInfo(DataArray *);
@@ -25,8 +31,8 @@ private:
     int mCurStatTable; // 0x1817c
     AllocInfoVec mFreedInfos; // 0x18180
     TextStream *mLog; // 0x1818c
-    TextFileStream *unk18190;
-    char unk18194;
+    TextFileStream *unk18190; // 0x18190
+    signed char mHeap; // 0x18194
     bool unk18195;
     int mFreeSysMem; // 0x18198
     int mFreePhysMem; // 0x1819c

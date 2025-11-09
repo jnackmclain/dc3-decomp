@@ -9,6 +9,7 @@
 #include "math/Primes.h"
 #include "math/Sort.h"
 #include "os/Debug.h"
+#include "utl/AllocInfo.h"
 #include "utl/Loader.h"
 template <class T1, class T2>
 class KeylessHash {
@@ -44,6 +45,8 @@ private:
 
     int Hash(const char *str, int size) { return HashString(str, size); }
     int Hash(void *key, int size) { return HashKey(key, size); }
+    int HashValue(T2 &entry, int size);
+
     bool Cmp(const char *key, T2 &entry) const { return streq((const char *)entry, key); }
     // for AllocInfo** value
     bool Cmp(void *key, T2 &entry) { return entry->mMem == key; }
@@ -88,6 +91,16 @@ public:
     /** Get the next valid entry in the table from the supplied entry. */
     T2 *Next(T2 *entry) { return FirstFrom(&entry[1]); }
 };
+
+template <class T1, class T2>
+inline int KeylessHash<T1, T2>::HashValue(T2 &entry, int size) {
+    return Hash((T1)entry, size);
+}
+
+template <>
+inline int KeylessHash<void *, AllocInfo *>::HashValue(AllocInfo *&entry, int size) {
+    return Hash(entry->mMem, size);
+}
 
 template <class T1, class T2>
 KeylessHash<T1, T2>::KeylessHash(int size, const T2 &empty, const T2 &removed, T2 *entries)
@@ -195,7 +208,7 @@ void KeylessHash<T1, T2>::Resize(int size, T2 *entries) {
     }
     mNumEntries = 0;
     for (T2 *it = Begin(); it != 0; it = Next(it)) {
-        int i = Hash((T1)*it, size);
+        int i = HashValue(*it, size);
         MILO_ASSERT(i >= 0, 0xFB);
         while (entries[i] != mEmpty) {
             i++;

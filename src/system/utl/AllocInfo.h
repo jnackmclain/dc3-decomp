@@ -8,7 +8,7 @@
 #pragma pack(push, 1)
 class AllocInfo {
 public:
-    AllocInfo(int, int, const char *, void *, signed char, bool, unsigned char, const char *, int, String &, String &);
+    AllocInfo(int requestedSize, int actualSize, const char *type, void *mem, signed char heap, bool pooled, unsigned char strat, const char *, int, String &, String &);
     ~AllocInfo();
 
     int Compare(const AllocInfo &) const;
