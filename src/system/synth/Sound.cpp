@@ -4,8 +4,10 @@
 #include "obj/Data.h"
 #include "obj/Object.h"
 #include "os/Debug.h"
+#include "synth/FxSend.h"
 #include "synth/MoggClip.h"
 #include "synth/Synth.h"
+#include "synth/SynthSample.h"
 #include "synth/Utl.h"
 
 Sound::Sound()
@@ -149,7 +151,7 @@ END_LOADS
 
 const char *Sound::GetSoundDisplayName() { return MakeString("Sequence: %s", Name()); }
 
-void Sound::Play(float, float, float, Hmx::Object *, float delayMs) {
+void Sound::Play(float volume, float pan, float transpose, Hmx::Object *, float delayMs) {
     if (Name() && strstr(Name(), "camp_gameplay_failure")) {
         MILO_LOG(
             "[EH] BZ-64344 Playing sound with camp_gameplay_failure in it: '%s'\n", Name()
@@ -165,3 +167,120 @@ void Sound::Pause(bool b1) {
 }
 
 bool Sound::IsPlaying() const { return !mSamples.empty() || !mDelayArgs.empty(); }
+
+void Sound::SetVolume(float vol, Hmx::Object *obj) {
+    float faderVol = mFaders.GetVolume();
+    if (obj) {
+        FOREACH (it, mSamples) {
+            if ((*it)->GetEventReceiver() == obj) {
+                (*it)->SetVolume(faderVol + vol);
+                return;
+            }
+        }
+    } else {
+        mVolume = vol;
+        FOREACH (it, mSamples) {
+            (*it)->SetVolume(faderVol + vol);
+        }
+    }
+}
+
+void Sound::SetReverbMixDb(float db) {
+    mReverbMixDb = db;
+    FOREACH (it, mSamples) {
+        (*it)->SetReverbMixDb(mReverbMixDb);
+    }
+}
+
+void Sound::SetReverbEnable(bool enable) {
+    mReverbEnable = enable;
+    FOREACH (it, mSamples) {
+        (*it)->SetReverbEnable(mReverbEnable);
+    }
+}
+
+void Sound::EndLoop(Hmx::Object *obj) {
+    if (obj) {
+        FOREACH (it, mSamples) {
+            if ((*it)->GetEventReceiver() == obj) {
+                (*it)->EndLoop();
+            }
+        }
+    } else {
+        FOREACH (it, mSamples) {
+            (*it)->EndLoop();
+        }
+    }
+}
+
+float Sound::ElapsedTime() {
+    if (mSamples.empty()) {
+        return 0;
+    } else {
+        return mSamples.front()->ElapsedTime();
+    }
+}
+
+void Sound::SetSend(FxSend *send) {
+    mSend = send;
+    if (send) {
+        send->RebuildChain();
+    }
+    FOREACH (it, mSamples) {
+        (*it)->SetSend(mSend);
+    }
+}
+
+void Sound::SetSynthSample(SynthSample *sample) {
+    Stop(nullptr, true);
+    mMoggClip = nullptr;
+    mSynthSample = sample;
+    unkb4 = true;
+}
+
+void Sound::SetMoggClip(MoggClip *clip) {
+    Stop(nullptr, true);
+    mSynthSample = nullptr;
+    mMoggClip = clip;
+    unkb4 = false;
+}
+
+int Sound::NumMarkers() const {
+    if (mSynthSample) {
+        return mSynthSample->NumMarkers();
+    } else
+        return 0;
+}
+
+void Sound::OnTriggerSound(int arg) {
+    switch (arg) {
+    case 0:
+        Stop(nullptr, false);
+        break;
+    case 1:
+        Play(0, 0, 0, nullptr, 0);
+        break;
+    case 2:
+        if (mSamples.empty()) {
+            Play(0, 0, 0, nullptr, 0);
+        }
+        break;
+    default:
+        MILO_FAIL("Invalid argument to OnTriggerSound: %d\n", arg);
+        break;
+    }
+}
+
+DataNode Sound::OnPlay(DataArray *a) {
+    static Symbol volume("volume");
+    static Symbol pan("pan");
+    static Symbol transpose("transpose");
+    float volumeArg = 0;
+    float panArg = 0;
+    float transposeArg = 0;
+    a->FindData(volume, volumeArg, false);
+    a->FindData(pan, panArg, false);
+    a->FindData(transpose, transposeArg, false);
+    Play(volumeArg, panArg, transposeArg, nullptr, 0);
+    return 0;
+}

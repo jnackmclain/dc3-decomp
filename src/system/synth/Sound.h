@@ -34,7 +34,8 @@ public:
     // SynthPollable
     virtual const char *GetSoundDisplayName();
     virtual void SynthPoll();
-    virtual void Play(float, float, float, Hmx::Object *, float);
+    virtual void
+    Play(float volume, float pan, float transpose, Hmx::Object *, float delayMs);
     virtual void Stop(Hmx::Object *, bool);
     virtual void Pause(bool);
     virtual bool IsPlaying() const;
@@ -48,6 +49,9 @@ public:
     void SetSynthSample(SynthSample *);
     void SetMoggClip(MoggClip *);
     bool DisablePan(DataArray *);
+    void EndLoop(Hmx::Object *);
+    float ElapsedTime();
+    int NumMarkers() const;
 
     OBJ_MEM_OVERLOAD(0x16)
     NEW_OBJ(Sound)
