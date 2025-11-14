@@ -30,6 +30,7 @@ public:
     float TransposeSpread() const { return mTransposeSpread; }
     float AvgPan() const { return mAvgPan; }
     float PanSpread() const { return mPanSpread; }
+    FaderGroup &Faders() { return mFaders; }
 
     SeqInst *MakeInst();
     /** "Play the sequence" */
@@ -238,3 +239,5 @@ protected:
     float mVolume; // 0x3c
     bool mStarted; // 0x40
 };
+
+#include "Sequence_p.h"

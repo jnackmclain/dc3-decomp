@@ -1,6 +1,8 @@
 #include "synth/Sequence.h"
+#include "Sequence_p.h"
 #include "math/Rand.h"
 #include "obj/Object.h"
+#include "obj/Task.h"
 
 bool sForceSerialSequences;
 
@@ -224,7 +226,7 @@ BEGIN_LOADS(WaitSeq)
     }
 END_LOADS
 
-// SeqInst *WaitSeq::MakeInstImpl() { return new WaitSeqInst(this); }
+SeqInst *WaitSeq::MakeInstImpl() { return new WaitSeqInst(this); }
 
 #pragma endregion
 #pragma region GroupSeq
@@ -358,6 +360,8 @@ void RandomGroupSeq::ForceNextIndex(int i) {
     }
 }
 
+SeqInst *RandomGroupSeq::MakeInstImpl() { return new RandomGroupSeqInst(this); }
+
 #pragma endregion
 #pragma region RandomIntervalGroupSeq
 
@@ -402,6 +406,10 @@ BEGIN_LOADS(RandomIntervalGroupSeq)
     }
 END_LOADS
 
+SeqInst *RandomIntervalGroupSeq::MakeInstImpl() {
+    return new RandomIntervalGroupSeqInst(this);
+}
+
 #pragma endregion
 #pragma region SerialGroupSeq
 
@@ -420,6 +428,8 @@ BEGIN_LOADS(SerialGroupSeq)
     }
 END_LOADS
 
+SeqInst *SerialGroupSeq::MakeInstImpl() { return new SerialGroupSeqInst(this); }
+
 #pragma endregion
 #pragma region ParallelGroupSeq
 
@@ -437,6 +447,8 @@ BEGIN_LOADS(ParallelGroupSeq)
         GroupSeq::Load(bs);
     }
 END_LOADS
+
+SeqInst *ParallelGroupSeq::MakeInstImpl() { return new ParallelGroupSeqInst(this); }
 
 #pragma endregion
 #pragma region SfxSeq
@@ -495,4 +507,174 @@ void SeqInst::Start() {
 void SeqInst::SetVolume(float f) {
     mVolume = f;
     UpdateVolume();
+}
+
+#pragma endregion
+#pragma region WaitSeqInst
+
+WaitSeqInst::WaitSeqInst(WaitSeq *seq) : SeqInst(seq), mEndTime(-1.0f) {
+    float rand = RandomVal(seq->AvgWaitSecs(), seq->WaitSpread());
+    mWaitMs = rand * 1000.0f;
+}
+
+void WaitSeqInst::StartImpl() {
+    mEndTime = TheTaskMgr.Seconds(TaskMgr::kRealTime) * 1000.0f + mWaitMs;
+}
+
+void WaitSeqInst::Stop() { mEndTime = -1.0f; }
+
+bool WaitSeqInst::IsRunning() {
+    return TheTaskMgr.Seconds(TaskMgr::kRealTime) * 1000.0f < mEndTime;
+}
+
+#pragma endregion
+#pragma region GroupSeqInst
+
+GroupSeqInst::GroupSeqInst(GroupSeq *seq, bool b) : SeqInst(seq), mSeqs(this) {
+    if (b) {
+        ObjPtrList<Sequence> &children = seq->Children();
+        FOREACH (it, children) {
+            SeqInst *inst = (*it)->MakeInst();
+            mSeqs.push_back();
+            mSeqs.back() = inst;
+        }
+    }
+}
+
+GroupSeqInst::~GroupSeqInst() {
+    FOREACH (it, mSeqs) {
+        delete *it;
+    }
+}
+
+void GroupSeqInst::UpdateVolume() {
+    FOREACH (it, mSeqs) {
+        if (*it) {
+            (*it)->SetVolume(mVolume + mRandVol + mOwner->Faders().GetVolume());
+        }
+    }
+}
+
+void GroupSeqInst::SetPan(float f) {
+    FOREACH (it, mSeqs) {
+        if (*it) {
+            (*it)->SetPan(f + mRandPan);
+        }
+    }
+}
+
+void GroupSeqInst::SetTranspose(float f) {
+    FOREACH (it, mSeqs) {
+        if (*it) {
+            (*it)->SetTranspose(f + mRandTp);
+        }
+    }
+}
+
+#pragma endregion
+#pragma region RandomGroupSeqInst
+
+RandomGroupSeqInst::RandomGroupSeqInst(RandomGroupSeq *seq)
+    : GroupSeqInst(seq, true), mIt(mSeqs.end()) {}
+
+void RandomGroupSeqInst::StartImpl() {
+    for (ObjVector<ObjPtr<SeqInst> >::iterator it = mIt; it != mSeqs.end(); it++) {
+        if (*it)
+            (*it)->Start();
+    }
+}
+
+void RandomGroupSeqInst::Stop() {
+    for (ObjVector<ObjPtr<SeqInst> >::iterator it = mIt; it != mSeqs.end(); it++) {
+        if (*it)
+            (*it)->Stop();
+    }
+}
+
+bool RandomGroupSeqInst::IsRunning() { return mIt != mSeqs.end(); }
+
+void RandomGroupSeqInst::Poll() {
+    for (; mIt != mSeqs.end(); mIt++) {
+        if ((*mIt) && (*mIt)->IsRunning())
+            return;
+    }
+}
+
+#pragma endregion
+#pragma region RandomIntervalGroupSeqInst
+
+RandomIntervalGroupSeqInst::RandomIntervalGroupSeqInst(RandomIntervalGroupSeq *seq)
+    : GroupSeqInst(seq, true) {}
+
+#pragma endregion
+#pragma region SerialGroupSeqInst
+
+SerialGroupSeqInst::SerialGroupSeqInst(SerialGroupSeq *seq)
+    : GroupSeqInst(seq, true), mIt(mSeqs.end()) {}
+
+void SerialGroupSeqInst::StartImpl() {
+    mIt = mSeqs.begin();
+    if (*mIt)
+        (*mIt)->Start();
+}
+
+void SerialGroupSeqInst::Stop() {
+    if (mIt != mSeqs.end()) {
+        if (*mIt)
+            (*mIt)->Stop();
+    }
+    ObjVector<ObjPtr<SeqInst> >::iterator curIt = mIt;
+    if (curIt != mSeqs.end())
+        curIt++;
+    while (curIt != mSeqs.end()) {
+        delete *curIt++;
+    }
+}
+
+bool SerialGroupSeqInst::IsRunning() { return mIt != mSeqs.end(); }
+
+void SerialGroupSeqInst::Poll() {
+    while (mIt != mSeqs.end()) {
+        if ((*mIt) && (*mIt)->IsRunning())
+            return;
+        if (mIt++ != mSeqs.end()) {
+            SeqInst *si = (*mIt);
+            if (si)
+                si->Start();
+        }
+    }
+}
+
+#pragma endregion
+#pragma region ParallelGroupSeqInst
+
+ParallelGroupSeqInst::ParallelGroupSeqInst(ParallelGroupSeq *seq)
+    : GroupSeqInst(seq, true), mIt(mSeqs.end()) {}
+
+void ParallelGroupSeqInst::StartImpl() {
+    for (ObjVector<ObjPtr<SeqInst> >::iterator it = mSeqs.begin(); it != mSeqs.end();
+         it++) {
+        if (*it)
+            (*it)->Start();
+    }
+    for (mIt = mSeqs.begin(); mIt != mSeqs.end(); mIt++) {
+        if ((*mIt) && (*mIt)->IsRunning())
+            return;
+    }
+}
+
+void ParallelGroupSeqInst::Stop() {
+    for (ObjVector<ObjPtr<SeqInst> >::iterator it = mIt; it != mSeqs.end(); it++) {
+        if (*it)
+            (*it)->Stop();
+    }
+}
+
+bool ParallelGroupSeqInst::IsRunning() { return mIt != mSeqs.end(); }
+
+void ParallelGroupSeqInst::Poll() {
+    for (; mIt != mSeqs.end(); mIt++) {
+        if ((*mIt) && (*mIt)->IsRunning())
+            return;
+    }
 }
