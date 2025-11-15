@@ -18,6 +18,7 @@ enum SendChannels {
     kSendAllXMix = 3
 };
 
+/** "Base class for all sound FX processors" */
 class FxSend : public Hmx::Object {
 public:
     // Hmx::Object

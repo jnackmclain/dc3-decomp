@@ -117,6 +117,7 @@ public:
     void SendToPlayHandlers(Sound *);
     void PlaySound(const char *, float, float, float);
     void AddZombie(SampleInst *);
+    int GetNumMics() const;
 
     template <class T>
     T *Find(const char *name, bool fail) {
