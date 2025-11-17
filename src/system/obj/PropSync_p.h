@@ -234,7 +234,7 @@ bool PropSync(Keys<T, T> &keys, DataNode &node, DataArray *prop, int i, PropOp o
 }
 
 template <class T>
-bool PropSync(T *&obj, DataNode &node, DataArray *prop, int i, PropOp op) {
+__forceinline bool PropSync(T *&obj, DataNode &node, DataArray *prop, int i, PropOp op) {
     if (op == kPropUnknown0x40)
         return false;
     else {
@@ -308,7 +308,7 @@ bool PropSync(
             return true;
         }
         case kPropInsert: {
-            T *objToInsert = 0;
+            T *objToInsert = nullptr;
             if (PropSync(objToInsert, node, prop, i, op)) {
                 ptr.insert(it, objToInsert);
                 return true;
@@ -323,7 +323,44 @@ bool PropSync(
 }
 
 template <class T>
-bool PropSync(ObjPtrVec<T, ObjectDir> &, DataNode &, DataArray *, int, PropOp);
+bool PropSync(
+    ObjPtrVec<T, ObjectDir> &objPtrVec, DataNode &node, DataArray *prop, int i, PropOp op
+) {
+    if (op == kPropUnknown0x40)
+        return false;
+    else if (i == prop->Size()) {
+        MILO_ASSERT(op == kPropSize || op == kPropInsert, 0x1D9);
+        node = objPtrVec.size();
+        return true;
+    } else {
+        typename ObjPtrVec<T, ObjectDir>::iterator it =
+            objPtrVec.begin() + prop->Int(i++);
+        if (i < prop->Size() || op & (kPropGet | kPropSet | kPropSize)) {
+            if (op == kPropGet) {
+                node = *it;
+                return true;
+            } else if (op == kPropSet) {
+                T *objToSet = nullptr;
+                if (PropSync(objToSet, node, prop, i, op)) {
+                    objPtrVec.Set(it, objToSet);
+                    return true;
+                }
+            }
+        } else if (op == kPropRemove) {
+            objPtrVec.erase(it);
+            return true;
+        } else if (op == kPropInsert) {
+            T *objToInsert = nullptr;
+            if (PropSync(objToInsert, node, prop, i, op)) {
+                objPtrVec.insert(it, objToInsert);
+                return true;
+            }
+        } else {
+            return false;
+        }
+        return false;
+    }
+}
 
 template <class T>
 bool PropSync(ObjVector<T> &objVec, DataNode &node, DataArray *prop, int i, PropOp op) {

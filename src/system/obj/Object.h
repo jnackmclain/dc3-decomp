@@ -249,41 +249,54 @@ protected:
 public:
     // this derives off of std::vector<Node>::iterator in some way
     class iterator {
+        friend class const_iterator;
+
     private:
-        typedef typename std::vector<Node>::iterator Base;
-        Base it;
+        Node *mIt;
 
     public:
-        iterator(Base base) : it(base) {}
+        iterator(Node *n) : mIt(n) {}
 
-        Node &operator*() const { return *it; }
-        Node *operator->() const { return &(*it); }
-
-        iterator &operator++() {
-            ++it;
+        iterator operator+(int i) {
+            mIt += i;
             return *this;
         }
 
-        bool operator!=(const iterator &other) const { return it != other.it; }
+        T1 *operator*() { return mIt->Obj(); }
+        T1 *operator->() { return mIt->Obj(); }
+
+        iterator &operator++() {
+            ++mIt;
+            return *this;
+        }
+
+        bool operator!=(const iterator &other) const { return mIt != other.mIt; }
     };
     // ditto
     class const_iterator {
     private:
-        typedef typename std::vector<Node>::const_iterator Base;
-        Base it;
-
+        const Node *mIt;
+        // private:
+        //     typedef typename std::vector<Node>::const_iterator Base;
+        //     Base it;
     public:
-        const_iterator(Base base) : it(base) {}
+        const_iterator(const Node *n) : mIt(n) {}
+        const_iterator(iterator it) : mIt(it.mIt) {}
 
-        const Node &operator*() const { return *it; }
-        const Node *operator->() const { return &(*it); }
+        bool operator!=(const const_iterator &other) const { return mIt != other.mIt; }
+        // public:
+        //     const_iterator(Base base) : it(base) {}
 
-        const_iterator &operator++() {
-            ++it;
-            return *this;
-        }
+        //     const Node &operator*() const { return *it; }
+        //     const Node *operator->() const { return &(*it); }
 
-        bool operator!=(const const_iterator &other) const { return it != other.it; }
+        //     const_iterator &operator++() {
+        //         ++it;
+        //         return *this;
+        //     }
+
+        //     bool operator!=(const const_iterator &other) const { return it != other.it;
+        //     }
     };
 
     ObjPtrVec(Hmx::Object *owner, EraseMode = (EraseMode)0, ObjListMode = kObjListNoNull);
@@ -291,10 +304,15 @@ public:
     virtual ~ObjPtrVec();
 
     // i now have the suspicion these might be wrong but idk how to fix it yet
-    iterator begin() { return iterator(mNodes.begin()); }
-    iterator end() { return iterator(mNodes.end()); }
-    const_iterator begin() const { return const_iterator(mNodes.begin()); }
-    const_iterator end() const { return const_iterator(mNodes.end()); }
+    // iterator begin() { return iterator(mNodes.begin()); }
+    // iterator end() { return iterator(mNodes.end()); }
+    // const_iterator begin() const { return const_iterator(mNodes.begin()); }
+    // const_iterator end() const { return const_iterator(mNodes.end()); }
+
+    iterator begin() { return !mNodes.empty() ? mNodes.begin() : nullptr; }
+    iterator end();
+    const_iterator begin() const;
+    const_iterator end() const { return !mNodes.empty() ? mNodes.end() : nullptr; }
 
     iterator erase(iterator);
     iterator insert(const_iterator, T1 *);

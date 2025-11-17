@@ -186,42 +186,42 @@ void ObjPtrVec<T1, T2>::ReplaceNode(Node *n, Hmx::Object *obj) {
     }
 }
 
-template <class T1, class T2>
-void ObjPtrVec<T1, T2>::Set(iterator it, T1 *obj) {
-    if (!obj && mListMode == 0) {
-        erase(it);
-    } else
-        it->SetObjConcrete(obj);
-}
+// template <class T1, class T2>
+// void ObjPtrVec<T1, T2>::Set(iterator it, T1 *obj) {
+//     if (!obj && mListMode == 0) {
+//         erase(it);
+//     } else
+//         it->SetObjConcrete(obj);
+// }
 
-// see Draw.cpp for this
-template <class T1, class T2>
-void ObjPtrVec<T1, T2>::operator=(const ObjPtrVec &other) {
-    if (this != &other) {
-        mNodes.clear();
-    }
-    mNodes.reserve(other.mNodes.size());
-    for (const_iterator it = other.begin(); it != other.end(); ++it) {
-        mNodes.push_back(Node(this));
-        Set(end(), *it);
-    }
-}
+// // see Draw.cpp for this
+// template <class T1, class T2>
+// void ObjPtrVec<T1, T2>::operator=(const ObjPtrVec &other) {
+//     if (this != &other) {
+//         mNodes.clear();
+//     }
+//     mNodes.reserve(other.mNodes.size());
+//     for (const_iterator it = other.begin(); it != other.end(); ++it) {
+//         mNodes.push_back(Node(this));
+//         Set(end(), *it);
+//     }
+// }
 
 template <class T1, class T2>
 void ObjPtrVec<T1, T2>::push_back(T1 *obj) {
-    insert(mNodes.empty() ? mNodes.begin() : mNodes.end(), obj);
+    insert(mNodes.end(), obj);
 }
 
-template <class T1, class T2>
-typename ObjPtrVec<T1, T2>::iterator
-ObjPtrVec<T1, T2>::insert(typename ObjPtrVec<T1, T2>::const_iterator it, T1 *obj) {
-    int idx = *it != nullptr ? size() : 0;
-    if (obj || mListMode != kObjListNoNull) {
-        // mNodes.insert(it, Node(obj));
-        Set(iterator(0), obj);
-    }
-    return iterator(&Node(obj));
-}
+// template <class T1, class T2>
+// typename ObjPtrVec<T1, T2>::iterator
+// ObjPtrVec<T1, T2>::insert(typename ObjPtrVec<T1, T2>::const_iterator it, T1 *obj) {
+//     int idx = *it != nullptr ? size() : 0;
+//     if (obj || mListMode != kObjListNoNull) {
+//         // mNodes.insert(it, Node(obj));
+//         Set(iterator(0), obj);
+//     }
+//     return iterator(&Node(obj));
+// }
 
 template <class T1, class T2>
 bool ObjPtrVec<T1, T2>::Load(BinStream &bs, bool print, ObjectDir *dir) {

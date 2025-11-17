@@ -109,6 +109,14 @@ BEGIN_COPYS(HamListRibbon)
     END_COPYING_MEMBERS
 END_COPYS
 
+void HamListRibbon::PostLoad(BinStream &bs) {
+    BinStreamRev d(bs, bs.PopRev(this));
+    if (d.rev > 8) {
+        d >> mHighlightSounds;
+        d >> mSelectSounds;
+    }
+}
+
 void HamListRibbon::ScrollAnims::SetScrollFrame(float frame) {
     if (mScrollAnim)
         mScrollAnim->SetFrame(frame, 1);
