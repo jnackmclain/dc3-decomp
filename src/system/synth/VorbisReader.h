@@ -18,12 +18,17 @@ public:
     virtual bool Done() { return mDone; }
     virtual bool Fail() { return mFail; }
 
+    static void SignalDecodeThread();
+
 private:
     bool TryReadHeader();
     bool TryReadPacket(ogg_packet &);
     void InitDecoder();
     bool DoSeek();
     bool DoFileRead();
+    int QueuedOutputSamples();
+    bool TryDecode();
+    bool CheckHmxHeader();
 
 protected:
     virtual void Init();
@@ -62,7 +67,7 @@ protected:
     int mSeekTarget; // 0xa4
     int mSamplesToSkip; // 0xa8
     OggMap mOggMap; // 0xac
-    int unkc0;
+    int mHdrSize; // 0xc0
     char *mHdrBuf; // 0xc4
     symmetric_CTR *mCtrState; // 0xc8
     unsigned char mNonce[16]; // 0xcc
@@ -71,8 +76,8 @@ protected:
     bool unked;
     bool unkee;
     bool mFail; // 0xef
-    int unkf0;
-    std::vector<short> unkf4; // 0xf4
-    u64 unk100;
+    int mVersion; // 0xf0 - mogg version?
+    std::vector<std::vector<short> > unkf4; // 0xf4
+    s64 unk100;
     int unk108;
 };

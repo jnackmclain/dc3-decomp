@@ -91,9 +91,11 @@ public:
     }
     BS_READ_OP(int)
     BS_READ_OP(uint)
+    BS_READ_OP(long)
     BS_READ_OP(s16)
     BS_READ_OP(u16)
     BS_READ_OP(u32)
+    BS_READ_OP(s64)
     BS_READ_OP(u64)
     BS_READ_OP(f32)
     BS_READ_OP(f64)
@@ -117,9 +119,11 @@ public:
 
     BS_WRITE_OP(int)
     BS_WRITE_OP(uint)
+    BS_WRITE_OP(long)
     BS_WRITE_OP(s16)
     BS_WRITE_OP(u16)
     BS_WRITE_OP(u32)
+    BS_WRITE_OP(s64)
     BS_WRITE_OP(u64)
     BS_WRITE_OP(f32)
     BS_WRITE_OP(f64)

@@ -6,7 +6,9 @@
 #include "ogg.h"
 #include "os/CritSec.h"
 #include "os/Debug.h"
+#include "os/Endian.h"
 #include "synth/Synth.h"
+#include "utl/BufStream.h"
 #include "xdk/win_types.h"
 #include "xdk/xapilibi/processthreadsapi.h"
 #include "xdk/xapilibi/synchapi.h"
@@ -34,7 +36,7 @@ VorbisReader::VorbisReader(File *file, bool expectMap, StandardStream *stream, b
     : unk28(-1), unk2c(-1), mFile(file), mHeadersRead(0), mReadBuffer(0),
       mEnableReads(true), unk40(0), unk44(0), mDone(0), mStream(stream), mOggSync(0),
       mOggStream(0), mVorbisInfo(0), mVorbisComment(0), mVorbisDsp(0), mVorbisBlock(0),
-      unka0(0), mSeekTarget(-1), mSamplesToSkip(0), unkc0(0), mHdrBuf(0), mCtrState(0),
+      unka0(0), mSeekTarget(-1), mSamplesToSkip(0), mHdrSize(0), mHdrBuf(0), mCtrState(0),
       unkec(b2), unked(0), unkee(0), mFail(0), unk100(-1), unk108(0) {
     MILO_ASSERT(mFile, 0xEC);
     if (expectMap) {
@@ -42,7 +44,7 @@ VorbisReader::VorbisReader(File *file, bool expectMap, StandardStream *stream, b
         mFile->ReadAsync(mHdrBuf, 60000);
         mFail = mFile->Fail();
     }
-    mOggSync = new ogg_sync_state();
+    mOggSync = new ogg_sync_state;
     ogg_sync_init(mOggSync);
     unk24 = false;
     if (gEvent == INVALID_HANDLE_VALUE) {
@@ -159,12 +161,12 @@ bool VorbisReader::TryReadHeader() {
         if (pageOut < 0)
             VORBIS_FAIL("StreamInit", pageOut);
         if (pageOut > 0) {
-            mOggStream = new ogg_stream_state();
+            mOggStream = new ogg_stream_state;
             ogg_stream_init(mOggStream, ogg_page_serialno(&page));
             ogg_stream_pagein(mOggStream, &page);
-            mVorbisInfo = new vorbis_info();
+            mVorbisInfo = new vorbis_info;
             vorbis_info_init(mVorbisInfo);
-            mVorbisComment = new vorbis_comment();
+            mVorbisComment = new vorbis_comment;
             vorbis_comment_init(mVorbisComment);
         } else
             return false;
@@ -188,9 +190,9 @@ bool VorbisReader::TryReadHeader() {
 void VorbisReader::InitDecoder() {
     MILO_ASSERT(!mVorbisDsp && !mVorbisBlock, 0x2C0);
     MILO_ASSERT(mHeadersRead == 3, 0x2C1);
-    mVorbisDsp = new vorbis_dsp_state();
+    mVorbisDsp = new vorbis_dsp_state;
     vorbis_synthesis_init(mVorbisDsp, mVorbisInfo);
-    mVorbisBlock = new vorbis_block();
+    mVorbisBlock = new vorbis_block;
     vorbis_block_init(mVorbisDsp, mVorbisBlock);
 }
 
@@ -208,4 +210,175 @@ bool VorbisReader::DoSeek() {
         return true;
     }
     return false;
+}
+
+int VorbisReader::QueuedOutputSamples() {
+    if (mVorbisDsp) {
+        START_AUTO_TIMER("vorbis_synthesis_pcmout_cpu");
+        return vorbis_synthesis_pcmout(mVorbisDsp, nullptr);
+    } else
+        return 0;
+}
+
+bool VorbisReader::TryReadPacket(ogg_packet &pk) {
+    MILO_ASSERT(mOggStream, 0x39C);
+    while (true) {
+        int streamErr = ogg_stream_packetout(mOggStream, &pk);
+        if (streamErr < 0) {
+            VORBIS_FAIL("PacketOut", streamErr);
+        }
+        if (streamErr > 0)
+            return true;
+        ogg_page page;
+        int syncErr = ogg_sync_pageout(mOggSync, &page);
+        if (syncErr > 0)
+            ogg_stream_pagein(mOggStream, &page);
+        else
+            return false;
+    }
+}
+
+bool VorbisReader::TryDecode() {
+    if (mFail)
+        return false;
+    if (QueuedOutputSamples() > 0)
+        return false;
+    if (!unka0 && TryReadPacket(mPendingPacket)) {
+        unka0 = true;
+    }
+    if (unka0) {
+        START_AUTO_TIMER("vorbis_synthesis_poll_cpu");
+        if (mVorbisBlock->synthesis_state == vorbis_block::vss_init) {
+            START_AUTO_TIMER("vorbis_synthesis_vssinit_cpu");
+        } else if (mVorbisBlock->synthesis_state == vorbis_block::vss_decode) {
+            START_AUTO_TIMER("vorbis_synthesis_vssdecode_cpu");
+        } else {
+            START_AUTO_TIMER("vorbis_synthesis_vssmdct_cpu");
+        }
+        int pollErr = vorbis_synthesis_poll(mVorbisBlock, &mPendingPacket);
+        if (pollErr == OV_ENOTAUDIO) {
+            unka0 = false;
+        } else {
+            if (pollErr == -0x32)
+                return true;
+            if (pollErr < 0) {
+                VORBIS_FAIL("Synthesis", pollErr);
+            }
+            unka0 = false;
+            if (pollErr == 0) {
+                START_AUTO_TIMER("vorbis_synthesis_blockin_cpu");
+                int blockErr = vorbis_synthesis_blockin(mVorbisDsp, mVorbisBlock);
+                if (blockErr < 0) {
+                    VORBIS_FAIL("BlockIn", blockErr);
+                }
+                return true;
+            }
+        }
+    } else if (unkee && !mReadBuffer && QueuedOutputSamples() == 0 && !mDone) {
+        EndData();
+        mDone = true;
+    }
+    return false;
+}
+
+void VorbisReader::SignalDecodeThread() {
+    if (gEvent != INVALID_HANDLE_VALUE) {
+        SetEvent(gEvent);
+    }
+}
+
+void VorbisReader::DoRawSeek(int byte) {
+    if (mReadBuffer) {
+        mEnableReads = false;
+        while (!mFail && mReadBuffer)
+            DoFileRead();
+        mEnableReads = true;
+    }
+    for (int i = 0; i < unk28; i++) {
+        unkf4[i].clear();
+    }
+    unk108 = 0;
+    unk100 = -1;
+    int streamErr = ogg_stream_reset(mOggStream);
+    if (streamErr < 0)
+        VORBIS_FAIL("StreamReset", streamErr);
+    int syncErr = ogg_sync_reset(mOggSync);
+    if (syncErr < 0)
+        VORBIS_FAIL("SyncReset", syncErr);
+    vorbis_block_clear(mVorbisBlock);
+    int restartErr = vorbis_synthesis_restart(mVorbisDsp);
+    if (restartErr < 0)
+        VORBIS_FAIL("DspReset", restartErr);
+    vorbis_block_init(mVorbisDsp, mVorbisBlock);
+    unka0 = false;
+    mFile->Seek(byte + mHdrSize, 0);
+    if (mCtrState) {
+        MILO_ASSERT(byte%16 == 0, 0x3F4);
+        // this is the part where the word that makes up byte,
+        // gets assigned to the word that makes up mNonce
+        int *nonceWord = (int *)mNonce;
+        *nonceWord = EndianSwap((unsigned int)byte);
+        int ret = ctr_reinit(gCipher, mNonce, mCtrState);
+        MILO_ASSERT(ret == 0, 0x3F7);
+    }
+    mDone = false;
+    unkee = false;
+}
+
+#define kMaxHeader 60000
+
+bool VorbisReader::CheckHmxHeader() {
+    if (!mHdrBuf)
+        return true;
+    else {
+        int bytes;
+        if (mFile->ReadDone(bytes)) {
+            BufStream bs(mHdrBuf, 60000, true);
+            bs >> mVersion;
+            bs >> mHdrSize;
+            MILO_ASSERT(mVersion >= 10, 0x239);
+            MILO_ASSERT(mVersion <= 16, 0x23A);
+            MILO_ASSERT(mHdrSize <= kMaxHeader, 0x23B);
+            MILO_ASSERT(mHdrSize >= 0, 0x23C);
+            mOggMap.Read(bs);
+            mKeyIndex = 0;
+            memset(mKeyMask, 0, sizeof(mKeyMask));
+            mMagicA = mMagicB = 0;
+            mMagicHashA = mMagicHashB = 0;
+            if (mVersion >= 0xC && mVersion <= 0x10) {
+                bs.Read(mNonce, sizeof(mNonce));
+                s64 idx;
+                bs >> idx;
+                mMagicA = idx;
+                bs >> idx;
+                mMagicB = idx;
+                unsigned char stuff[16];
+                bs.Read(stuff, sizeof(stuff));
+                bs.Read(stuff, sizeof(stuff));
+                bs >> idx;
+                mKeyIndex = (int)idx % 6 + 6;
+                TheSynth->Grinder().HvDecrypt(stuff, mKeyMask, mVersion);
+                gCipher = register_cipher(&rijndael_desc);
+                MILO_ASSERT(gCipher >= 0, 0x268);
+                mCtrState = new symmetric_CTR;
+                int keyIndex = mKeyIndex;
+                MILO_ASSERT_RANGE(keyIndex, 0, KeyChain::getNumKeys(), 0x26D);
+                setupCypher(mVersion);
+            } else if (mVersion == 0xB) {
+                bs.Read(mNonce, sizeof(mNonce));
+                gCipher = register_cipher(&rijndael_desc);
+                MILO_ASSERT(gCipher >= 0, 0x276);
+                mCtrState = new symmetric_CTR;
+                int ret = ctr_start(gCipher, mNonce, gRB1Key, gKeySize, 0, mCtrState);
+                MILO_ASSERT(ret == 0, 0x27E);
+            } else {
+                MILO_NOTIFY_ONCE("old mogg version!");
+            }
+            delete[] mHdrBuf;
+            mHdrBuf = nullptr;
+            mFile->Seek(mHdrSize, BinStream::kSeekBegin);
+        }
+        mFail = mFile->Fail();
+        return !mHdrBuf;
+    }
 }
