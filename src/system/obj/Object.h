@@ -293,21 +293,15 @@ public:
     virtual ~ObjPtrVec();
 
     // i now have the suspicion these might be wrong but idk how to fix it yet
-    iterator begin() {
-        Node *n = empty() ? nullptr : &mNodes[0];
-        return n;
-    }
+    iterator begin() { return empty() ? nullptr : &mNodes[0]; }
     iterator end() {
-        Node *n = empty() ? nullptr : &mNodes[size()];
-        return n;
+        int vecSize = size();
+        return vecSize == 0 ? nullptr : &mNodes[vecSize];
     }
-    const_iterator begin() const {
-        const Node *n = empty() ? nullptr : &mNodes[0];
-        return n;
-    }
+    const_iterator begin() const { return empty() ? nullptr : &mNodes[0]; }
     const_iterator end() const {
-        const Node *n = empty() ? nullptr : &mNodes[size()];
-        return n;
+        int vecSize = size();
+        return vecSize == 0 ? nullptr : &mNodes[vecSize];
     }
 
     iterator erase(iterator);
