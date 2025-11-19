@@ -1,4 +1,6 @@
 #include "flow/FlowOnStop.h"
+#include "FlowOnStop.h"
+#include "flow/FlowManager.h"
 #include "flow/FlowNode.h"
 #include "obj/Object.h"
 
@@ -34,3 +36,79 @@ BEGIN_LOADS(FlowOnStop)
     LOAD_SUPERCLASS(FlowNode)
     d >> (int &)mMode;
 END_LOADS
+
+bool FlowOnStop::Activate() {
+    FLOW_LOG("Activate\n");
+    unk58 = false;
+    unk60 = true;
+    return true;
+}
+
+void FlowOnStop::Deactivate(bool b1) {
+    FLOW_LOG("Deactivated, which can cause this node to activate!\n");
+    if (unk60) {
+        if (mMode != kRequestStopOnly) {
+            FOREACH (it, mChildNodes) {
+                ActivateChild(*it);
+                if (unk58)
+                    break;
+            }
+            FlowNode::Deactivate(b1);
+        }
+        unk60 = false;
+    }
+}
+
+void FlowOnStop::ChildFinished(FlowNode *n) {
+    FLOW_LOG("Child Finished of class:%s\n", n->ClassName());
+    mRunningNodes.remove(n);
+    if (mRunningNodes.empty()) {
+        unk60 = false;
+        FLOW_LOG("Timed Release From Parent \n");
+        Timer timer;
+        timer.Reset();
+        timer.Start();
+        mFlowParent->ChildFinished(this);
+        timer.Stop();
+        TheFlowMgr->AddMs(timer.Ms());
+    }
+}
+
+void FlowOnStop::RequestStop() {
+    FLOW_LOG("RequestStop\n");
+    if (mRunningNodes.empty()) {
+        if (mMode != kDeactivateOnly) {
+            unk58 = true;
+            TheFlowMgr->QueueCommand(this, kQueue);
+        } else {
+            unk60 = false;
+            mFlowParent->ChildFinished(this);
+        }
+    } else {
+        FlowNode::RequestStop();
+    }
+}
+
+void FlowOnStop::RequestStopCancel() {
+    FLOW_LOG("RequestStopCancel\n");
+    FlowNode::RequestStopCancel();
+}
+
+void FlowOnStop::Execute(QueueState qs) {
+    if (qs == kQueue && unk58) {
+        unk58 = false;
+        unk60 = false;
+        FlowNode::Activate();
+        if (mRunningNodes.empty()) {
+            FLOW_LOG("Timed Release From Parent \n");
+            Timer timer;
+            timer.Reset();
+            timer.Start();
+            mFlowParent->ChildFinished(this);
+            timer.Stop();
+            TheFlowMgr->AddMs(timer.Ms());
+        }
+    }
+}
+
+bool FlowOnStop::IsRunning() { return unk60 || FlowNode::IsRunning(); }

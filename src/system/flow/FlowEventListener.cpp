@@ -1,6 +1,7 @@
 #include "flow/FlowEventListener.h"
 #include "FlowEventListener.h"
 #include "FlowTrigger.h"
+#include "flow/FlowManager.h"
 #include "flow/FlowNode.h"
 #include "flow/FlowQueueable.h"
 #include "obj/Object.h"
@@ -67,8 +68,6 @@ void FlowEventListener::ChildFinished(FlowNode *node) {
     }
 }
 
-bool FlowEventListener::IsRunning() { return unkb4 || !mRunningNodes.empty(); }
-
 void FlowEventListener::RequestStop() {
     FLOW_LOG("RequestStop\n");
     if (unkb4) {
@@ -89,4 +88,28 @@ void FlowEventListener::RequestStopCancel() {
         FlowQueueable::RequestStopCancel();
         RegisterEvents();
     }
+}
+
+bool FlowEventListener::IsRunning() { return unkb4 || !mRunningNodes.empty(); }
+
+bool FlowEventListener::ActivateTrigger() {
+    FLOW_LOG("Reactivate\n");
+    unk58 = false;
+    unkbc++;
+    if (mEventCount > 0 && unkbc >= mEventCount) {
+        UnregisterEvents();
+        unkb4 = false;
+    }
+    FlowNode::Activate();
+    if (!FlowNode::IsRunning() && mEventCount > 0 && unkbc >= mEventCount) {
+        FLOW_LOG("releasing\n");
+        FLOW_LOG("Timed Release From Parent \n");
+        Timer timer;
+        timer.Reset();
+        timer.Start();
+        mFlowParent->ChildFinished(this);
+        timer.Stop();
+        TheFlowMgr->AddMs(timer.Ms());
+    }
+    return FlowNode::IsRunning();
 }

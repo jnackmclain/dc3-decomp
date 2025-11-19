@@ -15,6 +15,7 @@ public:
     void AddEventTime(Symbol, float);
     void QueueCommand(FlowNode *, FlowNode::QueueState);
     void CancelCommand(FlowNode *);
+    void AddMs(float ms) { unk7c += ms; }
 
 protected:
     bool unk2c;
