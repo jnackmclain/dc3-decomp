@@ -25,7 +25,7 @@ public:
 protected:
     FlowSequence();
 
-    int unk5c; // 0x5c
+    ObjPtrVec<FlowNode>::iterator mItr; // 0x5c
     /** "Loop forever?" */
     bool mLooping; // 0x60
     /** "how many times to reapeat this sequence" */

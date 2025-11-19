@@ -1,6 +1,8 @@
 #include "flow/FlowSound.h"
+#include "FlowNode.h"
 #include "flow/FlowManager.h"
 #include "flow/FlowNode.h"
+#include "math/Decibels.h"
 #include "obj/Object.h"
 
 FlowSound::FlowSound()
@@ -40,3 +42,144 @@ BEGIN_SAVES(FlowSound)
     bs << mForceStop;
     bs << mUseIntensity;
 END_SAVES
+
+bool FlowSound::Activate() {
+    FLOW_LOG("Activate\n");
+    if (!mSound)
+        return false;
+    else {
+        PushDrivenProperties();
+        unka0 = FlowNode::sIntensity;
+        if (mImmediateRelease && !mForceStop) {
+            unk9c = false;
+            float db = RatioToDb(unka0) + mVolume;
+            mSound->Play(db, mPan, mTranspose, nullptr, 0);
+            return false;
+        } else if (mForceStop) {
+            unk9c = false;
+            mSound->Stop(nullptr, false);
+            return false;
+        } else {
+            TheFlowMgr->QueueCommand(this, kQueue);
+            return true;
+        }
+    }
+}
+
+void FlowSound::Deactivate(bool b1) {
+    FLOW_LOG("Deactivated\n");
+    unk9c = false;
+    if (mSound) {
+        mSound->Stop(this, false);
+    }
+    FlowNode::Deactivate(b1);
+}
+
+void FlowSound::ChildFinished(FlowNode *child) {
+    FLOW_LOG("Child Finished of class:%s\n", child->ClassName());
+    mRunningNodes.remove(child);
+    if (!unk9c) {
+        FLOW_LOG("Timed Release From Parent \n");
+        Timer timer;
+        timer.Reset();
+        timer.Start();
+        mFlowParent->ChildFinished(this);
+        timer.Stop();
+        TheFlowMgr->AddMs(timer.Ms());
+    }
+}
+
+void FlowSound::RequestStop() {
+    FLOW_LOG("RequestStop\n");
+    switch (mStopMode) {
+    case FlowNode::kStopImmediate:
+    case FlowNode::kReleaseAndContinue:
+        unk6c = true;
+        TheFlowMgr->QueueCommand(this, kIgnore);
+        break;
+    case FlowNode::kStopLastFrame:
+        unk6c = true;
+        break;
+    case FlowNode::kStopOnMarker:
+        unk68 = 2;
+        unk6c = true;
+        break;
+    case FlowNode::kStopBetweenMarkers:
+        if (unk64) {
+            TheFlowMgr->QueueCommand(this, kIgnore);
+        } else {
+            unk68 = 3;
+            unk6c = true;
+        }
+        break;
+    default:
+        break;
+    }
+    FlowNode::RequestStop();
+}
+
+void FlowSound::RequestStopCancel() {
+    FLOW_LOG("RequestStopCancel\n");
+    FlowNode::RequestStopCancel();
+    if (unk6c) {
+        unk6c = false;
+        TheFlowMgr->QueueCommand(this, kQueue);
+    }
+}
+
+void FlowSound::Execute(QueueState qs) {
+    FLOW_LOG("Execute: state = %i\n", qs);
+    if (IsRunning()) {
+        if (qs == kIgnore) {
+            unk9c = false;
+            if (mStopMode == kReleaseAndContinue) {
+                mSound->EndLoop(this);
+            } else {
+                mSound->Stop(this, true);
+            }
+            if (!mImmediateRelease) {
+                FLOW_LOG("Timed Release From Parent \n");
+                Timer timer;
+                timer.Reset();
+                timer.Start();
+                mFlowParent->ChildFinished(this);
+                timer.Stop();
+                TheFlowMgr->AddMs(timer.Ms());
+            }
+            FlowNode::Deactivate(false);
+        }
+    } else {
+        if (qs == kQueue) {
+            unk6c = false;
+            unk68 = 0;
+            if (!unk9c) {
+                unk9c = true;
+                float db = RatioToDb(unka0) + mVolume;
+                mSound->Play(db, mPan, mTranspose, this, 0);
+            }
+        } else if (qs == kIgnore) {
+            mFlowParent->ChildFinished(this);
+        }
+    }
+}
+
+bool FlowSound::IsRunning() { return unk9c || FlowNode::IsRunning(); }
+
+void FlowSound::UpdateIntensity() {
+    FLOW_LOG("Updating Intensity: %0.2f\n", FlowNode::sIntensity);
+    if (mUseIntensity) {
+        float db = RatioToDb(FlowNode::sIntensity);
+        unka0 = FlowNode::sIntensity;
+        db += mVolume;
+        mSound->SetVolume(db, this);
+    }
+    FlowNode::UpdateIntensity();
+}
+
+void FlowSound::OnSoundSelected() {
+    if (mSound) {
+        if (mSound->Property("loop", true)->Int() == 1) {
+            mImmediateRelease = false;
+        }
+    }
+}
