@@ -13,6 +13,7 @@
 #include "hamobj/MoveDetector.h"
 #include "math/DoubleExponentialSmoother.h"
 #include "obj/Data.h"
+#include "obj/DirLoader.h"
 #include "obj/Object.h"
 #include "rndobj/Overlay.h"
 #include "ui/UILabelDir.h"
@@ -138,8 +139,8 @@ protected:
     FilterQueue *mFilterQueue; // 0x314
     MovePlayerData mMovePlayerData[2]; // 0x318
     MoveAsyncDetector *mAsyncDetector; // 0x390
-    int unk394; // 0x394
-    std::list<ObjDirPtr<UILabelDir> > unk398; // 0x398
+    DirLoader *unk394; // 0x394 - update loader?
+    std::list<ObjDirPtr<UILabelDir> > unk398; // 0x398 - update fonts?
     Vector2DESmoother unk3a0; // 0x3a0
     char buffer[0x30];
     int unk3f8; // 0x3f8

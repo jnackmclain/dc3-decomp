@@ -1,6 +1,7 @@
 #include "hamobj/MoveDir.h"
 #include "MoveDir.h"
 #include "ScoreUtl.h"
+#include "char/Character.h"
 #include "gesture/GestureMgr.h"
 #include "gesture/SkeletonClip.h"
 #include "gesture/SkeletonDir.h"
@@ -14,17 +15,32 @@
 #include "hamobj/HamGameData.h"
 #include "hamobj/HamMove.h"
 #include "hamobj/HamPlayerData.h"
+#include "meta/SongMetadata.h"
+#include "meta/SongMgr.h"
 #include "obj/Data.h"
 #include "obj/DataFile.h"
+#include "obj/DataUtl.h"
 #include "obj/Dir.h"
+#include "obj/DirLoader.h"
 #include "obj/Object.h"
 #include "obj/Task.h"
+#include "obj/Utl.h"
 #include "os/Debug.h"
 #include "os/File.h"
 #include "os/System.h"
+#include "rndobj/Dir.h"
+#include "rndobj/Font.h"
+#include "rndobj/FontBase.h"
 #include "rndobj/Overlay.h"
+#include "ui/ResourceDirPtr.h"
+#include "ui/UILabelDir.h"
+#include "utl/BinStream.h"
+#include "utl/FilePath.h"
 #include "utl/Loader.h"
+#include "utl/SongInfoCopy.h"
 #include "utl/Std.h"
+#include "utl/Symbol.h"
+#include "world/Dir.h"
 
 std::vector<FilterVersion *> MoveDir::sFilterVersions;
 
@@ -42,7 +58,24 @@ MoveDir::MoveDir()
     SetFilterVersion("ham2");
 }
 
-MoveDir::~MoveDir() {}
+MoveDir::~MoveDir() {
+    RELEASE(mFilterQueue);
+    RELEASE(mAsyncDetector);
+    mMoveOverlay = RndOverlay::Find("ham_move", false);
+    if (mMoveOverlay && mMoveOverlay->GetCallback() == this) {
+        mMoveOverlay->SetCallback(nullptr);
+        if (TheLoadMgr.EditMode()) {
+            mMoveOverlay->SetShowing(false);
+        }
+    }
+    delete mSkeletonViz;
+    if (SkeletonUpdate::HasInstance()) {
+        SkeletonUpdateHandle handle = SkeletonUpdate::InstanceHandle();
+        if (handle.HasCallback(this)) {
+            handle.RemoveCallback(this);
+        }
+    }
+}
 
 BEGIN_PROPSYNCS(MoveDir)
     SYNC_PROP_SET(current_move, mMovePlayerData[0].mCurMove.Ptr(), )
@@ -96,6 +129,234 @@ BEGIN_COPYS(MoveDir)
         COPY_MEMBER(mReportMove)
     END_COPYING_MEMBERS
 END_COPYS
+
+BEGIN_LOADS(MoveDir)
+    PreLoad(bs);
+    PostLoad(bs);
+END_LOADS
+
+void MoveDir::PreLoad(BinStream &bs) {
+    LOAD_REVS(bs)
+    ASSERT_REVS(0x23, 0)
+    if (d.rev < 9) {
+        RndDir::PreLoad(bs);
+    } else {
+        SkeletonDir::PreLoad(bs);
+    }
+    Symbol song = TheGameData->GetSong();
+    if (!IsProxy() && gLoadingProxyFromDisk && !song.Null()) {
+        SongMgr *songMgr = ObjectDir::Main()->Find<SongMgr>("song_mgr", false);
+        if (songMgr) {
+            const SongMetadata *songData =
+                songMgr->Data(songMgr->GetSongIDFromShortName(song, true));
+            if (songData->Version() < 11) {
+                unk394 = dynamic_cast<DirLoader *>(TheLoadMgr.AddLoader(
+                    FilePath(FileRoot(), songMgr->SongFilePath(song, "_update.milo", 11)),
+                    kLoadFront
+                ));
+            }
+        }
+    }
+    d.PushRev(this);
+}
+
+void MoveDir::PostLoad(BinStream &bs) {
+    BinStreamRev d(bs, bs.PopRev(this));
+    if (d.rev < 9) {
+        RndDir::PostLoad(bs);
+    } else {
+        SkeletonDir::PostLoad(bs);
+    }
+    if (d.rev < 5) {
+        bool b;
+        d >> b;
+    }
+    if (d.rev > 0 && d.rev < 2) {
+        String str;
+        d >> str;
+    }
+    if (!IsProxy() || d.rev < 8) {
+        if (d.rev > 3 && d.rev < 9) {
+            String str;
+            d >> str;
+        }
+        if (d.rev > 5 && d.rev < 32) {
+            if (d.rev > 0x1A) {
+                ObjPtrVec<HamMove> moves(this, (EraseMode)0, kObjListAllowNull);
+                d >> moves;
+            } else {
+                ObjPtr<HamMove> move(this);
+                d >> move;
+            }
+        }
+    }
+    if (IsProxy() && d.rev > 10 && d.rev < 0xD) {
+        ObjPtr<Character> character(this);
+        WorldDir *wDir = TheHamDirector ? TheHamDirector->GetVenueWorld() : nullptr;
+        character.Load(d.stream, true, wDir);
+    }
+    if (IsProxy() && d.rev > 0xC) {
+        d >> mFiltersEnabled;
+    }
+    char buf[0x80];
+    if (d.rev < 0x23) {
+        if (IsProxy() && d.rev > 0xE) {
+            d.stream.ReadString(buf, 0x80);
+        }
+        if (IsProxy() && d.rev > 0xD) {
+            d.stream.ReadString(buf, 0x80);
+        }
+        if (IsProxy() && d.rev > 0x17) {
+            d.stream.ReadString(buf, 0x80);
+        }
+    }
+    if (d.rev > 6) {
+        if (d.rev > 9 && d.rev < 18) {
+            int x;
+            d >> x;
+            mShowMoveOverlay = x;
+        } else {
+            d >> mShowMoveOverlay;
+        }
+    }
+    if (d.rev > 0xF && d.rev < 0x1F) {
+        bool b;
+        d >> b;
+    }
+    if (d.rev > 0x16 && d.rev < 0x22) {
+        bool b;
+        d >> b;
+    }
+    if (d.rev > 0x14) {
+        if (d.rev > 0x1B) {
+            d >> mErrorNodeInfo;
+        } else {
+            Symbol s;
+            d >> s;
+        }
+    } else if (d.rev > 0x11) {
+        int x;
+        d >> x;
+    }
+    if (d.rev > 0x15 && d.rev < 0x1D) {
+        bool b;
+        d >> b;
+    }
+    if (d.rev > 0x19 && d.rev < 0x21) {
+        int x;
+        d >> x;
+        bool b;
+        d >> b;
+        int y, z;
+        d >> y >> z;
+        for (int i = 0; i < 3; i++) {
+            d >> b >> b;
+        }
+    }
+    if (d.rev > 0x13) {
+        d >> mImportClipPath;
+    }
+    if (d.rev < 0x19) {
+        if (d.rev > 0x14) {
+            int x;
+            d >> x;
+            Symbol s;
+            for (int i = 0; i < x; i++) {
+                int n;
+                d >> s >> n;
+            }
+        } else if (d.rev > 0xB) {
+            int max = 5;
+            if (d.rev < 0x11) {
+                max = 4;
+            }
+            for (int i = 0; i < max; i++) {
+                int x;
+                d >> x;
+            }
+        }
+    }
+    Symbol filterVersion;
+    static Symbol ham1("ham1");
+    static Symbol ham2("ham2");
+    if (d.rev < 0x1A) {
+        filterVersion = ham1;
+    } else if (d.rev < 0x1E) {
+        filterVersion = ham2;
+    } else {
+        d >> filterVersion;
+    }
+    SetFilterVersion(filterVersion);
+    if (unk394) {
+        ObjectDir *loaderDir = unk394->GetDir();
+        RELEASE(unk394);
+        if (loaderDir) {
+            for (ObjDirItr<Hmx::Object> it(loaderDir, true); it != nullptr; ++it) {
+                Hmx::Object *cur = it;
+                if (cur != loaderDir) {
+                    const char *curName = cur->Name();
+                    HamMove *move = dynamic_cast<HamMove *>(cur);
+                    if (move) {
+                        HamMove *find = Find<HamMove>(curName, false);
+                        if (find) {
+                            find->Update(move);
+                        }
+                    } else {
+                        ObjectDir *dir = dynamic_cast<ObjectDir *>(cur);
+                        if (dir && !*dir->GetPathName()) {
+                            continue;
+                        } else {
+                            Hmx::Object *find = Find<Hmx::Object>(curName, false);
+                            if (find) {
+                                delete find;
+                            }
+                            it->SetName(curName, this);
+                        }
+                    }
+                }
+            }
+            delete loaderDir;
+        } else {
+            MILO_NOTIFY("%s has no associated update file for song", PathName(this));
+        }
+    }
+    static Symbol DLC_UPDATE_FONTS("DLC_UPDATE_FONTS");
+    DataArray *updateArray = DataGetMacro(DLC_UPDATE_FONTS);
+    for (int i = 0; i < updateArray->Size(); i++) {
+        char buffer[256];
+        String curStr(updateArray->Str(i));
+        strcpy(buffer, MakeString("%s_%s", curStr, SystemLanguage()));
+        AddClassExt(buffer, RndFont::StaticClassName());
+        RndFont *updateFont = Find<RndFont>(buffer, false);
+        if (updateFont) {
+            FilePath path;
+            if (ResourceDirBase::MakeResourcePath(
+                    path, "HamLabel", "UILabelDir", curStr.c_str()
+                )) {
+                ObjDirPtr<UILabelDir> labelDirPtr;
+                labelDirPtr.LoadFile(path, false, true, kLoadFront, false);
+                if (labelDirPtr.IsLoaded()) {
+                    RndFontBase *font = labelDirPtr->FontObj(gNullStr);
+                    MILO_ASSERT(font, 0xA52);
+                    ReplaceObject(font, updateFont, false, false, true);
+                    unk398.push_back(labelDirPtr);
+                }
+            }
+        }
+    }
+    if (d.rev < 3 && !IsProxy()) {
+        MILO_NOTIFY(
+            "%s MoveDir older than version 3, need to resave this file", PathName(this)
+        );
+    }
+    if (TheLoadMgr.EditMode()) {
+        if (mFiltersEnabled) {
+            MiloInit();
+        }
+    } else {
+        mRecordClip = nullptr;
+    }
+}
 
 void MoveDir::ClearLimbFeedback(int player) {
     MILO_LOG("MoveDir::ClearLimbFeedback(int player = %d)\n", player);
