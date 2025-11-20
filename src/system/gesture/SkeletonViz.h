@@ -2,6 +2,7 @@
 #include "gesture/BaseSkeleton.h"
 #include "gesture/CameraInput.h"
 #include "gesture/Skeleton.h"
+#include "math/Color.h"
 #include "math/Mtx.h"
 #include "obj/Dir.h"
 #include "rndobj/Cam.h"
@@ -44,6 +45,8 @@ public:
     void Visualize(
         const CameraInput &, const BaseSkeleton &, std::vector<SkeletonCallback *> *, bool
     );
+    void
+    DrawLine3D(const Vector3 &, const Vector3 &, float, const Hmx::Color &, Hmx::Color *);
 
 private:
     void LoadResource(bool);

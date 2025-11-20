@@ -93,6 +93,7 @@ public:
     void LoadClip(bool);
     void FillMoveRatings();
     void SwapMoveRecord();
+    void PollRecording(const SkeletonFrame &);
 
     static void Init();
     static const RecordedFrame *

@@ -1,4 +1,5 @@
 #pragma once
+#include "gesture/Skeleton.h"
 #include "hamobj/DetectFrame.h"
 #include "hamobj/ErrorNode.h"
 #include "hamobj/FilterVersion.h"
@@ -39,6 +40,7 @@ public:
     bool HasJob() const;
     void CancelJob();
     void StartJob();
+    void Poll(const SkeletonUpdateData &);
 
 private:
     float unk0;

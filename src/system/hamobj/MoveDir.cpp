@@ -1,10 +1,13 @@
 #include "hamobj/MoveDir.h"
+#include "FilterQueue.h"
 #include "HamMaster.h"
 #include "MoveDir.h"
 #include "ScoreUtl.h"
 #include "char/Character.h"
 #include "flow/PropertyEventProvider.h"
+#include "gesture/BaseSkeleton.h"
 #include "gesture/GestureMgr.h"
+#include "gesture/Skeleton.h"
 #include "gesture/SkeletonClip.h"
 #include "gesture/SkeletonDir.h"
 #include "gesture/SkeletonUpdate.h"
@@ -13,30 +16,37 @@
 #include "hamobj/DancerSequence.h"
 #include "hamobj/DetectFrame.h"
 #include "hamobj/Difficulty.h"
+#include "hamobj/ErrorNode.h"
 #include "hamobj/FilterVersion.h"
 #include "hamobj/HamDirector.h"
 #include "hamobj/HamGameData.h"
 #include "hamobj/HamMove.h"
+#include "hamobj/HamPhraseMeter.h"
 #include "hamobj/HamPlayerData.h"
 #include "hamobj/MoveDetector.h"
+#include "hamobj/PracticeSection.h"
 #include "hamobj/ScoreUtl.h"
 #include "meta/SongMetadata.h"
 #include "meta/SongMgr.h"
 #include "obj/Data.h"
 #include "obj/DataFile.h"
+#include "obj/DataFunc.h"
 #include "obj/DataUtl.h"
 #include "obj/Dir.h"
 #include "obj/DirLoader.h"
 #include "obj/Object.h"
 #include "obj/Task.h"
 #include "obj/Utl.h"
+#include "os/DateTime.h"
 #include "os/Debug.h"
 #include "os/File.h"
 #include "os/System.h"
 #include "rndobj/Dir.h"
+#include "rndobj/Draw.h"
 #include "rndobj/Font.h"
 #include "rndobj/FontBase.h"
 #include "rndobj/Overlay.h"
+#include "ui/PanelDir.h"
 #include "ui/ResourceDirPtr.h"
 #include "ui/UILabelDir.h"
 #include "utl/BinStream.h"
@@ -49,16 +59,61 @@
 
 std::vector<FilterVersion *> MoveDir::sFilterVersions;
 
+String RecordClipName(const char *cc, int i2) {
+    DateTime dt;
+    GetDateAndTime(dt);
+    Difficulty playerDiff = TheGameData->Player(0)->GetDifficulty();
+    char diff;
+    if (playerDiff == kDifficultyExpert) {
+        diff = 'h';
+    } else {
+        diff = DifficultyToSym(playerDiff).Str()[0];
+    }
+    const char *prefix = "";
+    switch (i2) {
+    case 1:
+        prefix = "b";
+        break;
+    case 2:
+        prefix = "c";
+        break;
+    case 3:
+        prefix = "d";
+        break;
+    default:
+        break;
+    }
+    String ret(MakeString(
+        "%s%d~%s~%c~%s~%s", prefix, dt.ToCode(), TheGameData->GetSong(), diff, cc
+    ));
+    if (ret.length() > 0x26) {
+        ret.resize(0x26);
+    }
+    return ret;
+}
+
+MoveMode CurrentMoveMode() {
+    MILO_ASSERT(TheHamDirector, 0x79);
+    return TheHamDirector->InPracticeMode() ? (MoveMode)1 : (MoveMode)0;
+}
+
 MoveDir::MoveDir()
     : mShowMoveOverlay(0), mErrorNodeInfo(0), mPlayClip(this), mRecordClip(this),
       unk2bc(this), unk2d0(this), unk2e4(0), mReportMove(this), mFiltersEnabled(0),
-      unk308(0), unk30c(0), mFilterQueue(0), mAsyncDetector(0), unk394(0),
+      mGamePanel(0), unk30c(0), mFilterQueue(0), mAsyncDetector(0), unk394(0),
       mFinishingMoveMeasure(10000), mMoveOverlay(RndOverlay::Find("ham_move", true)),
       mDancerSeq(this), unk414(0), mSkeletonViz(Hmx::Object::New<SkeletonViz>()),
-      unk41c(0), mDebugLatencyOffset(0), unkef8(0), mLastPollMs(0), mDebugCollision(0),
-      unkf84(-1) {
+      unk41c(0), mDebugLatencyOffset(0), mDebugLoop(0), mLastPollMs(0),
+      mDebugCollision(0), unkf84(-1) {
     for (int i = 0; i < 2; i++) {
         mMovePlayerData[i].Reset();
+        mCurMoveSmoothers[i].SetCoeffs(1, 0);
+        filler[i] = 0;
+        mCurMoveNormalizedResult[i] = 0;
+        unk3e8[i] = 0;
+        mCurMove[i] = 0;
+        mCurMoveRating[i] = kMoveRatingOk;
+        unk3f0[i] = kMoveRatingOk;
         unkf04[i].Reset();
     }
     SetFilterVersion("ham2");
@@ -489,6 +544,211 @@ void MoveDir::Poll() {
     }
 }
 
+void MoveDir::Enter() {
+    PanelDir::Enter();
+    int i13 = 0;
+    if (TheHamDirector) {
+        std::vector<HamMoveKey> hamMoveKeys;
+        for (int i = 0; i < kNumDifficultiesDC2; i++) {
+            TheHamDirector->MoveKeys((Difficulty)i, this, hamMoveKeys);
+            int numKeys = hamMoveKeys.size();
+            if (i13 < numKeys) {
+                i13 = numKeys;
+            }
+            if (i == kDifficultyEasy) {
+                while (--numKeys > 0) {
+                    HamMoveKey &curKey = hamMoveKeys[numKeys];
+                    if (curKey.move && curKey.move->IsFinalPose()) {
+                        int tmp = curKey.beat / -4.0f;
+                        mFinishingMoveMeasure = 1 - tmp;
+                    }
+                }
+            }
+        }
+    }
+
+    for (int i = 0; i < 2; i++) {
+        MovePlayerData &cur = mMovePlayerData[i];
+        cur.mCurMove = nullptr;
+        cur.unk20.reserve(i13);
+        cur.unk14.reserve(i13 << 4);
+    }
+
+    if (!TheLoadMgr.EditMode()) {
+        mGamePanel = ObjectDir::Main()->Find<Hmx::Object>("game_panel", false);
+        mErrorNodeInfo = 0;
+        mFiltersEnabled = true;
+        if (TheLoadMgr.EditMode()) {
+            MiloInit();
+        }
+        unk310 = -1;
+    } else {
+        mGamePanel = nullptr;
+    }
+
+    if (TheHamDirector) {
+        if (TheLoadMgr.EditMode()) {
+            ResetDetection();
+        }
+        WorldDir *wDir = TheHamDirector->GetVenueWorld();
+        if (wDir) {
+            for (int i = 0; i < 2; i++) {
+                MovePlayerData &cur = mMovePlayerData[i];
+                ObjectDir *playerDir =
+                    wDir->Find<ObjectDir>(MakeString("player%i", i), false);
+                if (playerDir) {
+                    cur.mFeedback =
+                        playerDir->Find<CharFeedback>("char_feedback.cf", false);
+                }
+                if (cur.mFeedback) {
+                    cur.mFeedback->ResetErrors();
+                }
+                cur.unk30 =
+                    wDir->Find<HamPhraseMeter>(MakeString("phrase_meter%i", i), false);
+                cur.unk38 =
+                    wDir->Find<RndDrawable>(MakeString("text_feedback%i", i), false);
+            }
+        }
+        delete mFilterQueue;
+        mFilterQueue = new FilterQueue();
+        RELEASE(mAsyncDetector);
+        mAsyncDetector = new MoveAsyncDetector(this);
+        mSkeletonViz->Init();
+        if (TheMaster) {
+            static Symbol stream_jump("stream_jump");
+            static Symbol beat("beat");
+            TheMaster->AddSink(this, stream_jump);
+            TheMaster->AddSink(this, beat);
+        }
+    }
+}
+
+void MoveDir::Exit() {
+    PanelDir::Exit();
+    if (TheMaster) {
+        TheMaster->RemoveSink(this);
+    }
+}
+
+void MoveDir::Update(const SkeletonUpdateData &data) {
+    if (mFilterQueue) {
+        mFilterQueue->Poll(data);
+    }
+}
+
+void MoveDir::PostUpdate(const SkeletonUpdateData *data) {
+    if (data) {
+        if (mRecordClip) {
+            mRecordClip->PollRecording(*data->unk8);
+        }
+        if (unk2bc) {
+            unk2bc->PollRecording(*data->unk8);
+        }
+        if (unk2d0) {
+            unk2d0->PollRecording(*data->unk8);
+        }
+        if (TheLoadMgr.EditMode()) {
+            MILO_ASSERT(TheGameData, 0x387);
+            TheGameData->AutoAssignSkeletons(data);
+        }
+        if (mMoveOverlay->Showing()) {
+            if (mPlayClip && mDebugLatencyOffset) {
+                SkeletonFrame skeletonFrame;
+                if (mPlayClip->SkeletonFrameAt(
+                        sLatencySeconds + SongSeconds(), skeletonFrame
+                    )) {
+                    unk424.Poll(0, skeletonFrame);
+                }
+            } else {
+                const Skeleton *playerSkeleton =
+                    TheGameData->Player(0)->GetSkeleton((const Skeleton *const(&)[6]
+                    )data->unk4);
+                if (playerSkeleton) {
+                    unk424 = *playerSkeleton;
+                }
+            }
+        }
+    }
+    PostUpdateFilters();
+    for (int i = 0; i < 2; i++) {
+        if (!mFiltersEnabled
+            || (mMovePlayerData[i].mCurMove && mMovePlayerData[i].mCurMove->IsRest())) {
+            if (mMovePlayerData[i].mFeedback) {
+                mMovePlayerData[i].mFeedback->ResetErrors();
+            }
+        }
+    }
+    FinalPoseStateMachine();
+}
+
+void MoveDir::Draw(const BaseSkeleton &baseSkeleton, SkeletonViz &skeletonViz) {
+    if (unk414) {
+        int actual_ms = unk414->ElapsedMs();
+        if (actual_ms != -1) {
+            for (int i = 0; i < kNumJoints; i++) {
+                Vector3 vdisp;
+                int disp_ms;
+                unk414->Displacement(
+                    nullptr, kCoordCamera, (SkeletonJoint)i, actual_ms, vdisp, disp_ms
+                );
+                MILO_ASSERT(disp_ms == actual_ms, 0x50F);
+                const Vector3 &camJointPos = unk414->CamJointPos((SkeletonJoint)i);
+                Vector3 vdiff;
+                Subtract(camJointPos, vdisp, vdiff);
+                Hmx::Color color(0.3f, 0.6f, 0.3f);
+                mSkeletonViz->DrawLine3D(vdiff, camJointPos, 0.01f, color, &color);
+            }
+        }
+    } else if (mFiltersEnabled && unk41c) {
+        MILO_ASSERT(TheGestureMgr, 0x51A);
+        MILO_ASSERT(TheHamDirector, 0x51B);
+        MoveMode moveMode = CurrentMoveMode();
+        const Skeleton *player_skel = dynamic_cast<const Skeleton *>(&baseSkeleton);
+        MILO_ASSERT(player_skel, 0x51F);
+        SkeletonUpdateHandle handle = SkeletonUpdate::InstanceHandle();
+        // ErrorFrameInput input(handle.History(), )
+        for (int i = 0; i < mFilterVer->NumNodes(); i++) {
+        }
+    }
+}
+
+DataNode OnDetectFracToRating(DataArray *a) {
+    HamMove *move = a->Size() > 2 ? a->Obj<HamMove>(2) : nullptr;
+    const std::vector<float> *ratings = nullptr;
+    if (move) {
+        ratings = move->RatingOverride();
+    }
+    return DetectFracToRating(a->Float(1), ratings, nullptr);
+}
+
+DataNode OnDetectFracToRatingFrac(DataArray *a) {
+    HamMove *move = a->Obj<HamMove>(2);
+    return DetectFracToRatingFrac(a->Float(1), move->RatingOverride());
+}
+
+DataNode OnRatingStateToIndex(DataArray *a) { return RatingStateToIndex(a->Sym(1)); }
+
+DataNode OnGetScoreBonus(DataArray *a) {
+    HamMove *move = a->Size() > 2 ? a->Obj<HamMove>(2) : nullptr;
+    const std::vector<float> *ratings = nullptr;
+    if (move) {
+        ratings = move->RatingOverride();
+    }
+    return GetScoreBonus(a->Float(1), ratings);
+}
+
+void MoveDir::Init() {
+    REGISTER_OBJ_FACTORY(MoveDir);
+    DataArray *cfg = SystemConfig()->FindArray("scoring", false);
+    if (cfg) {
+        LoadScoring(cfg);
+    }
+    DataRegisterFunc("detect_frac_to_rating", OnDetectFracToRating);
+    DataRegisterFunc("detect_frac_to_rating_frac", OnDetectFracToRatingFrac);
+    DataRegisterFunc("rating_state_to_index", OnRatingStateToIndex);
+    DataRegisterFunc("get_score_bonus", OnGetScoreBonus);
+}
+
 void MoveDir::ClearLimbFeedback(int player) {
     MILO_LOG("MoveDir::ClearLimbFeedback(int player = %d)\n", player);
     CharFeedback *feedback = mMovePlayerData[player].mFeedback;
@@ -575,12 +835,11 @@ void MoveDir::StopSongRecord() {
     }
 }
 
-String RecordClipName(const char *, int);
-
 void MoveDir::FlushMoveRecord() {
     SkeletonClip *clip = unk2d0;
     if (clip) {
-        clip->FlushMoveRecord(RecordClipName("ktb", -1).c_str());
+        String clipName = RecordClipName("ktb", -1);
+        clip->FlushMoveRecord(clipName.c_str());
     } else {
         MILO_NOTIFY("skeleton recording not yet active");
     }
@@ -640,11 +899,11 @@ void MoveDir::FinishGameRecord() {
 
 void MoveDir::SetupSongRecordClip() {
     static Symbol rhythm_battle("rhythm_battle");
-    bool b1 = unk308 && unk308->Type() == rhythm_battle;
+    bool b1 = mGamePanel && mGamePanel->Type() == rhythm_battle;
     bool b7 = false;
-    if (unk308) {
+    if (mGamePanel) {
         static Message msg("is_game_over");
-        b7 = unk308->Handle(msg, true).Int();
+        b7 = mGamePanel->Handle(msg, true).Int();
     }
     if (!b7) {
         const char *modeStr;
@@ -744,7 +1003,7 @@ void MoveDir::MiloUpdate() {
 }
 
 DataNode MoveDir::OnStreamJump(const DataArray *) {
-    if (unkef8) {
+    if (mDebugLoop) {
         ResetDetection();
         unk310 = -1;
     }
@@ -757,5 +1016,25 @@ __declspec(noinline) void MoveDir::OnBeat() {
         for (int i = 0; i < 2; i++) {
             mCurMoveSmoothers[i].Reset();
         }
+    }
+}
+
+void MoveDir::SetDebugLoop(bool loop) { mDebugLoop = loop; }
+
+PracticeSection *MoveDir::GetPracticeSection(Difficulty d) {
+    for (ObjDirItr<PracticeSection> it(this, true); it != nullptr; ++it) {
+        if (it->GetDifficulty() == d) {
+            return it;
+        }
+    }
+    return nullptr;
+}
+
+DancerSequence *MoveDir::SkillsSequence(Difficulty d, Symbol s1, Symbol s2) {
+    PracticeSection *section = GetPracticeSection(d);
+    if (section) {
+        return section->SequenceForDetection(s1, s2);
+    } else {
+        return nullptr;
     }
 }

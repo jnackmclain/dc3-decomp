@@ -11,6 +11,8 @@
 #include "utl/MemMgr.h"
 
 enum MoveMode {
+    // 0 - perform it mode
+    // 1 - practice mode
     kNumMoveModes = 2
 };
 

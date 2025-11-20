@@ -19,3 +19,5 @@ Symbol RatingState(int);
 void RatingStateThreshold(int, Symbol &, float &, const std::vector<float> *);
 int RatingStateToIndex(Symbol);
 void ScoreUtlInit(const DataArray *);
+Symbol DetectFracToRating(float, const std::vector<float> *, int *);
+float GetScoreBonus(float, const std::vector<float> *);

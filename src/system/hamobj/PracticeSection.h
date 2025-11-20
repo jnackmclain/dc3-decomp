@@ -55,6 +55,7 @@ public:
     void ClearSteps();
     void AddStep(PracticeStep);
     DancerSequence *SequenceForDetection(Symbol, Symbol);
+    Difficulty GetDifficulty() const { return mDifficulty; }
 
 protected:
     PracticeSection();

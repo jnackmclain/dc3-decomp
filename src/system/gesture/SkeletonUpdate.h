@@ -19,6 +19,7 @@ public:
     void AddCallback(SkeletonCallback *);
     bool HasCallback(SkeletonCallback *);
     void PostUpdate();
+    const SkeletonHistory *History() const;
 
 private:
     SkeletonUpdate *mInst; // 0x0

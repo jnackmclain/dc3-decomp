@@ -7,15 +7,19 @@
 #include "gesture/SkeletonViz.h"
 #include "hamobj/CharFeedback.h"
 #include "hamobj/DancerSequence.h"
+#include "hamobj/DancerSkeleton.h"
 #include "hamobj/DetectFrame.h"
 #include "hamobj/Difficulty.h"
 #include "hamobj/FilterVersion.h"
 #include "hamobj/HamMove.h"
+#include "hamobj/HamPhraseMeter.h"
 #include "hamobj/MoveDetector.h"
+#include "hamobj/PracticeSection.h"
 #include "math/DoubleExponentialSmoother.h"
 #include "obj/Data.h"
 #include "obj/DirLoader.h"
 #include "obj/Object.h"
+#include "rndobj/Draw.h"
 #include "rndobj/Overlay.h"
 #include "ui/UILabelDir.h"
 #include "utl/MemMgr.h"
@@ -31,18 +35,18 @@ public:
         MovePlayerData() : mCurMove(nullptr) {}
         void Reset() {
             mCurMove = nullptr;
-            unk2c = 0;
-            unk30 = 0;
+            unk30 = nullptr;
             mFeedback = nullptr;
-            unk38 = 0;
+            unk38 = nullptr;
+            unk2c = 0;
         }
         ObjPtr<HamMove> mCurMove; // 0x0
         std::vector<DetectFrame> unk14; // 0x14
         std::vector<HamMoveKey> unk20; // 0x20
         int unk2c; // 0x2c
-        int unk30; // 0x30
+        HamPhraseMeter *unk30; // 0x30
         CharFeedback *mFeedback; // 0x34
-        int unk38; // 0x38
+        RndDrawable *unk38; // 0x38
     };
     // Hmx::Object
     virtual ~MoveDir();
@@ -95,11 +99,17 @@ public:
     EnqueueDetectFrames(float, int, std::vector<DetectFrame> &, const FilterVersion *);
     void SimulateSong(int, int) {}
     void OnBeat();
+    void FinalPoseStateMachine();
+    void SetDebugLoop(bool);
+    PracticeSection *GetPracticeSection(Difficulty);
+    DancerSequence *SkillsSequence(Difficulty, Symbol, Symbol);
 
     MoveAsyncDetector *GetAsyncDetector() const { return mAsyncDetector; }
 
+    static void Init();
     static void LoadScoring(const DataArray *);
     static const FilterVersion *FindFilterVersion(FilterVersionType);
+    static float SongSeconds();
     static bool sGameRecord;
     static bool sGameRecord2Player;
 
@@ -110,6 +120,7 @@ private:
     void DetectRange(
         std::vector<DetectFrame> &, std::pair<DetectFrame *, DetectFrame *> &, int, int
     );
+    void PostUpdateFilters();
 
     DataNode OnStreamJump(const DataArray *);
 
@@ -141,7 +152,7 @@ protected:
     /** "The pre-recorded .clp file to import" */
     String mImportClipPath; // 0x2fc
     bool mFiltersEnabled; // 0x304
-    Hmx::Object *unk308; // 0x308 - ptr to some Object
+    Hmx::Object *mGamePanel; // 0x308
     float unk30c; // 0x30c
     float unk310; // 0x310
     FilterQueue *mFilterQueue; // 0x314
@@ -163,13 +174,13 @@ protected:
     int mFinishingMoveMeasure; // 0x3f8
     RndOverlay *mMoveOverlay; // 0x3fc
     ObjPtr<DancerSequence> mDancerSeq; // 0x400
-    int unk414; // 0x414
+    DancerSkeleton *unk414; // 0x414
     SkeletonViz *mSkeletonViz; // 0x418
     int unk41c; // 0x41c
     /** "Offset debug skeleton by latency offset" */
     bool mDebugLatencyOffset; // 0x420
     Skeleton unk424; // 0x424
-    bool unkef8; // 0xef8
+    bool mDebugLoop; // 0xef8
     float mLastPollMs; // 0xefc
     /** "Show collision debug" */
     bool mDebugCollision; // 0xf00
