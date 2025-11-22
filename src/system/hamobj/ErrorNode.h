@@ -110,6 +110,8 @@ public:
     MEM_OVERLOAD(ErrorNode, 0x7D);
     bool IsTypeJointMatch(int) const;
     bool XZErrorAxis(Vector3 &, const DancerSkeleton &) const;
+    int GetFeedbackLimbs() const { return mFeedbackLimbs; }
+    ErrorNodeType Type() const { return mType; }
 
     static ErrorNode *Create(const DataArray *);
 
@@ -124,6 +126,7 @@ protected:
     ErrorNodeType mType; // 0x4
     Symbol mNodeName; // 0x8
     SkeletonJoint mJoint; // 0xc
+    /** A FeedbackLimbs bitmask of which limbs to highlight to provide feedback for. */
     int mFeedbackLimbs; // 0x10
     SkeletonJoint mXErrorAxis; // 0x14
     SkeletonJoint mZErrorAxis; // 0x18
