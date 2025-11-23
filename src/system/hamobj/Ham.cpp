@@ -8,7 +8,9 @@
 #include "MoveGraph.h"
 #include "PoseFatalities.h"
 #include "SongCollision.h"
+#include "flow/PropertyEventProvider.h"
 #include "gesture/Gesture.h"
+#include "gesture/SpeechMgr.h"
 #include "hamobj/BustAMoveData.h"
 #include "hamobj/CamShotCatVO.h"
 #include "hamobj/CrazeHollaback.h"
@@ -31,12 +33,14 @@
 #include "hamobj/HamPartyJumpData.h"
 #include "hamobj/HamPhotoDisplay.h"
 #include "hamobj/HamPhraseMeter.h"
+#include "hamobj/HamProviderPrinter.h"
 #include "hamobj/HamRibbon.h"
 #include "hamobj/HamScrollSpeedIndicator.h"
 #include "hamobj/HamSkeletonConverter.h"
 #include "hamobj/HamSupereasyData.h"
 #include "hamobj/HamVisDir.h"
 #include "hamobj/HamWardrobe.h"
+#include "hamobj/HollaBackMinigame.h"
 #include "hamobj/MeterDisplay.h"
 #include "hamobj/MiniLeaderboardDisplay.h"
 #include "hamobj/MoveDir.h"
@@ -44,6 +48,10 @@
 #include "hamobj/PhotoSpotlightPositioner.h"
 #include "hamobj/PracticeOptionsProvider.h"
 #include "hamobj/PracticeSection.h"
+#include "hamobj/RhythmBattle.h"
+#include "hamobj/RhythmBattlePlayer.h"
+#include "hamobj/RhythmDetector.h"
+#include "hamobj/RhythmDetectorGroup.h"
 #include "hamobj/SongDifficultyDisplay.h"
 #include "hamobj/SongLayout.h"
 #include "hamobj/StarsDisplay.h"
@@ -53,6 +61,8 @@
 #include "obj/DataUtl.h"
 #include "obj/Dir.h"
 #include "obj/Object.h"
+#include "os/Debug.h"
+#include "os/System.h"
 
 void HamTerminate() {
     DataArray *dataMacro = DataGetMacro("INIT_HAM");
@@ -64,8 +74,7 @@ void HamTerminate() {
 
 void HamInit() {
     GestureInit();
-    DataArray *dataMacro = DataGetMacro("INIT_HAM");
-    if (dataMacro) {
+    if (DataGetMacro("INIT_HAM")) {
         REGISTER_OBJ_FACTORY(CharFeedback);
         CamShotCatVOInit();
         REGISTER_OBJ_FACTORY(DancerSequence);
@@ -106,11 +115,11 @@ void HamInit() {
         HamNavProvider::Init();
         PracticeOptionsProvider::Init();
         PhotoSpotlightPositioner::Init();
-        // REGISTER_OBJ_FACTORY(RhythmDetector);
-        // REGISTER_OBJ_FACTORY(RhythmBattle);
-        // REGISTER_OBJ_FACTORY(RhythmBattlePlayer);
-        // REGISTER_OBJ_FACTORY(RhythmDetectorGroup);
-        // REGISTER_OBJ_FACTORY(HollaBackMinigame);
+        REGISTER_OBJ_FACTORY(RhythmDetector);
+        REGISTER_OBJ_FACTORY(RhythmBattle);
+        REGISTER_OBJ_FACTORY(RhythmBattlePlayer);
+        REGISTER_OBJ_FACTORY(RhythmDetectorGroup);
+        REGISTER_OBJ_FACTORY(HollaBackMinigame);
         REGISTER_OBJ_FACTORY(MoveGraph);
         REGISTER_OBJ_FACTORY(CrazeHollaback);
         REGISTER_OBJ_FACTORY(HamPartyJumpData);
@@ -121,5 +130,22 @@ void HamInit() {
         REGISTER_OBJ_FACTORY(PoseFatalities);
         MoveDir::Init();
         DifficultyInit();
+        TheDebug.AddExitCallback(HamTerminate);
+        if (SystemConfig("objects", "PropertyEventProvider", "types")
+                ->FindArray("HamProvider", false)) {
+            SystemConfig("ham_init")->ExecuteBlock(1);
+            TheHamProvider =
+                ObjectDir::Main()->Find<PropertyEventProvider>("hamprovider", false);
+            static Symbol language("language");
+            TheHamProvider->SetProperty(language, SystemLanguage());
+            if (TheSpeechMgr) {
+                static Symbol voice_available("voice_available");
+                TheHamProvider->SetProperty(
+                    voice_available, TheSpeechMgr->SpeechSupported()
+                );
+            }
+            HamProviderPrinter *printer = new HamProviderPrinter(); // uhhh...
+        }
+        PreloadSharedSubdirs("ham");
     }
 }
