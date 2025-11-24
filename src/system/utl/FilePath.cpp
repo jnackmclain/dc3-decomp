@@ -4,11 +4,6 @@
 FilePath FilePath::sRoot;
 FilePath FilePath::sNull("");
 
-__declspec(noinline) FilePath::FilePath(const char *str) { Set(sRoot.c_str(), str); }
-__declspec(noinline) FilePath::FilePath(const char *str1, const char *str2) {
-    Set(str1, str2);
-}
-
 void FilePath::Set(const char *str1, const char *str2) {
     char buf[256];
     const char *path;

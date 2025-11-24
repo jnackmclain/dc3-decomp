@@ -1,6 +1,8 @@
 #include "gesture/SkeletonViz.h"
 #include "SkeletonViz.h"
 #include "gesture/BaseSkeleton.h"
+#include "hamobj/HamCharacter.h"
+#include "math/Geo.h"
 #include "math/Mtx.h"
 #include "obj/Object.h"
 #include "os/Debug.h"
@@ -11,6 +13,7 @@
 #include "rndobj/Line.h"
 #include "rndobj/Poll.h"
 #include "rndobj/Trans.h"
+#include "utl/BinStream.h"
 #include "utl/Loader.h"
 
 SkeletonViz::SkeletonViz()
@@ -78,6 +81,40 @@ BEGIN_LOADS(SkeletonViz)
     PostLoad(bs);
 END_LOADS
 
+void SkeletonViz::PreLoad(BinStream &bs) {
+    LOAD_REVS(bs)
+    ASSERT_REVS(6, 1)
+    if (d.rev > 5) {
+        Hmx::Object::Load(bs);
+    }
+    RndDrawable::Load(bs);
+    RndTransformable::Load(bs);
+    if (d.rev > 0) {
+        d >> mUsePhysicalCam;
+    }
+    if (d.rev > 1) {
+        int cs;
+        d >> cs;
+        mAxesCoordSys = (SkeletonCoordSys)cs;
+    }
+    if (d.rev > 2 && d.rev < 4) {
+        int x, y;
+        d >> x;
+        d >> y;
+    }
+    if (d.altRev > 0) {
+        d >> mPhysicalCamRotation;
+    }
+    unk110 = mPhysicalCamRotation;
+    if (d.rev > 4 && d.altRev < 1) {
+        ObjPtr<HamCharacter> hChar(this);
+        d >> hChar;
+    }
+    if (TheLoadMgr.EditMode()) {
+        LoadResource(true);
+    }
+}
+
 void SkeletonViz::PostLoad(BinStream &bs) {
     if (TheLoadMgr.EditMode()) {
         mResource.PostLoad(nullptr);
@@ -141,4 +178,10 @@ void SkeletonViz::UpdateResource() {
         mBoneLines[i]->SetTransParent(this, false);
         mBoneLines[i]->SetLocalXfm(xfm);
     }
+}
+
+void SkeletonViz::SetPhysicalCamScreenRect(const Hmx::Rect &r) {
+    MILO_ASSERT(r.x >= 0 && r.y >= 0 && r.w > 0 && r.h > 0, 0x64);
+    MILO_ASSERT(mPhysicalCam, 0x65);
+    mPhysicalCam->SetScreenRect(r);
 }

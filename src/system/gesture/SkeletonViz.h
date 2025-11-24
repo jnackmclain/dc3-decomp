@@ -47,6 +47,7 @@ public:
     );
     void
     DrawLine3D(const Vector3 &, const Vector3 &, float, const Hmx::Color &, Hmx::Color *);
+    void SetPhysicalCamScreenRect(const Hmx::Rect &);
 
 private:
     void LoadResource(bool);
