@@ -3,8 +3,11 @@
 #include "obj/Data.h"
 #include "obj/Dir.h"
 #include "obj/Object.h"
+#include "rndobj/Dir.h"
 #include "rndobj/Poll.h"
 #include "synth/Sound.h"
+#include "ui/PanelDir.h"
+#include "ui/UIPanel.h"
 #include "utl/MemMgr.h"
 
 class HollaBackMinigame : public RndPollable {
@@ -34,6 +37,7 @@ public:
     void EndShoutOut();
     void SetNumMoves(int);
     void SetState(State);
+    void StartShoutOut(const char *);
 
     OBJ_MEM_OVERLOAD(0x21)
     NEW_OBJ(HollaBackMinigame)
@@ -41,32 +45,32 @@ public:
 protected:
     HollaBackMinigame();
 
-    int unk4;
-    int unk8;
-    Symbol unkc[0x100]; // 0xc
+    int unk8; // 0x8
+    int unkc; // 0xc
+    Symbol unk10[0x100]; // 0x10
     bool unk410; // 0x410
-    int unk414;
+    int unk414; // 0x414 - state
     int unk418;
-    int unk41c;
+    int mNumMoves; // 0x41c
     int unk420;
-    int unk424;
-    Symbol unk428;
-    std::vector<Symbol> unk42c;
-    std::vector<Symbol> unk438;
+    int mSpecifyFirstMoveMeasure; // 0x424
+    Symbol mIntroShoutout; // 0x428
+    std::vector<Symbol> mWinShoutouts; // 0x42c
+    std::vector<Symbol> mWinCamCuts; // 0x438
     bool unk444;
-    int unk448;
-    int unk44c;
+    int mInitialMoveCount; // 0x448
+    int mMaxRoutineSize; // 0x44c
     float unk450;
-    ObjectDir *unk454;
-    ObjectDir *unk458;
-    int unk45c;
-    int unk460;
-    int unk464;
-    int unk468;
+    PanelDir *mHUDPanel; // 0x454
+    RndDir *mHollabackHUD; // 0x458
+    UIPanel *mFlashcardDockPanel; // 0x45c
+    ObjectDir *unk460; // 0x460
+    RndDir *mScoreLeft; // 0x464
+    RndDir *mScoreRight; // 0x468
     bool unk46c;
-    float unk470;
+    float mInitialMusicJump; // 0x470
     bool unk474;
-    Sound *unk478;
+    Sound *mSound; // 0x478
     int unk47c;
     bool unk480;
     bool unk481;
