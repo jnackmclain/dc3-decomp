@@ -5,6 +5,7 @@
 #include "math/Vec.h"
 #include "obj/Object.h"
 #include "rndobj/Highlight.h"
+#include "utl/MemMgr.h"
 #include "utl/Symbol.h"
 
 class CharServoBone : public RndHighlightable,
@@ -35,6 +36,7 @@ public:
     void Regulate();
     void SetRegulateWaypoint(Waypoint *wp) { mRegulate = wp; }
 
+    OBJ_MEM_OVERLOAD(0x1B)
     NEW_OBJ(CharServoBone)
 
     int unk84;

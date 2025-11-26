@@ -4,6 +4,7 @@
 #include "obj/Data.h"
 #include "obj/Object.h"
 #include "utl/BinStream.h"
+#include "utl/MemMgr.h"
 
 class CharPollGroup : public CharPollable, public CharWeightable {
 public:
@@ -24,6 +25,7 @@ public:
     virtual void ListPollChildren(std::list<RndPollable *> &) const;
     virtual void PollDeps(std::list<Hmx::Object *> &, std::list<Hmx::Object *> &);
 
+    OBJ_MEM_OVERLOAD(0x15)
     NEW_OBJ(CharPollGroup);
 
     void SortPolls();

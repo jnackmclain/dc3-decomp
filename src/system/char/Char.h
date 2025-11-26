@@ -11,9 +11,9 @@ extern float gCharHighlightY;
 
 class CharDebug : public RndOverlay::Callback {
 public:
+    CharDebug();
     virtual ~CharDebug();
 
-    CharDebug();
     void Once(Hmx::Object *);
     void Init();
 
@@ -24,8 +24,11 @@ public:
 private:
     virtual float UpdateOverlay(RndOverlay *, float);
 
+    static DataNode OnSetObjects(DataArray *);
+
     void AddObject(Hmx::Object *, bool);
     void SetObjects(DataArray *);
-    static DataNode OnSetObjects(DataArray *);
     void DisplayObject(Hmx::Object *);
 };
+
+extern CharDebug TheCharDebug;

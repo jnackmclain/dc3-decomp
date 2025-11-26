@@ -6,6 +6,7 @@
 #include "obj/Object.h"
 #include "stl/_vector.h"
 #include "utl/BinStream.h"
+#include "utl/MemMgr.h"
 #include "utl/Symbol.h"
 
 class CharMirror : public CharWeightable, public CharPollable {
@@ -24,6 +25,7 @@ public:
     virtual void Poll();
     virtual void PollDeps(std::list<Hmx::Object *> &, std::list<Hmx::Object *> &);
 
+    OBJ_MEM_OVERLOAD(0x18)
     NEW_OBJ(CharMirror);
 
     ObjPtr<CharServoBone> mServo; // 0x28

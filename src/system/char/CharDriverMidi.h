@@ -3,6 +3,7 @@
 #include "obj/Data.h"
 #include "obj/Object.h"
 #include "utl/BinStream.h"
+#include "utl/MemMgr.h"
 
 class CharDriverMidi : public CharDriver {
 public:
@@ -20,6 +21,7 @@ public:
     virtual void Enter();
     virtual void Exit();
 
+    OBJ_MEM_OVERLOAD(0x14)
     NEW_OBJ(CharDriverMidi);
 
     bool unke0; // unsure why this is here, its def size 0x1

@@ -15,6 +15,9 @@ public:
     void PoseMeshes();
     void StuffMeshes(std::list<Hmx::Object *> &);
 
+    static void Init();
+    static void Terminate();
+
 protected:
     virtual void ReallocateInternal();
 

@@ -45,7 +45,7 @@ public:
     virtual void ResetEditorState();
     virtual void SetBpm(int);
 
-    MEM_OVERLOAD(CharClipSet, 0x123); // change later
+    OBJ_MEM_OVERLOAD(0x17)
     NEW_OBJ(CharClipSet)
 
     void ResetPreviewState();

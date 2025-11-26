@@ -1,10 +1,12 @@
 #include "char/Char.h"
 #include "CharBonesMeshes.h"
 #include "CharClipSet.h"
+#include "CharIKHead.h"
 #include "CharMeshHide.h"
 #include "CharPollGroup.h"
 #include "CharTaskMgr.h"
 #include "CharUtl.h"
+#include "FileMergerOrganizer.h"
 #include "char/CharBlendBone.h"
 #include "char/CharBone.h"
 #include "char/CharBoneDir.h"
@@ -52,39 +54,20 @@
 #include "obj/Data.h"
 #include "obj/DataFunc.h"
 #include "obj/Object.h"
+#include "os/Debug.h"
+#include "rndobj/Cam.h"
 #include "rndobj/Highlight.h"
+#include "rndobj/Mat.h"
+#include "rndobj/Mesh.h"
 #include "rndobj/Overlay.h"
+#include "rndobj/Tex.h"
+#include "rndobj/Utl.h"
 #include "world/Dir.h"
 
-#pragma region CharDebug
-
-CharDebug::CharDebug() : mObjects(nullptr), mOnce(nullptr) {}
-
-CharDebug::~CharDebug() {}
-
-void CharDebug::Once(Hmx::Object *obj) {
-    mOverlay->SetShowing(!mObjects.empty() || !mOnce.empty());
-}
-
-void CharDebug::Init() {
-    DataRegisterFunc("char_debug", OnSetObjects);
-    mOverlay = RndOverlay::Find("char_debug", true);
-    mOverlay->SetCallback(this);
-}
-
-float CharDebug::UpdateOverlay(RndOverlay *ovl, float hilite_y) { return 1.0f; }
-
-void CharDebug::AddObject(Hmx::Object *o, bool b) {}
-
-void CharDebug::SetObjects(DataArray *msg) {}
-
-DataNode CharDebug::OnSetObjects(DataArray *) { return NULL_OBJ; }
-
-void CharDebug::DisplayObject(Hmx::Object *) {}
-
-#pragma endregion CharDebug
+CharDebug TheCharDebug;
 
 void CharInit() {
+    TheCharDebug.Init();
     Character::Init();
     CharBonesObject::Init();
     REGISTER_OBJ_FACTORY(CharBoneOffset);
@@ -109,6 +92,7 @@ void CharInit() {
     REGISTER_OBJ_FACTORY(CharIKFingers);
     REGISTER_OBJ_FACTORY(CharIKFoot);
     REGISTER_OBJ_FACTORY(CharIKHand);
+    REGISTER_OBJ_FACTORY(CharIKHead)
     REGISTER_OBJ_FACTORY(CharIKMidi);
     REGISTER_OBJ_FACTORY(CharIKSliderMidi);
     REGISTER_OBJ_FACTORY(CharIKRod);
@@ -135,7 +119,129 @@ void CharInit() {
     REGISTER_OBJ_FACTORY(FileMerger);
     REGISTER_OBJ_FACTORY(CharBoneDir);
     REGISTER_OBJ_FACTORY(ClipCollide);
+    FileMergerOrganizer::Init();
     PreloadSharedSubdirs("char");
     CharBoneDir::Init();
     CharUtlInit();
+    TheDebug.AddExitCallback(CharTerminate);
 }
+
+void CharTerminate() {
+    TheDebug.RemoveExitCallback(CharTerminate);
+    Character::Terminate();
+    CharBoneDir::Terminate();
+    CharBonesMeshes::Terminate();
+    CharLipSync::Terminate();
+}
+
+#pragma region CharDebug
+
+CharDebug::CharDebug() : mObjects(nullptr), mOnce(nullptr) {}
+
+CharDebug::~CharDebug() {}
+
+float CharDebug::UpdateOverlay(RndOverlay *ovl, float hilite_y) {
+    gCharHighlightY = hilite_y;
+    RndCam *cur = RndCam::Current();
+    RndCam *worldCam = nullptr;
+    if (TheWorld) {
+        worldCam = TheWorld->Cam();
+        if (worldCam) {
+            worldCam->Select();
+        }
+    }
+    FOREACH (it, mObjects) {
+        DisplayObject(*it);
+    }
+    FOREACH (it, mOnce) {
+        DisplayObject(*it);
+    }
+    mOnce.clear();
+    if (mObjects.empty()) {
+        ovl->SetShowing(false);
+    }
+    if (worldCam) {
+        cur->Select();
+    }
+    float ret = gCharHighlightY;
+    gCharHighlightY = -1;
+    return ret;
+}
+
+void CharDebug::Init() {
+    DataRegisterFunc("char_debug", OnSetObjects);
+    mOverlay = RndOverlay::Find("char_debug", true);
+    mOverlay->SetCallback(this);
+}
+
+void CharDebug::Once(Hmx::Object *obj) {
+    AddObject(obj, true);
+    mOverlay->SetShowing(!mObjects.empty() || !mOnce.empty());
+}
+
+void CharDebug::AddObject(Hmx::Object *o, bool b) {
+    if (o) {
+        ObjPtrList<Hmx::Object> &which = b ? mOnce : mObjects;
+        auto it = which.find(o);
+        if (it == which.end()) {
+            which.push_back(o);
+        } else {
+            which.erase(it);
+        }
+    }
+}
+
+void CharDebug::SetObjects(DataArray *msg) {
+    int i = 1;
+    bool clear = false;
+    bool once = false;
+    if (msg->Size() > 1 && msg->Type(1) == kDataSymbol) {
+        if (msg->Sym(1) == "clear" || msg->Sym(1) == "once") {
+            i = 2;
+            clear = msg->Sym(1) == "clear";
+            once = msg->Sym(1) == "once";
+        }
+    }
+    if (clear) {
+        mObjects.clear();
+    }
+    for (; i < msg->Size(); i++) {
+        AddObject(msg->Obj<Hmx::Object>(i), once);
+    }
+    mOverlay->SetShowing(!mObjects.empty() || !mOnce.empty());
+}
+
+void CharDebug::DisplayObject(Hmx::Object *obj) {
+    RndHighlightable *rh = dynamic_cast<RndHighlightable *>(obj);
+    if (rh) {
+        rh->Highlight();
+    } else {
+        RndTex *tex = dynamic_cast<RndTex *>(obj);
+        if (tex) {
+            static RndMesh *mesh;
+            static RndMat *mat;
+            if (!mesh) {
+                mesh = Hmx::Object::New<RndMesh>();
+                mat = Hmx::Object::New<RndMat>();
+                mat->SetUseEnv(false);
+                mesh->Verts().resize(4);
+                mesh->Faces().resize(2);
+                // a loop from i = 0 to 4
+                mesh->Sync(0x13F);
+                mesh->SetMat(mat);
+            }
+            mat->SetDiffuseTex(tex);
+            CreateAndSetMetaMat(mat);
+            mesh->Highlight();
+        }
+    }
+}
+
+DataNode CharDebug::OnSetObjects(DataArray *a) {
+    TheCharDebug.SetObjects(a);
+    return 0;
+}
+
+#pragma endregion CharDebug
+
+void CharDeferHighlight(Hmx::Object *obj) { TheCharDebug.Once(obj); }

@@ -9,6 +9,7 @@
 #include "obj/Dir.h"
 #include "obj/Object.h"
 #include "rndobj/Highlight.h"
+#include "utl/MemMgr.h"
 #include "utl/Symbol.h"
 
 class CharDriver : public RndHighlightable, public CharWeightable, public CharPollable {
@@ -38,6 +39,7 @@ public:
     virtual void Exit();
     virtual void PollDeps(std::list<Hmx::Object *> &, std::list<Hmx::Object *> &);
 
+    OBJ_MEM_OVERLOAD(0x1C)
     NEW_OBJ(CharDriver);
 
     ObjectDir *ClipDir() const { return mClips; }

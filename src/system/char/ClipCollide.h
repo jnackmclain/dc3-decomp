@@ -7,6 +7,7 @@
 #include "obj/Object.h"
 #include "rndobj/Graph.h"
 #include "stl/_vector.h"
+#include "utl/MemMgr.h"
 class ClipCollide : public Hmx::Object {
 public:
     struct Report { // From RB3 Decomp
@@ -28,6 +29,7 @@ public:
     virtual void Copy(const Hmx::Object *, CopyType);
     virtual void Load(BinStream &);
 
+    OBJ_MEM_OVERLOAD(0x1D)
     NEW_OBJ(ClipCollide);
 
     std::vector<Report> mReports; // 0x2c

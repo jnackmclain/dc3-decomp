@@ -121,6 +121,7 @@ public:
     bool LODCheck() const { return mForceLod > 0; }
 
     static void Init();
+    static void Terminate();
     static Character *Current() { return sCurrent; }
     static void SetCurrent(Character *c) { sCurrent = c; }
 

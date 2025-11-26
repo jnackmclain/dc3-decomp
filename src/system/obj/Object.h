@@ -1017,7 +1017,7 @@ namespace Hmx {
         virtual DataArray *ObjectDef(Symbol);
         virtual void SetName(const char *, ObjectDir *);
         virtual ObjectDir *DataDir();
-        virtual void PreLoad(BinStream &);
+        virtual void PreLoad(BinStream &bs) { Load(bs); }
         virtual void PostLoad(BinStream &) {}
         virtual const char *FindPathName();
 

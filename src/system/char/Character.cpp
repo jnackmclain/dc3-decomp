@@ -593,6 +593,7 @@ void Character::ClearInterestFilterFlags() {
 #pragma region Character Methods
 
 void Character::Init() { REGISTER_OBJ_FACTORY(Character) }
+void Character::Terminate() {}
 
 ShadowBone *Character::AddShadowBone(RndTransformable *trans) {
     if (!trans)

@@ -6,6 +6,7 @@
 #include "rndobj/Highlight.h"
 #include "rndobj/Trans.h"
 #include "utl/BinStream.h"
+#include "utl/MemMgr.h"
 
 class CharSleeve : public RndHighlightable, public CharPollable {
 public:
@@ -26,6 +27,7 @@ public:
     // RndHighlightable
     virtual void Highlight();
 
+    OBJ_MEM_OVERLOAD(0x1E)
     NEW_OBJ(CharSleeve)
 
     ObjPtr<RndTransformable> mSleeve; // 0x10

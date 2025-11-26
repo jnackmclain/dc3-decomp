@@ -3,6 +3,7 @@
 #include "obj/Object.h"
 #include "rndobj/Trans.h"
 #include "stl/_vector.h"
+#include "utl/MemMgr.h"
 
 class CharBlendBone : public CharPollable {
 public:
@@ -30,6 +31,7 @@ public:
     virtual void Poll();
     virtual void PollDeps(std::list<Hmx::Object *> &, std::list<Hmx::Object *> &);
 
+    OBJ_MEM_OVERLOAD(0x19)
     NEW_OBJ(CharBlendBone);
 
     ObjVector<ConstraintSystem> mTargets; // 0x8

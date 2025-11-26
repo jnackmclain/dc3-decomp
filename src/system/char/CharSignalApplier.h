@@ -5,6 +5,7 @@
 #include "obj/Object.h"
 #include "stl/_vector.h"
 #include "utl/BinStream.h"
+#include "utl/MemMgr.h"
 
 class CharSignalApplier : public CharPollable, public CharWeightable {
 public:
@@ -23,6 +24,7 @@ public:
     virtual void Poll();
     virtual void PollDeps(std::list<Hmx::Object *> &, std::list<Hmx::Object *> &);
 
+    OBJ_MEM_OVERLOAD(0x19)
     NEW_OBJ(CharSignalApplier);
 
     float unk28;

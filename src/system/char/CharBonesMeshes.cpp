@@ -10,3 +10,5 @@ void CharBonesMeshes::ReallocateInternal() {
     mMeshes.clear();
     mMeshes.reserve(mBones.size());
 }
+
+void CharBonesMeshes::Terminate() {}

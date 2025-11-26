@@ -5,6 +5,7 @@
 #include "obj/Object.h"
 #include "rndobj/Draw.h"
 #include "utl/BinStream.h"
+#include "utl/MemMgr.h"
 class CharTransDraw : public RndDrawable {
 public:
     // Hmx::Object
@@ -20,6 +21,7 @@ public:
     // RndDrawable
     virtual void DrawShowing();
 
+    OBJ_MEM_OVERLOAD(0x14)
     NEW_OBJ(CharTransDraw);
 
     ObjPtrList<Character> mChars; // 0x40

@@ -43,6 +43,7 @@ public:
     OBJ_MEM_OVERLOAD(0x19);
 
     void SetOwnerPanel(UIPanel *panel) { mOwnerPanel = panel; }
+    RndCam *Cam() const { return mCam; }
     void EnableComponent(UIComponent *, PanelDir::RequestFocus);
     void DisableComponent(UIComponent *, JoypadAction);
     DataNode GetFocusableComponentList();
