@@ -17,6 +17,9 @@ class FileMerger : public Hmx::Object,
                    public Loader::Callback,
                    public MergeFilter,
                    public OriginalPathable {
+    friend class FileMergerOrganizer; // tbh i'd rather do this than make everything
+                                      // public
+
 public:
     struct Merger { // taken from RB3 decomp
         struct SortBySelected {
@@ -158,4 +161,8 @@ protected:
     MergeFilter *mFilter; // 0x60
     int mHeap; // 0x64
     Loader::Callback *mOrganizer; // 0x68
+};
+
+struct FileMergerSort {
+    bool operator()(const FileMerger::Merger *, const FileMerger::Merger *);
 };

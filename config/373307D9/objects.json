@@ -239,7 +239,7 @@
             "system/char/ClipDistMap.cpp": "NonMatching",
             "system/char/ClipGraphGen.cpp": "NonMatching",
             "system/char/FileMerger.cpp": "NonMatching",
-            "system/char/FileMergerOrganizer.cpp": "MISSING",
+            "system/char/FileMergerOrganizer.cpp": "NonMatching",
             "system/char/Waypoint.cpp": "NonMatching",
             "system/flow/DrivenPropertyEntry.cpp": "NonMatching",
             "system/flow/DrivenPropertyMathOps.cpp": "NonMatching",

@@ -408,10 +408,6 @@ void FileMerger::Select(Symbol name, const FilePath &fp, bool b3) {
     }
 }
 
-struct FileMergerSort {
-    bool operator()(const FileMerger::Merger *, const FileMerger::Merger *) const;
-};
-
 bool FileMerger::StartLoadInternal(bool async, bool loading) {
     mAsyncLoad = async;
     mLoadingLoad = loading;
