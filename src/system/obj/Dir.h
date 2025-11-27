@@ -33,6 +33,11 @@ public:
 
     bool IsLoaded() const;
 
+    ObjDirPtr &operator=(const ObjDirPtr &oPtr) {
+        *this = (C *)oPtr;
+        return *this;
+    }
+
     ObjDirPtr &operator=(C *dir) {
         if (mLoader && mLoader->IsLoaded())
             PostLoad(nullptr);
@@ -136,6 +141,13 @@ BinStream &operator>>(BinStream &bs, ObjDirPtr<T> &ptr) {
 
 class ObjectDir : public virtual Hmx::Object {
     friend class Hmx::Object;
+    friend bool PropSyncSubDirs(
+        std::vector<ObjDirPtr<ObjectDir> > &subdirs,
+        DataNode &val,
+        DataArray *prop,
+        int i,
+        PropOp op
+    );
 
 public:
     enum ViewportId {
@@ -239,11 +251,6 @@ public:
         return obj;
     }
 
-    void SetCurViewport(ViewportId id, Hmx::Object *o) {
-        mCurViewportID = id;
-        mCurCam = o;
-    }
-    void SetSubDirFlag(bool flag) { mIsSubDir = flag; }
     void SetLoader(DirLoader *dl) { mLoader = dl; }
     DirLoader *Loader() const { return mLoader; }
     bool IsProxy() const { return this != Dir(); }
@@ -257,6 +264,8 @@ public:
     InlineDirType InlineProxyType() const { return mInlineProxyType; }
     FilePath &StoredFile() { return mStoredFile; }
     bool IsSubDir() const { return mIsSubDir; }
+    ObjectDir *ProxyDir() const;
+    const char *ProxyName() const;
 
     void ResetViewports();
     void SetInlineProxyType(InlineDirType);
@@ -274,6 +283,9 @@ public:
     void DeleteSubDirs();
     ObjectDir *FindContainingDir(const char *);
     void AppendSubDir(const ObjDirPtr<ObjectDir> &);
+    void SetCurViewport(ViewportId id, Hmx::Object *o);
+    void SetSubDirFlag(bool flag);
+    void SetPathName(const char *);
 
     static ObjectDir *Main() { return sMainDir; }
     static void PreInit(int, int);

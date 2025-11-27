@@ -4,12 +4,14 @@
 #include "Object.h"
 #include "Utl.h"
 #include "math/Mtx.h"
+#include "math/Rot.h"
 #include "obj/Data.h"
 #include "obj/DataFunc.h"
 #include "obj/DataUtl.h"
 #include "obj/DirLoader.h"
 #include "obj/DirUnloader.h"
 #include "obj/Object.h"
+#include "obj/PropSync.h"
 #include "os/Debug.h"
 #include "os/File.h"
 #include "os/System.h"
@@ -66,10 +68,8 @@ BEGIN_HANDLERS(ObjectDir)
     HANDLE_EXPR(exists, FindObject(_msg->Str(2), false, true) != nullptr)
     HANDLE_ACTION(sync_objects, SyncObjects())
     HANDLE_EXPR(is_proxy, IsProxy())
-    HANDLE_EXPR(proxy_dir, mLoader ? mLoader->ProxyDir() : NULL_OBJ)
-    HANDLE_EXPR(
-        proxy_name, mLoader ? (mLoader->ProxyName() ? mLoader->ProxyName() : "") : ""
-    )
+    HANDLE_EXPR(proxy_dir, ProxyDir())
+    HANDLE_EXPR(proxy_name, ProxyName())
     HANDLE_ACTION(
         add_names,
         Reserve(
@@ -82,13 +82,104 @@ BEGIN_HANDLERS(ObjectDir)
     HANDLE_ACTION(reset_editor_state, ResetEditorState())
     HANDLE_EXPR(get_path_name, mPathName)
     HANDLE_EXPR(get_file_name, FileGetName(mPathName))
-    // "get_file_name"
     HANDLE_SUPERCLASS(Hmx::Object)
 END_HANDLERS
 
+ObjectDir *ObjectDir::ProxyDir() const {
+    return Loader() ? Loader()->ProxyDir() : nullptr;
+}
+
+const char *ObjectDir::ProxyName() const {
+    return Loader() ? (Loader()->ProxyName() ? Loader()->ProxyName() : "") : "";
+}
+
+ObjectDir *SyncSubDir(const FilePath &fp, ObjectDir *dir) {
+    Loader *loader = TheLoadMgr.GetLoader(fp);
+    DirLoader *dirLoader = dir->IsProxy()
+        ? dynamic_cast<DirLoader *>(loader)
+        : dynamic_cast<DirLoader *>(TheLoadMgr.ForceGetLoader(fp));
+    if (dirLoader) {
+        ObjectDir *retDir = dirLoader->GetDir();
+        if (retDir) {
+            for (ObjDirItr<Hmx::Object> it(dir, false); it != nullptr; ++it) {
+                Hmx::Object *found = retDir->FindObject(it->Name(), false, true);
+                if (found && found != retDir && &*it != dir) {
+                    MILO_NOTIFY(
+                        "%s exists in dir and subdir, so replacing %s with %s",
+                        it->Name(),
+                        PathName(it),
+                        PathName(found)
+                    );
+                    it->ReplaceRefs(found);
+                    delete it;
+                }
+            }
+        }
+        return retDir;
+    }
+    // i would think you'd wanna return nullptr here if there's no dirLoader
+    // but this is what HMX did
+}
+
 bool PropSyncSubDirs(
-    std::vector<ObjDirPtr<ObjectDir> > &, DataNode &, DataArray *, int, PropOp
-);
+    std::vector<ObjDirPtr<ObjectDir> > &subdirs,
+    DataNode &val,
+    DataArray *prop,
+    int i,
+    PropOp op
+) {
+    ObjectDir *theGDir = gDir;
+    if (op == kPropSize) {
+        MILO_ASSERT(i == prop->Size(), 0x947);
+        val = (int)subdirs.size();
+        return true;
+    } else {
+        MILO_ASSERT(i == prop->Size() - 1, 0x94D);
+        std::vector<ObjDirPtr<ObjectDir> >::iterator subdirIt =
+            subdirs.begin() + prop->Int(i);
+        ObjDirPtr<ObjectDir> &ptr = *subdirIt;
+        if (op == kPropSet || op == kPropInsert) {
+            FilePath valPath = val.Str();
+            FilePath relative =
+                FileRelativePath(FilePath::Root().c_str(), valPath.c_str());
+            FOREACH (it, subdirs) {
+                if (it != subdirIt) {
+                    const char *curRelative =
+                        FileRelativePath(FilePath::Root().c_str(), it->GetFile().c_str());
+                    if (streq(relative.c_str(), curRelative)) {
+                        MILO_NOTIFY(
+                            "Subdir '%s' can't be added to '%s' more than once!",
+                            relative,
+                            PathName(theGDir)
+                        );
+                        return true;
+                    }
+                }
+            }
+        }
+        switch (op) {
+        case kPropGet:
+            val = FileRelativePath(FilePath::Root().c_str(), ptr.GetFile().c_str());
+            break;
+        case kPropSet:
+            theGDir->RemovingSubDir(ptr);
+            ptr = SyncSubDir(val.Str(), theGDir);
+            theGDir->AddedSubDir(ptr);
+            break;
+        case kPropRemove:
+            theGDir->RemovingSubDir(ptr);
+            subdirs.erase(subdirIt);
+            break;
+        case kPropInsert:
+            subdirIt = subdirs.insert(subdirIt, SyncSubDir(val.Str(), theGDir));
+            theGDir->AddedSubDir(*subdirIt);
+            break;
+        default:
+            return false;
+        }
+        return true;
+    }
+}
 
 BEGIN_PROPSYNCS(ObjectDir)
     gDir = this;
@@ -358,7 +449,11 @@ void ObjectDir::SetInlineProxyType(InlineDirType t) {
 }
 
 BinStreamRev &operator>>(BinStreamRev &bs, ObjectDir::Viewport &v) {
-    // bs >> v.mXfm;
+    bs >> v.mXfm;
+    if (bs.rev < 0x12) {
+        int x;
+        bs >> x;
+    }
     return bs;
 }
 
@@ -422,14 +517,22 @@ void ObjectDir::SaveProxy(BinStream &bs) {
     }
 }
 
-// void ObjectDir::ResetViewports() {
-// mViewports[1]: (0 -1 0) (1 0 0) (0 0 1) (-768 0 0)
-// mViewports[2]: (0 1 0) (-1 0 0) (0 0 1) (768 0 0)
-// mViewports[3]: (1 0 0) (0 0 -1) (0 1 0) (0 0 768)
-// mViewports[4]: (1 0 0) (0 0 1) (0 -1 0) (0 0 -768)
-// mViewports[5]: (1 0 0) (0 1 0) (0 0 1) (0 -768 0)
-// mViewports[6]: (-1 0 0) (0 -1 0) (0 0 1) (0 768 0)
-// }
+void ObjectDir::ResetViewports() {
+    mViewports[1].mXfm.m.Set(0, -1, 0, 1, 0, 0, 0, 0, 1);
+    mViewports[1].mXfm.v.Set(-768, 0, 0);
+    mViewports[2].mXfm.m.Set(0, 1, 0, -1, 0, 0, 0, 0, 1);
+    mViewports[2].mXfm.v.Set(768, 0, 0);
+    mViewports[3].mXfm.m.Set(1, 0, 0, 0, 0, 1, 0, 1, 0);
+    mViewports[3].mXfm.v.Set(0, 0, 768);
+    mViewports[4].mXfm.m.Set(1, 0, 0, 0, 0, 1, 0, -1, 0);
+    mViewports[4].mXfm.v.Set(0, 0, -768);
+    mViewports[5].mXfm.m.Set(1, 0, 0, 0, 1, 0, 0, 0, 1);
+    mViewports[5].mXfm.v.Set(0, -768, 0);
+    mViewports[6].mXfm.m.Set(-1, 0, 0, 0, -1, 0, 0, 0, 1);
+    mViewports[6].mXfm.v.Set(0, 768, 0);
+    MakeRotMatrix(Vector3(1, 1, -1), Vector3(0, 0, 1), mViewports[0].mXfm.m);
+    Multiply(Vector3(0, -768.0f, 0), mViewports[0].mXfm.m, mViewports[0].mXfm.v);
+}
 
 DataNode OnLoadObjects(DataArray *a) {
     return DirLoader::LoadObjects(a->Str(1), nullptr, nullptr);
@@ -710,34 +813,6 @@ void ObjectDir::AppendSubDir(const ObjDirPtr<ObjectDir> &subdir) {
     AddedSubDir(mSubDirs.back());
 }
 
-ObjectDir *SyncSubDir(const FilePath &fp, ObjectDir *dir) {
-    Loader *loader = TheLoadMgr.GetLoader(fp);
-    DirLoader *dirLoader = dir->IsProxy()
-        ? dynamic_cast<DirLoader *>(loader)
-        : dynamic_cast<DirLoader *>(TheLoadMgr.ForceGetLoader(fp));
-    if (dirLoader) {
-        ObjectDir *retDir = dirLoader->GetDir();
-        if (retDir) {
-            for (ObjDirItr<Hmx::Object> it(dir, false); it != nullptr; ++it) {
-                Hmx::Object *found = retDir->FindObject(it->Name(), false, true);
-                if (found && found != retDir && &*it != dir) {
-                    MILO_NOTIFY(
-                        "%s exists in dir and subdir, so replacing %s with %s",
-                        it->Name(),
-                        PathName(it),
-                        PathName(found)
-                    );
-                    it->ReplaceRefs(found);
-                    delete it;
-                }
-            }
-        }
-        return retDir;
-    }
-    // i would think you'd wanna return nullptr here if there's no dirLoader
-    // but this is what HMX did
-}
-
 DataNode ObjectDir::OnFind(DataArray *da) {
     Hmx::Object *found = FindObject(da->Str(2), false, true);
     if (da->Size() > 3) {
@@ -785,4 +860,45 @@ void ObjectDir::PreLoadInlined(const FilePath &fp, bool share, InlineDirType typ
     dir.shared = share;
     dir.mType = type;
     mInlinedDirs.push_back(dir);
+}
+
+void ObjectDir::SetCurViewport(ViewportId id, Hmx::Object *o) {
+    mCurViewportID = id;
+    mCurCam = o;
+}
+
+void ObjectDir::SetSubDirFlag(bool flag) { mIsSubDir = flag; }
+
+bool ObjectDir::InlineProxy(BinStream &bs) {
+    return (mInlineProxyType == kInlineCached && bs.Cached())
+        || mInlineProxyType == kInlineAlways;
+}
+
+void ObjectDir::SetPathName(const char *path) {
+    if (mPathName != gNullStr) {
+        MemOrPoolFree(strlen(mPathName) + 1, (void *)mPathName);
+    }
+    if (path != 0 && *path != '\0') {
+        mPathName =
+            (char *)MemOrPoolAlloc(strlen(path) + 1, __FILE__, 0x996, "path name");
+        strcpy((char *)mPathName, path);
+        mStoredFile.Set(FilePath::Root().c_str(), mPathName);
+    } else
+        mPathName = gNullStr;
+}
+
+FilePath ObjectDir::GetSubDirPath(const FilePath &fp, const BinStream &bs) {
+    static Message msg("change_subdir", gNullStr);
+    msg[0] = fp.c_str();
+    DataNode handled = HandleType(msg);
+    FilePath ret;
+    if (handled.Type() == kDataUnhandled) {
+        ret = fp;
+    } else if (streq(handled.Str(), "stream_cache")) {
+        bool cached = bs.Cached();
+        ret = FilePath(".", DirLoader::CachedPath(fp.c_str(), cached));
+    } else {
+        ret = FilePath(FileRoot(), handled.Str());
+    }
+    return ret;
 }

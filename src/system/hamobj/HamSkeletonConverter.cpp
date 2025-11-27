@@ -183,7 +183,10 @@ void HamSkeletonConverter::SetPosBoneValue(String s, Vector3 v) {
     }
     str += ".pos";
     Vector3 *vPtr = (Vector3 *)mBones->FindPtr(str.c_str());
-    vPtr->Set(v);
+    // this is stupid but hey if it matches lmao
+    vPtr->x = v.x;
+    vPtr->y = v.y;
+    vPtr->z = v.z;
 }
 
 void HamSkeletonConverter::RotateTowards(
@@ -198,14 +201,18 @@ void HamSkeletonConverter::RotateTowards(
         MakeRotQuat(v1, v2, q40);
         float angle = acos(Dot(v1, v2));
         if (fabsf(angle) < 1e-9) {
-            vout.Set(v1);
+            vout.x = v1.x;
+            vout.y = v1.y;
+            vout.z = v1.z;
         } else {
             float fabsed = fabsf(f / angle);
             if (fabsed < 1.0f) {
                 Interp(q50, q40, fabsed, q40);
                 Multiply(v1, q40, vout);
             } else {
-                vout.Set(v2);
+                vout.x = v2.x;
+                vout.y = v2.y;
+                vout.z = v2.z;
             }
         }
     }
