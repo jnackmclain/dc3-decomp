@@ -28,6 +28,7 @@ public:
         };
 
         BeamDef(Hmx::Object *);
+        BeamDef(const BeamDef &);
         ~BeamDef();
         void OnSetMat(RndMat *);
         Vector2 NGRadii() const;

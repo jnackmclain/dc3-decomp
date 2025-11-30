@@ -12,6 +12,8 @@
 #include "rndobj/Draw.h"
 #include "rndobj/Env.h"
 #include "rndobj/Flare.h"
+#include "rndobj/Group.h"
+#include "rndobj/Mat.h"
 #include "rndobj/Poll.h"
 #include "rndobj/Trans.h"
 #include "utl/BinStream.h"
@@ -27,6 +29,21 @@ Spotlight::BeamDef::BeamDef(Hmx::Object *owner)
       mTopSideBorder(0.1), mBottomSideBorder(0.3), mBottomBorder(0.5), mOffset(0),
       mTargetOffset(0, 0), mBrighten(1), mExpand(1), mShape(), mNumSections(0),
       mNumSegments(0), mXSection(owner), mCutouts(owner), mMat(owner) {}
+
+Spotlight::BeamDef::BeamDef(const Spotlight::BeamDef &def)
+    : mBeam(0), mIsCone(def.mIsCone), mLength(def.mLength), mTopRadius(def.mTopRadius),
+      mBottomRadius(def.mBottomRadius), mTopSideBorder(def.mTopSideBorder),
+      mBottomSideBorder(def.mBottomSideBorder), mBottomBorder(def.mBottomBorder),
+      mOffset(def.mOffset), mTargetOffset(def.mTargetOffset), mBrighten(def.mBrighten),
+      mExpand(def.mExpand), mShape(def.mShape), mNumSections(def.mNumSections),
+      mNumSegments(def.mNumSegments),
+      mXSection(def.mXSection.Owner(), def.mXSection.Ptr()), mCutouts(def.mCutouts),
+      mMat(def.mMat.Owner(), def.mMat.Ptr()) {
+    if (def.mBeam) {
+        mBeam = Hmx::Object::New<RndMesh>();
+        mBeam->Copy(def.mBeam, kCopyDeep);
+    }
+}
 
 Spotlight::BeamDef::~BeamDef() { RELEASE(mBeam); }
 
@@ -302,6 +319,133 @@ BEGIN_COPYS(Spotlight)
         }
     END_COPYING_MEMBERS
 END_COPYS
+
+BinStreamRev &operator>>(BinStreamRev &d, Spotlight::BeamDef &bd) {
+    bd.Load(d);
+    return d;
+}
+
+BEGIN_LOADS(Spotlight)
+    LOAD_REVS(bs)
+    ASSERT_REVS(0x21, 0)
+    if (d.rev < 9) {
+        MILO_FAIL("Unsupported spotlight version");
+    } else {
+        RndPollable::Load(bs);
+        RndDrawable::Load(bs);
+        RndTransformable::Load(bs);
+        bs >> mSpotScale;
+        bs >> mSpotHeight;
+        if (d.rev > 0x16) {
+            mBeam.Load(d);
+        } else {
+            ObjVector<BeamDef> beams(this);
+            d >> beams;
+            MILO_ASSERT(beams.size() <= 1, 0xCD);
+            if (beams.size() != 0) {
+                mBeam = beams[0];
+            } else {
+                mBeam.mLength = 0;
+            }
+        }
+        if (d.rev > 0x15) {
+            d >> mLightCanMesh;
+        } else {
+            ObjPtr<RndGroup> group(this);
+            d >> group;
+            ConvertGroupToMesh(group);
+        }
+        if (!mTarget.Load(bs, false, 0)) {
+            unk2f0 = false;
+        }
+        if (d.rev > 0x1C) {
+            d >> mSpotTarget;
+        }
+        d >> mLightCanOffset;
+        if (d.rev > 0x1E) {
+            d >> mLightCanSort;
+        }
+        d >> mColor;
+        mColor.alpha = 1;
+        if (d.rev > 9) {
+            d >> mIntensity;
+        }
+        d >> mSpotMaterial;
+        if (d.rev > 0x11 && d.rev < 0x13) {
+            char buf[0x80];
+            bs.ReadString(buf, 0x80);
+            if (!mSpotMaterial && buf[0] != '\0') {
+                mSpotMaterial = LookupOrCreateMat(buf, Dir());
+            }
+        }
+        d >> mDampingConstant;
+        if (d.rev < 0x21) {
+            Symbol s;
+            d >> s;
+        }
+        if (d.rev > 10) {
+            ObjPtr<RndMat> mat(this);
+            d >> mat;
+            mFlare->SetMat(mat);
+            if (d.rev > 0x11 && d.rev < 0x13) {
+                char buf[0x80];
+                bs.ReadString(buf, 0x80);
+                if (!mat && buf[0] != '\0') {
+                    mat = LookupOrCreateMat(buf, Dir());
+                    mFlare->SetMat(mat);
+                }
+            }
+            d >> mFlare->Sizes();
+            d >> mFlare->Range();
+            int steps;
+            d >> steps;
+            mFlare->SetSteps(steps);
+            d >> mFlareOffset;
+        }
+        if (d.rev > 0xD) {
+            d >> mFlareEnabled;
+        }
+        if (d.rev > 0xE) {
+            d >> mFlareVisibilityTest;
+        }
+        UpdateFlare();
+        if (d.rev > 0xB) {
+            d >> mLensSize;
+            d >> mLensOffset;
+            d >> mLensMaterial;
+        }
+        if (d.rev > 0x11 && d.rev < 0x13) {
+            char buf[0x80];
+            bs.ReadString(buf, 0x80);
+            if (!mLensMaterial && buf[0] != '\0') {
+                mLensMaterial = LookupOrCreateMat(buf, Dir());
+            }
+        }
+        if (d.rev > 0xC) {
+            d >> mAdditionalObjects;
+        }
+        if (d.rev > 0x1B) {
+            d >> mSlaves;
+        }
+        if (d.rev > 0xF) {
+            d >> mTargetShadow;
+        }
+        if (d.rev > 0x19) {
+            d >> mAnimateColorFromPreset;
+            d >> mAnimateOrientationFromPreset;
+        } else if (d.rev > 0x10) {
+            d >> mAnimateColorFromPreset;
+            mAnimateOrientationFromPreset = mAnimateColorFromPreset;
+        }
+        if (d.rev > 0x1D) {
+            d >> mColorOwner;
+            if (!mColorOwner) {
+                mColorOwner = this;
+            }
+        }
+        Generate();
+    }
+END_LOADS
 
 void Spotlight::UpdateSphere() {
     Sphere s;
