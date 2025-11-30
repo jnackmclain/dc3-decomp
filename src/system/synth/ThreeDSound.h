@@ -72,6 +72,7 @@ public:
         mRadius = rad;
         CalculateFaderVolume();
     }
+    int GetShape() const { return mShape; }
 
 private:
     void CalculateFaderVolume();

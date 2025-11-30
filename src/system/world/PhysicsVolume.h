@@ -109,10 +109,7 @@ protected:
     /** "Volume type generated from PhysicsVolume's transform" */
     PhysicsVolumeType mShapeType; // 0x120
     int unk124;
-    int unk128;
-    int unk12c;
-    int unk130;
-    int unk134;
+    Vector3 unk128;
     /** "Directional force applied to overlapping physics objects" */
     Vector3 mDirectionalForce; // 0x138
     /** "Flattened planar tangential force applied to overlapping physics objects;
