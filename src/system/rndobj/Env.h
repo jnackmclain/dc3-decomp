@@ -58,6 +58,9 @@ public:
     void AddLight(RndLight *);
     bool IsValidRealLight(const RndLight *l) const;
     const Hmx::Color &AmbientColor() const { return mAmbientFogOwner->mAmbientColor; }
+    void SetAmbientColor(const Hmx::Color &col) {
+        mAmbientFogOwner->mAmbientColor.Set(col.red, col.green, col.blue);
+    }
 
 protected:
     RndEnviron();

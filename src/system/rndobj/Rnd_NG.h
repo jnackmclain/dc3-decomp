@@ -52,7 +52,7 @@ public:
         const Vector3 &, const Vector3 (&)[4], const Vector4 &, RndMat *, ShaderType
     ) {}
     virtual bool OffScreen() const { return false; }
-    virtual RndTex *PreProcessTexture() { return nullptr; }
+    virtual RndTex *PreProcessTexture() { return nullptr; } // 0x12c
     virtual RndTex *PostProcessTexture() { return nullptr; }
     virtual RndTex *PreDepthTexture() { return nullptr; }
     virtual void Suspend() {}

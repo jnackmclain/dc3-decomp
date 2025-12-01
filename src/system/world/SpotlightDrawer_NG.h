@@ -1,12 +1,34 @@
 #pragma once
 #include "math/Mtx.h"
 #include "obj/Object.h"
+#include "os/Debug.h"
 #include "rndobj/Cam.h"
+#include "rndobj/Tex.h"
+#include "utl/MemMgr.h"
 #include "world/Spotlight.h"
 #include "world/SpotlightDrawer.h"
+#include "xdk/D3D9.h"
 
 class NgSpotlightDrawer : public SpotlightDrawer {
 public:
+    class SpotlightResources {
+    public:
+        SpotlightResources()
+            : unk4(0), unk8(0), mDensityMap(0), unk10(0), unk14(0), unk18(0) {}
+        virtual ~SpotlightResources() {}
+        void Clear();
+
+        MEM_OVERLOAD(SpotlightResources, 0x3B);
+
+        D3DResource *unk4;
+        RndTex *unk8;
+        RndTex *mDensityMap;
+        RndTex *unk10;
+        RndTex *unk14;
+        RndTex *unk18;
+    };
+
+    NgSpotlightDrawer();
     // Hmx::Object
     virtual ~NgSpotlightDrawer();
     OBJ_CLASSNAME(NgSpotlightDrawer)
@@ -15,29 +37,32 @@ public:
     // PostProcessor
     virtual void EndWorld();
     virtual void DoPost();
-    virtual char const *GetProcType();
+    virtual char const *GetProcType() { return "NgSpotlightDrawer"; }
 
     NEW_OBJ(NgSpotlightDrawer);
 
     static void Init();
 
-    NgSpotlightDrawer();
-    void RenderScene();
+    SpotlightResources &SR() {
+        MILO_ASSERT(sSharedResources, 0xA0);
+        return *sSharedResources;
+    }
 
-    RndCam *unk94;
-    ObjPtr<RndCam> unk98;
-    int unkac;
-    bool unkb0;
+    void RenderScene();
 
 protected:
     // RndDrawable
     virtual void SetAmbientColor(Hmx::Color const &);
+    virtual void DrawBeams(SpotlightEntry *, SpotlightEntry *const &) {}
     virtual void ClearPostDraw();
     virtual void ClearPostProc();
 
     static int RTWidth();
     static int RTHeight();
     static bool CheckSharedResources();
+    static bool CheckRTs(SpotlightResources *);
+
+    static SpotlightResources *sSharedResources;
 
     bool RestoreCam();
     bool CheckFogTexture();
@@ -55,4 +80,9 @@ protected:
     void BlurRT(float, float);
     void BlurRT();
     void SetupForPostProcess();
+
+    RndCam *unk94; // 0x94
+    ObjPtr<RndCam> unk98; // 0x98
+    RndTex *mFogDensityMap; // 0xac
+    bool unkb0; // 0xb0
 };

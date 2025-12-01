@@ -128,12 +128,14 @@ public:
     void AddCrowdChars();
     void SetCrowdChars();
     void ClearCrowdChars();
-    void GetSelectedCrowd(
-        std::list<std::pair<RndMultiMesh *, std::list<RndMultiMesh::Instance>::iterator> > &
-    );
-    void AddCrowdChars(
-        std::list<std::pair<RndMultiMesh *, std::list<RndMultiMesh::Instance>::iterator> > &
-    );
+    void
+    GetSelectedCrowd(std::list<
+                     std::pair<RndMultiMesh *, std::list<RndMultiMesh::Instance>::iterator> >
+                         &);
+    void
+    AddCrowdChars(std::list<
+                  std::pair<RndMultiMesh *, std::list<RndMultiMesh::Instance>::iterator> >
+                      &);
 
 private:
     /** "The crowd to show for this shot" */

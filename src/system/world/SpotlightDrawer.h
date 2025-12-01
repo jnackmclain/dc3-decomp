@@ -33,6 +33,7 @@ public:
 /** "A SpotlightDrawer draws spotlights." */
 class SpotlightDrawer : public RndDrawable, public PostProcessor {
 public:
+    // size 0x50
     class SpotMeshEntry { // from RB3 decomp
     public:
         SpotMeshEntry() : unk0(0), unk4(0), unk8(0) {}
@@ -64,7 +65,7 @@ public:
     virtual void ListDrawChildren(std::list<RndDrawable *> &);
     // PostProcessor
     virtual void EndWorld();
-    virtual float Priority();
+    virtual float Priority() { return 0.1f; }
     virtual const char *GetProcType() { return "SpotlightDrawer"; }
 
     OBJ_MEM_OVERLOAD(0x34)

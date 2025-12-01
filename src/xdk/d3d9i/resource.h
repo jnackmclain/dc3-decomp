@@ -58,6 +58,8 @@ HRESULT D3DDevice_SetStreamSource(
     uint unk_r8
 );
 
+DWORD D3DResource_Release(D3DResource *);
+
 #ifdef __cplusplus
 }
 #endif
