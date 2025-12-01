@@ -300,6 +300,7 @@ public:
     iterator end() { return begin() + size(); }
     const_iterator begin() const { return empty() ? nullptr : mNodes.begin(); }
     const_iterator end() const { return begin() + size(); }
+    iterator FindRef(ObjRef *);
 
     iterator erase(iterator);
     iterator insert(const_iterator, T1 *);

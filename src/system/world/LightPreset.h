@@ -3,6 +3,7 @@
 #include "math/Color.h"
 #include "math/Mtx.h"
 #include "math/Vec.h"
+#include "obj/Data.h"
 #include "obj/Object.h"
 #include "os/Platform.h"
 #include "rndobj/Anim.h"
@@ -10,6 +11,7 @@
 #include "rndobj/EventTrigger.h"
 #include "rndobj/Lit.h"
 #include "rndobj/Trans.h"
+#include "utl/BinStream.h"
 #include "utl/MemMgr.h"
 #include "utl/Str.h"
 #include "world/LightHue.h"
@@ -23,10 +25,11 @@
 class LightPreset : public RndAnimatable {
 public:
     struct EnvironmentEntry {
-        EnvironmentEntry() : mFogEnable(0), mFogStart(0), mFogEnd(0) {
-            mAmbientColor.Zero();
-            mFogColor.Zero();
-        }
+        EnvironmentEntry();
+        void Save(BinStream &) const;
+        void Load(BinStream &);
+        void Animate(const EnvironmentEntry &, float);
+        bool operator!=(const EnvironmentEntry &) const;
 
         /** "Ambient color" */
         Hmx::Color mAmbientColor; // 0x0
@@ -42,6 +45,15 @@ public:
 
     struct EnvLightEntry {
         EnvLightEntry();
+        void Save(BinStream &) const;
+        void Load(BinStream &);
+        void Animate(const EnvLightEntry &, float);
+        bool operator!=(const EnvLightEntry &) const;
+
+        EnvLightEntry &operator=(const EnvLightEntry &e) {
+            memcpy(this, &e, sizeof(*this));
+            return *this;
+        }
 
         Hmx::Quat unk0;
         /** "Light's position" */
@@ -62,24 +74,26 @@ public:
             // there's a flag for 2 but idk what it is
         };
 
-        SpotlightEntry(Hmx::Object *owner)
-            : mIntensity(0), mColor(0), unk8(3), mTarget(owner) {
-            unk10.Reset();
-            unk20.Zero();
-        }
+        SpotlightEntry(Hmx::Object *owner);
+        void Save(BinStream &) const;
+        void Load(BinStreamRev &);
+        bool operator!=(const SpotlightEntry &) const;
+        void CalculateDirection(Spotlight *, Hmx::Quat &) const;
+        void Animate(Spotlight *, const SpotlightEntry &, float);
 
         float mIntensity; // 0x0
         int mColor; // 0x4 - packed
         unsigned char unk8; // 0x8
         ObjPtr<RndTransformable> mTarget; // 0xc
-        Hmx::Quat unk10;
-        Hmx::Matrix3 unk20;
+        Hmx::Quat unk20; // 0x20
+        Hmx::Matrix3 unk30; // 0x30
     };
 
     struct SpotlightDrawerEntry {
-        SpotlightDrawerEntry()
-            : mTotalIntensity(0), mBaseIntensity(0), mSmokeIntensity(0),
-              mLightInfluence(0) {}
+        SpotlightDrawerEntry();
+        void Save(BinStream &) const;
+        void Load(BinStreamRev &);
+        bool operator!=(const SpotlightDrawerEntry &) const;
 
         /** "Global intensity scale" */
         float mTotalIntensity; // 0x0
@@ -93,6 +107,10 @@ public:
 
     struct Keyframe {
         Keyframe(Hmx::Object *);
+        void Save(BinStream &) const;
+        void Load(BinStreamRev &);
+        void LegacyLoadP9(BinStreamRev &);
+        void LegacyLoadStageKit(BinStream &);
 
         /** "Description of the keyframe" */
         String mDescription; // 0x0
@@ -142,7 +160,7 @@ public:
     // RndAnimatable
     virtual void StartAnim();
     virtual void SetFrame(float, float);
-    virtual float EndFrame();
+    virtual float EndFrame() { return mEndFrame; }
 
     OBJ_MEM_OVERLOAD(0x1B)
     NEW_OBJ(LightPreset)
@@ -153,6 +171,9 @@ public:
     int GetCurrentKeyframe(void) const;
     bool PlatformOk(void) const;
     void SetSpotlight(Spotlight *, int);
+    void OnKeyframeCmd(KeyframeCmd);
+    void ResetEvents();
+    void SetFrameEx(float, float, bool);
 
 protected:
     LightPreset();
@@ -172,6 +193,16 @@ protected:
     void FillLightPresetData(RndLight *, LightPreset::EnvLightEntry &);
     void AnimateLightFromPreset(RndLight *, const LightPreset::EnvLightEntry &, float);
     void ApplyState(LightPreset::Keyframe const &);
+    void SetKeyframe(Keyframe &);
+    void FillEnvPresetData(RndEnviron *, EnvironmentEntry &);
+    void FillSpotlightDrawerPresetData(SpotlightDrawer *, SpotlightDrawerEntry &);
+    void AddSpotlight(Spotlight *, bool);
+    void FillSpotPresetData(Spotlight *, SpotlightEntry &, int);
+    void Animate(float);
+    void SyncNewSpotlights();
+
+    DataNode OnSetKeyframe(DataArray *);
+    DataNode OnViewKeyframe(DataArray *);
 
     static std::deque<std::pair<KeyframeCmd, float> > sManualEvents;
 
@@ -201,7 +232,7 @@ protected:
     int mManualFrame; // 0xf8
     int mLastManualFrame; // 0xfc
     float mManualFadeTime; // 0x100
-    float unk104;
+    float mEndFrame; // 0x104
     /** "Whether the keyframes are locked (no editing allowed)" */
     bool mLocked; // 0x108
     LightHue *mHue; // 0x10c

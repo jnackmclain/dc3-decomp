@@ -19,7 +19,6 @@ public:
     void Save(BinStream &);
     void Load(BinStreamRev &);
 
-private:
     float mIntensity; // 0x0
     Hmx::Color mColor; // 0x4
     float mBaseIntensity; // 0x14
@@ -80,6 +79,7 @@ public:
     void ClearLights();
     void UpdateBoxMap();
     void ApplyLightingApprox(BoxMapLighting &, float) const;
+    const SpotDrawParams &Params() const { return mParams; }
 
     static SpotlightDrawer *Current() { return sCurrent; }
     static bool DrawNGSpotlights();
