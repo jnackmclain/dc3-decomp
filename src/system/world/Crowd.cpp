@@ -1,4 +1,3 @@
-#include "world/Crowd.h"
 #include "char/Character.h"
 #include "obj/Object.h"
 #include "os/System.h"
@@ -12,6 +11,8 @@
 #include "utl/BinStream.h"
 #include "utl/Loader.h"
 #include "world/ColorPalette.h"
+#include "world/Crowd.h"
+#include "world/Crowd3DCharHandle.h"
 
 RndCam *gImpostorCamera;
 RndMat *gImpostorMat;
@@ -61,8 +62,8 @@ BinStreamRev &operator>>(BinStreamRev &d, WorldCrowd::CharData &cd) {
 
 WorldCrowd::WorldCrowd()
     : mPlacementMesh(this), mCharacters(this), mNum(0), unk6c(0), mForce3DCrowd(0),
-      mShow3DOnly(0), unk84(1), unk88(1), mLod(0), mEnviron(this), mEnviron3D(this),
-      mFocus(this), mCharForceLod(kLODPerFrame), unkd0(0), unkd4(0) {
+      mShow3DOnly(0), mCharFullness(1), mFlatFullness(1), mLod(0), mEnviron(this),
+      mEnviron3D(this), mFocus(this), mCharForceLod(kLODPerFrame), unkd0(0), unkd4(0) {
     if (gNumCrowd++ == 0) {
         int w, h, bpp;
         if (GetGfxMode() == kNewGfx) {
@@ -188,8 +189,8 @@ BEGIN_COPYS(WorldCrowd)
         COPY_MEMBER(mPlacementMesh)
         COPY_MEMBER(mNum)
         COPY_MEMBER(unk70)
-        COPY_MEMBER(unk84)
-        COPY_MEMBER(unk88)
+        COPY_MEMBER(mCharFullness)
+        COPY_MEMBER(mFlatFullness)
         COPY_MEMBER(mLod)
         COPY_MEMBER(mEnviron)
         COPY_MEMBER(mEnviron3D)
@@ -435,5 +436,74 @@ void WorldCrowd::ListPollChildren(std::list<RndPollable *> &polls) const {
         Character *curChar = it->mDef.mChar;
         if (curChar)
             polls.push_back(curChar);
+    }
+}
+
+void WorldCrowd::Delete3DCrowdHandles() {
+    if (TheLoadMgr.EditMode()) {
+        FOREACH (it, mCharacters) {
+            for (int i = 0; i != it->m3DChars.size(); i++) {
+                RELEASE(it->m3DChars[i].unk50);
+            }
+        }
+    }
+}
+
+bool WorldCrowd::Crowd3DExists() {
+    FOREACH (it, mCharacters) {
+        if (it->mDef.mChar && it->mMMesh && !it->m3DChars.empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void WorldCrowd::SetMatAndCameraLod() {
+    gImpostorCamera->SetTargetTex(gImpostorTex[mLod]);
+    gImpostorMat->SetDiffuseTex(gImpostorTex[mLod]);
+}
+
+void WorldCrowd::CreateMeshes() {
+    mCharFullness = 1.0f;
+    mFlatFullness = 1.0f;
+    mLod = 0;
+    FOREACH (it, mCharacters) {
+        if (it->mMMesh) {
+            delete it->mMMesh->Mesh();
+            RELEASE(it->mMMesh);
+        }
+        it->mBackup.clear();
+        if (it->mDef.mChar) {
+            RndMesh *built = BuildBillboard(it->mDef.mChar, it->mDef.mHeight);
+            it->mMMesh = Hmx::Object::New<RndMultiMesh>();
+            it->mMMesh->SetMesh(built);
+        }
+    }
+}
+
+struct Sort3DChars {
+    bool operator()(
+        const WorldCrowd::CharData::Char3D &char1,
+        const WorldCrowd::CharData::Char3D &char2
+    ) const {
+        return char1.unk40 < char2.unk40;
+    }
+};
+
+void WorldCrowd::Sort3DCharList() {
+    FOREACH (it, mCharacters) {
+        std::sort(it->m3DChars.begin(), it->m3DChars.end(), Sort3DChars());
+        it->m3DCharsCreated = it->m3DChars;
+    }
+}
+
+void WorldCrowd::Force3DCrowd(bool force) {
+    mForce3DCrowd = force;
+    if (mForce3DCrowd)
+        Set3DCharAll();
+    else {
+        SetFullness(1, 1);
+        std::vector<std::pair<int, int> > vec;
+        Set3DCharList(vec, this);
     }
 }

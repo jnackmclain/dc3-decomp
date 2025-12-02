@@ -45,7 +45,7 @@ public:
             Transform unk0;
             int unk40;
             std::vector<Hmx::Color> unk44;
-            int unk50;
+            class WorldCrowd3DCharHandle *unk50;
         };
         CharData(Hmx::Object *owner) : mDef(owner), mMMesh(nullptr) {}
         void Save(BinStream &) const;
@@ -84,6 +84,7 @@ public:
     NEW_OBJ(WorldCrowd)
 
     void SetLod(int lod);
+    void Set3DCharAll();
     void SetFullness(float, float);
     void Set3DCharList(const std::vector<std::pair<int, int> > &, Hmx::Object *);
     void Set3DCharXfm(const std::list<CharData>::iterator &, int, const Transform &);
@@ -98,6 +99,9 @@ protected:
     void Delete3DCrowdHandles();
     void CreateMeshes();
     void Reset3DCrowd();
+    bool Crowd3DExists();
+    void Sort3DCharList();
+    RndMesh *BuildBillboard(Character *, float);
 
     DataNode OnRebuild(DataArray *);
     DataNode OnIterateFrac(DataArray *);
@@ -115,8 +119,8 @@ protected:
     /** "Shows only the 3D crowd, but ONLY in Milo
         so you can more easily distinguish them from the 2d crowd" */
     bool mShow3DOnly; // 0x81
-    float unk84; // 0x84
-    float unk88; // 0x88
+    float mCharFullness; // 0x84
+    float mFlatFullness; // 0x88
     int mLod; // 0x8c
     /** "The environ to render the imposter billboards with" */
     ObjPtr<RndEnviron> mEnviron; // 0x90
