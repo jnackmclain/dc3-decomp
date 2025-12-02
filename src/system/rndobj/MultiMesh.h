@@ -7,6 +7,16 @@
 #include "utl/BinStream.h"
 #include "utl/MemMgr.h"
 
+struct OldMMInst {
+    Transform mOldXfm; // 0x0
+    Hmx::Color mOldColor; // 0x30
+};
+
+inline BinStream &operator>>(BinStream &bs, OldMMInst &inst) {
+    bs >> inst.mOldXfm >> inst.mOldColor;
+    return bs;
+}
+
 extern ReclaimableAlloc gTransListAlloc;
 
 #ifdef STLPORT
@@ -147,3 +157,8 @@ protected:
 
 typedef std::list<RndMultiMesh::Instance, std::TransformListAlloc<RndMultiMesh::Instance> >
     InstanceList;
+
+inline BinStreamRev &operator>>(BinStreamRev &d, RndMultiMesh::Instance &inst) {
+    inst.Load(d);
+    return d;
+}

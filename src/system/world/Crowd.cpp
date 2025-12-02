@@ -51,6 +51,11 @@ BinStream &operator<<(BinStream &bs, const WorldCrowd::CharData &cd) {
     return bs;
 }
 
+BinStreamRev &operator>>(BinStreamRev &d, WorldCrowd::CharData &cd) {
+    cd.mDef.Load(d);
+    return d;
+}
+
 #pragma endregion
 #pragma region WorldCrowd
 
@@ -215,6 +220,111 @@ BEGIN_COPYS(WorldCrowd)
         }
     END_COPYING_MEMBERS
 END_COPYS
+
+BEGIN_LOADS(WorldCrowd)
+    LOAD_REVS(bs)
+    ASSERT_REVS(0x10, 0)
+    LOAD_SUPERCLASS(RndDrawable)
+    Reset3DCrowd();
+    d >> mPlacementMesh;
+    if (d.rev < 3) {
+        int x;
+        d >> x;
+    }
+    d >> mNum;
+    if (d.rev < 8) {
+        bool b;
+        d >> b;
+    }
+    d >> mCharacters;
+    if (d.rev > 6) {
+        d >> mEnviron;
+    }
+    if (d.rev > 9) {
+        d >> mEnviron3D;
+    } else {
+        mEnviron3D = mEnviron;
+    }
+    if (d.rev > 1) {
+        CreateMeshes();
+        FOREACH (it, mCharacters) {
+            if (d.rev < 0xE) {
+                std::list<Transform> xfmList;
+                std::list<RndMultiMesh::Instance> instancesList;
+                std::list<OldMMInst> oldmmiList;
+                if (it->mMMesh) {
+                    if (d.rev < 9) {
+                        d >> xfmList;
+                        it->mMMesh->Instances().clear();
+                        FOREACH (transIt, xfmList) {
+                            it->mMMesh->Instances().push_back(
+                                RndMultiMesh::Instance(*transIt)
+                            );
+                        }
+                    } else if (d.rev < 0xB) {
+                        d >> oldmmiList;
+                        FOREACH (mmiIt, oldmmiList) {
+                            OldMMInst &old = *mmiIt;
+                            it->mMMesh->Instances().push_back(
+                                RndMultiMesh::Instance(old.mOldXfm)
+                            );
+                        }
+                    } else {
+                        InstanceList &instances = it->mMMesh->Instances();
+                        unsigned int count;
+                        d >> count;
+                        instances.resize(count);
+                        FOREACH (instIt, instances) {
+                            instIt->LoadRev(d.stream, 3);
+                        }
+                    }
+                } else if (d.rev > 3) {
+                    if (d.rev < 9)
+                        d >> xfmList;
+                    else if (d.rev < 0xB)
+                        d >> oldmmiList;
+                    else
+                        d >> instancesList;
+                }
+            } else {
+                std::list<Transform> xfms;
+                d >> xfms;
+                if (it->mMMesh) {
+                    it->mMMesh->Instances().clear();
+                    FOREACH (xfmIt, xfms) {
+                        it->mMMesh->Instances().push_back(RndMultiMesh::Instance(*xfmIt));
+                    }
+                }
+            }
+            AssignRandomColors(false);
+        }
+    } else {
+        OnRebuild(nullptr);
+    }
+    if (d.rev > 4) {
+        d >> unkd4;
+    }
+    if (d.rev > 0xC) {
+        bool force = false;
+        d >> force;
+        Force3DCrowd(force);
+    }
+    if (d.rev > 5) {
+        d >> mShow3DOnly;
+    }
+    if (d.rev > 0xB) {
+        d >> mFocus;
+    }
+    if (d.rev > 0xE) {
+        d >> (int &)mCharForceLod;
+    }
+    if (d.rev > 0xF) {
+        d >> unkd0;
+    }
+    if (d.rev > 0) {
+        LOAD_SUPERCLASS(RndPollable);
+    }
+END_LOADS
 
 void WorldCrowd::UpdateSphere() {
     Sphere s;

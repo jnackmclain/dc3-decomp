@@ -65,11 +65,6 @@ BEGIN_COPYS(RndMultiMesh)
     UpdateMesh();
 END_COPYS
 
-BinStreamRev &operator>>(BinStreamRev &d, RndMultiMesh::Instance &inst) {
-    inst.Load(d);
-    return d;
-}
-
 BEGIN_LOADS(RndMultiMesh)
     LOAD_REVS(bs)
     ASSERT_REVS(5, 0)

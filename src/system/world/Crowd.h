@@ -38,12 +38,18 @@ public:
 
     struct CharData {
         struct Char3D {
+            Char3D(const Char3D &o) : unk0(o.unk0), unk40(o.unk40), unk50(0) {
+                unk44 = o.unk44;
+            }
+
             Transform unk0;
             int unk40;
             std::vector<Hmx::Color> unk44;
+            int unk50;
         };
-        CharData(Hmx::Object *);
+        CharData(Hmx::Object *owner) : mDef(owner), mMMesh(nullptr) {}
         void Save(BinStream &) const;
+        void Load(BinStreamRev &);
 
         CharDef mDef; // 0x0
         RndMultiMesh *mMMesh; // 0x38
@@ -91,6 +97,7 @@ protected:
     void AssignRandomColors(bool);
     void Delete3DCrowdHandles();
     void CreateMeshes();
+    void Reset3DCrowd();
 
     DataNode OnRebuild(DataArray *);
     DataNode OnIterateFrac(DataArray *);
