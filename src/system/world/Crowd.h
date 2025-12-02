@@ -9,6 +9,7 @@
 #include "rndobj/Mesh.h"
 #include "rndobj/MultiMesh.h"
 #include "rndobj/Poll.h"
+#include "utl/BinStream.h"
 #include "utl/MemMgr.h"
 
 /** "A quickly-rendered bunch of instanced characters within an area" */
@@ -19,6 +20,8 @@ public:
         CharDef(Hmx::Object *owner)
             : mChar(owner), mHeight(75), mDensity(1), mRadius(10), mUseRandomColor(false),
               mMats(owner) {}
+        void Save(BinStream &) const;
+        void Load(BinStreamRev &);
 
         /** "The character to use as the archetype" */
         ObjPtr<Character> mChar; // 0x0
@@ -36,16 +39,15 @@ public:
     struct CharData {
         struct Char3D {
             Transform unk0;
-            int unk30;
-            std::vector<Hmx::Color> unk34;
+            int unk40;
+            std::vector<Hmx::Color> unk44;
         };
         CharData(Hmx::Object *);
+        void Save(BinStream &) const;
 
         CharDef mDef; // 0x0
-        RndMultiMesh *mMultiMesh; // 0x38
-        // this doesn't use StlNodeAlloc
-        // it uses TransformListAlloc oh god
-        std::list<RndMultiMesh::Instance> mBackup; // 0x3c
+        RndMultiMesh *mMMesh; // 0x38
+        InstanceList mBackup; // 0x3c
         std::vector<Char3D> m3DChars; // 0x44
         std::vector<Char3D> m3DCharsCreated; // 0x50
     };
@@ -88,6 +90,7 @@ protected:
     void SetMatAndCameraLod();
     void AssignRandomColors(bool);
     void Delete3DCrowdHandles();
+    void CreateMeshes();
 
     DataNode OnRebuild(DataArray *);
     DataNode OnIterateFrac(DataArray *);

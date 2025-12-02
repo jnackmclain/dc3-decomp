@@ -119,6 +119,7 @@ public:
     bool Teleported() const { return mTeleported; }
     // rename once you have a better idea of what this does
     bool LODCheck() const { return mForceLod > 0; }
+    PollState GetPollState() const { return mPollState; }
 
     static void Init();
     static void Terminate();

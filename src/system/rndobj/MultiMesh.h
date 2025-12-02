@@ -81,6 +81,10 @@ public:
         Transform mXfm; // 0x4
     };
 
+    typedef std::
+        list<RndMultiMesh::Instance, std::TransformListAlloc<RndMultiMesh::Instance> >
+            InstanceList;
+
     // Hmx::Object
     OBJ_CLASSNAME(MultiMesh);
     OBJ_SET_TYPE(MultiMesh);
@@ -105,10 +109,7 @@ public:
 
     RndMesh *Mesh() const { return mMesh; }
     void SetMesh(RndMesh *);
-    std::list<RndMultiMesh::Instance, std::TransformListAlloc<RndMultiMesh::Instance> > &
-    Instances() {
-        return mInstances;
-    }
+    InstanceList &Instances() { return mInstances; }
     Instance &Instances(int idx) { return *NextItr(mInstances.begin(), idx); }
     void RemoveInstance(int idx) { mInstances.erase(NextItr(mInstances.begin(), idx)); }
     void InvalidateProxies();
@@ -141,6 +142,8 @@ protected:
     /** The simple mesh to draw. */
     ObjPtr<RndMesh> mMesh; // 0x20
     /** The locations at which the mesh should be drawn. */
-    std::list<RndMultiMesh::Instance, std::TransformListAlloc<RndMultiMesh::Instance> >
-        mInstances; // 0x2C
+    InstanceList mInstances; // 0x2C
 };
+
+typedef std::list<RndMultiMesh::Instance, std::TransformListAlloc<RndMultiMesh::Instance> >
+    InstanceList;

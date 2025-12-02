@@ -26,6 +26,8 @@ public:
     OBJ_MEM_OVERLOAD(0x14)
     NEW_OBJ(ColorPalette)
 
+    int NumColors() const { return mColors.size(); }
+
 protected:
     ColorPalette();
 
