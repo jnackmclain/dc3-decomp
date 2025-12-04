@@ -1,8 +1,8 @@
 #pragma once
 #include "types.h"
 #include "xdk/win_types.h"
-#include "xdk/xapilibi/synchapi.h"
-#include "xdk/xapilibi/xbase.h"
+#include "xdk/XAPILIB.h"
+#include "xdk/XAUDIO2.h"
 
 #define SUCCEEDED(hr) (((HRESULT)(hr)) >= 0)
 

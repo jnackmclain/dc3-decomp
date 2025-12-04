@@ -2,7 +2,6 @@
 
 #include "os/Debug.h"
 #include "rnddx9/Rnd_Xbox.h"
-#include "xdk/d3d9i/resource.h"
 #include <xdk/D3D9.h>
 
 template <typename T>

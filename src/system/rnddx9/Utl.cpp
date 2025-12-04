@@ -1,8 +1,7 @@
 #pragma once
 #include "Utl.h"
 #include "rnddx9/Rnd_Xbox.h"
-#include "xdk/d3d9i/d3dtypes.h"
-#include "xdk/d3d9i/resource.h"
+#include "xdk/D3D9.h"
 #include <cstring>
 
 #define WEIRD_HRESULT_BULLSHIT(thing) ((thing != nullptr) & 0x8007000E)

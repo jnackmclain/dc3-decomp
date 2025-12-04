@@ -1,6 +1,6 @@
 #pragma once
 #include "rndobj/CubeTex.h"
-#include "xdk/d3d9i/resource.h"
+#include "xdk/D3D9.h"
 
 class DxCubeTex : public RndCubeTex {
 public:
