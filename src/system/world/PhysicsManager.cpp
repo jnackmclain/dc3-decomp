@@ -1,4 +1,5 @@
 #include "world/PhysicsManager.h"
+#include "PhysicsManager.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
 #include "os/Debug.h"
@@ -142,3 +143,5 @@ DataNode PhysicsManager::OnApplyForce(const DataArray *a) {
 PhysicsManager *CreateDefaultPhysicsManager(RndDir *d) {
     return new DefaultPhysicsManager(d);
 }
+
+PhysicsManagerCreator *CreatePhysicsManager = CreateDefaultPhysicsManager;

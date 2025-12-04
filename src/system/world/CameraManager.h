@@ -62,6 +62,7 @@ public:
     void SetNextShot(CamShot *);
     void SyncObjects(WorldDir *);
     CamShot *PickCameraShot(Symbol, const std::vector<PropertyFilter> &);
+    void Poll();
 
 private:
     void StartShot_(CamShot *);

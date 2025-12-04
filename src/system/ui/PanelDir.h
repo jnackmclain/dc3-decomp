@@ -44,6 +44,7 @@ public:
 
     void SetOwnerPanel(UIPanel *panel) { mOwnerPanel = panel; }
     RndCam *Cam() const { return mCam; }
+    void SetCam(RndCam *cam) { mCam = cam; }
     void EnableComponent(UIComponent *, PanelDir::RequestFocus);
     void DisableComponent(UIComponent *, JoypadAction);
     DataNode GetFocusableComponentList();

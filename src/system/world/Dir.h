@@ -28,10 +28,7 @@ class WorldDir : public PanelDir {
 public:
     struct PresetOverride {
         PresetOverride(Hmx::Object *owner) : preset(owner), hue(owner) {}
-        void Sync(bool set) {
-            if (preset)
-                preset->SetHue(set ? hue : nullptr);
-        }
+        void Sync(bool);
 
         /** "Subdir preset to modify" */
         ObjPtr<LightPreset> preset; // 0x0
@@ -85,14 +82,22 @@ public:
     static void Init();
 
     void ClearDeltas();
-    CameraManager *GetCameraManager() const { return unk300; }
+    CameraManager *GetCameraManager() const { return mCameraMgr; }
+    PhysicsManager *GetPhysicsManager() const { return mPhysicsMgr; }
 
     DataNode OnGetPhysicsManager(const DataArray *);
 
 private:
     void SyncHUD();
     void SyncHides(bool);
+    void SyncBitmaps(bool);
     void SyncCamShots(bool);
+    void SyncMats(bool);
+    void SyncPresets(bool);
+    void AccumulateDeltas(float *const);
+    void RestoreDeltas(float *const);
+
+    static RndMat *sGlowMat;
 
 protected:
     ObjList<PresetOverride> mPresetOverrides; // 0x268
@@ -108,12 +113,12 @@ protected:
     ObjPtrList<RndDrawable> mPS3PerPixelHides; // 0x2c8
     /** "HUD Preview Dir" */
     FilePath mHUDFilename; // 0x2dc
-    RndDir *unk2e4; // 0x2e4
+    RndDir *mHUDDir; // 0x2e4
     /** "Whether to draw the HUD preview" */
     bool mShowHUD; // 0x2e8
     /** "hud to be drawn last" */
     ObjPtr<RndDir> mHUD; // 0x2ec
-    ObjPtr<CameraManager> unk300; // 0x300
+    ObjPtr<CameraManager> mCameraMgr; // 0x300
     bool unk314; // 0x314
     ThreeDSoundManager m3DSoundMgr; // 0x318
     LightPresetManager mLightPresetMgr; // 0x38c
@@ -131,14 +136,6 @@ protected:
     /** "TRUE if we explicitly do the postprocing" */
     bool mExplicitPostProc; // 0x424
 };
-
-inline BinStream &operator<<(BinStream &bs, const WorldDir::BitmapOverride &o) {
-    bs << o.original << o.replacement;
-    return bs;
-}
-
-BinStream &operator<<(BinStream &, const WorldDir::MatOverride &);
-BinStream &operator<<(BinStream &, const WorldDir::PresetOverride &);
 
 void SetTheWorld(WorldDir *);
 

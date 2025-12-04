@@ -125,4 +125,5 @@ protected:
     int unk3c; // 0x3c
 };
 
-PhysicsManager *CreateDefaultPhysicsManager(RndDir *);
+typedef PhysicsManager *PhysicsManagerCreator(RndDir *);
+extern PhysicsManagerCreator *CreatePhysicsManager;

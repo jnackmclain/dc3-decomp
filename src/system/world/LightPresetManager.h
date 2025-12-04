@@ -7,12 +7,13 @@ class WorldDir;
 class LightPresetManager {
 public:
     LightPresetManager(WorldDir *);
-    virtual ~LightPresetManager();
     virtual DataNode Handle(DataArray *, bool);
+    virtual ~LightPresetManager();
 
     void Reset();
     void SyncObjects();
     void Enter();
+    void Poll();
     void ForcePreset(LightPreset *, float);
     void ForcePresets(LightPreset *, LightPreset *, float);
 
