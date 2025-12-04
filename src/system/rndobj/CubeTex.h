@@ -36,7 +36,6 @@ public:
         int mWidth, mHeight, mBpp, mNumMips, mOrder;
     };
 
-    virtual ~RndCubeTex() {}
     OBJ_CLASSNAME(CubeTex);
     OBJ_SET_TYPE(CubeTex);
     virtual DataNode Handle(DataArray *, bool);

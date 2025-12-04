@@ -7,7 +7,6 @@ extern "C" {
 
 #include "xdk/d3d9i/d3dtypes.h"
 
-typedef struct D3DResource D3DResource;
 typedef struct D3DIndexBuffer D3DIndexBuffer;
 typedef struct D3DVertexBuffer D3DVertexBuffer;
 
@@ -30,7 +29,22 @@ typedef struct D3DVERTEXBUFFER_DESC {
     DWORD FVF;
 } D3DVERTEXBUFFER_DESC, *LPD3DVERTEXBUFFER_DESC;
 
-BOOL D3DResource_IsSet(D3DResource *, D3DDevice *);
+// source: the kinect joyride pdb
+typedef struct D3DResource { /* Size=0x18 */
+    /* 0x0000 */ UINT Common;
+    /* 0x0004 */ UINT ReferenceCount;
+    /* 0x0008 */ UINT Fence;
+    /* 0x000c */ UINT ReadFence;
+    /* 0x0010 */ UINT Identifier;
+    /* 0x0014 */ UINT BaseFlush;
+} D3DResource;
+
+// D3DResource methods
+D3DRESOURCETYPE D3DResource_GetType(D3DResource *self);
+DWORD D3DResource_AddRef(D3DResource *self);
+VOID D3DResource_GetDevice(D3DResource *self, D3DDevice **);
+BOOL D3DResource_IsSet(D3DResource *self, D3DDevice *);
+DWORD D3DResource_Release(D3DResource *self);
 
 // both guesses cause there's no mangling and the args are different from ID3DDevice9
 struct D3DVertexBuffer *
@@ -57,8 +71,6 @@ HRESULT D3DDevice_SetStreamSource(
     UINT Stride,
     uint unk_r8
 );
-
-DWORD D3DResource_Release(D3DResource *);
 
 #ifdef __cplusplus
 }

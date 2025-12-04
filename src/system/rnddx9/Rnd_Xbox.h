@@ -13,6 +13,7 @@ public:
     DxRnd(void);
 
     struct D3DDevice *D3DDevice(void) { return mD3DDevice; }
+    void AutoRelease(class D3DResource *);
 
     static const char *Error(s32);
 };
