@@ -1,6 +1,7 @@
 #include "Env.h"
 #include "Mat.h"
 #include "RenderState.h"
+#include "Tex.h"
 #include "TexRenderer.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
@@ -78,9 +79,7 @@ void DxRnd::PreInit(HWND__ *) {
         //                     /* WARNING: Load size is inaccurate */
         //     Hmx::Object::RegisterFactory(*SVar6.mStr,DxMesh::NewObject);
         DxMat::Init();
-        //     SVar6 = DxTex::StaticClassName();
-        //                     /* WARNING: Load size is inaccurate */
-        //     Hmx::Object::RegisterFactory(*SVar6.mStr,DxTex::NewObject);
+        REGISTER_OBJ_FACTORY(DxTex)
         REGISTER_OBJ_FACTORY(DxCubeTex);
         //     DxMultiMesh::Init();
         //     SVar6 = DxMovie::StaticClassName();
@@ -89,10 +88,10 @@ void DxRnd::PreInit(HWND__ *) {
         //     DxParticleSys::Init();
         //     DxLight::Init();
         CreatePostTextures();
-        //     DxTex::sEDRamChecksEnabled = false;
+        DxTex::SetEDRamChecksEnabled(false);
         //     NgPostProc::Init();
         //     NgDOFProc::Init();
-        //     DxTex::sEDRamChecksEnabled = true;
+        DxTex::SetEDRamChecksEnabled(true);
         RndShadowMap::Init();
         Rnd::CreateDefaults();
         TheDebug.SetModalCallback(DxModal);

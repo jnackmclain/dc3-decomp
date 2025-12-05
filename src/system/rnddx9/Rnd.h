@@ -168,3 +168,5 @@ private:
     )
 
 extern DxRnd TheDxRnd;
+
+int D3DFORMAT_BitsPerPixel(D3DFORMAT);

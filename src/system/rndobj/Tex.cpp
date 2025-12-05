@@ -127,7 +127,7 @@ TextStream &operator<<(TextStream &ts, RndTex::Type ty) {
     case RndTex::kTexRendered:
         ts << "Rendered";
         break;
-    case RndTex::kTexMovie:
+    case RndTex::kMovie:
         ts << "Movie";
         break;
     case RndTex::kTexBackBuffer:
@@ -227,7 +227,7 @@ const char *CheckDim(int dim, RndTex::Type ty, bool b) {
     if (dim == 0)
         return ret;
     else {
-        if (ty == RndTex::kTexMovie && (dim % 16 != 0)) {
+        if (ty == RndTex::kMovie && (dim % 16 != 0)) {
             ret = "%s: dimensions not multiple of 16";
         }
         if (GetGfxMode() == 0) {

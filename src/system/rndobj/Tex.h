@@ -17,7 +17,7 @@ public:
     enum Type {
         kTexRegular = 1,
         kTexRendered = 2,
-        kTexMovie = 4,
+        kMovie = 4,
         kTexBackBuffer = 8,
         kTexFrontBuffer = 0x18,
         kTexRenderedNoZ = 0x22,
@@ -32,8 +32,8 @@ public:
     };
 
     virtual ~RndTex();
-    OBJ_CLASSNAME(RndTex)
-    OBJ_SET_TYPE(RndTex)
+    OBJ_CLASSNAME(Tex)
+    OBJ_SET_TYPE(Tex)
     virtual DataNode Handle(DataArray *, bool);
     virtual bool SyncProperty(DataNode &, DataArray *, int, PropOp);
     virtual void Save(BinStream &);
@@ -47,10 +47,10 @@ public:
     virtual void UnlockBitmap() {}
     virtual void MakeDrawTarget() {}
     virtual void FinishDrawTarget() {}
-    virtual void Compress(bool) {}
+    virtual void Compress(AlphaCompress) {}
     virtual bool TexelsLock(void *&) { return false; }
     virtual void TexelsUnlock() {}
-    virtual int TexelsPitch() const { return 0; }
+    virtual unsigned int TexelsPitch() const { return 0; }
     virtual void Select(int) {}
     virtual void PresyncBitmap();
     virtual void SyncBitmap();
@@ -102,6 +102,7 @@ public:
     static void PlatformBppOrder(const char *path, int &bpp, int &order, bool hasAlpha);
 
     int SizeKb() const { return ((mWidth * mHeight * mBpp) / 8 / 1024); }
+    bool IsBackBuffer() const { return mType & kTexBackBuffer; }
     bool IsRenderTarget() const { return mType & kTexRendered; }
     int Width() const { return mWidth; }
     int Height() const { return mHeight; }
