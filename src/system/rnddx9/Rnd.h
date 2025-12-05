@@ -65,6 +65,7 @@ public:
     void ReleaseAutoRelease();
     void InitRenderState();
     D3DFORMAT D3DFormatForBitmap(const RndBitmap &);
+    int BitmapOrderForD3DFormat(D3DFORMAT);
 
     static const char *Error(long);
 
