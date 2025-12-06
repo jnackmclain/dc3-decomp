@@ -1,6 +1,8 @@
 #pragma once
 #include "math/Geo.h"
+#include "math/kdTree.h"
 #include "math/Vec.h"
+#include "obj/Data.h"
 #include "obj/Object.h"
 #include "rndobj/Mesh.h"
 #include "utl/MemMgr.h"
@@ -9,8 +11,15 @@
     Also stores AO configuration options." */
 class RndAmbientOcclusion : public Hmx::Object {
 public:
+    enum Quality {
+        kQuality_Max = 2
+    };
+    struct Edge {
+        bool operator<(const Edge &) const;
+    };
+
     // Hmx::Object
-    virtual ~RndAmbientOcclusion() { Clean(); }
+    virtual ~RndAmbientOcclusion();
     OBJ_CLASSNAME(AmbientOcclusion);
     OBJ_SET_TYPE(AmbientOcclusion);
     virtual DataNode Handle(DataArray *, bool);
@@ -20,6 +29,11 @@ public:
     virtual void Load(BinStream &);
 
     void Clean();
+    void BuildTrees(Quality);
+    void BuildObjectLists();
+    bool IsSerializable(const RndMesh *) const;
+    void CalculateAO(float *);
+    void Tessellate(float *, float *);
 
     OBJ_MEM_OVERLOAD(0x15);
     NEW_OBJ(RndAmbientOcclusion)
@@ -27,6 +41,22 @@ public:
 
 protected:
     RndAmbientOcclusion();
+
+    void OnCalculate(bool);
+    void BuildSHCoeff(const Vector3 &, float *) const;
+    bool IsValid_Mesh(const RndMesh *) const;
+    bool IsValid_AOCast(const RndMesh *) const;
+    bool IsValid_AOReceive(const RndMesh *) const;
+    bool IsValid_Tessellate(const RndMesh *, const ObjectDir *) const;
+    void TransformNormal(const Vector3 &, const Hmx::Matrix3 &, Vector3 &) const;
+    void DumpObjList(const char *, const std::vector<RndMesh *> &) const;
+    bool IsMeshAnimated(const RndMesh *) const;
+    bool CanBurnXfm(const RndMesh *) const;
+    void PreprocessMesh();
+    void BurnTransform(RndMesh *, std::list<RndMesh *> &) const;
+
+    DataNode OnGetValidObjects(DataArray *) const;
+    DataNode OnGetRecvMeshes(DataArray *);
 
     /** "These objects will NOT cast shadows." */
     ObjPtrList<Hmx::Object> mDontCastAO; // 0x2c
@@ -61,11 +91,11 @@ protected:
     /** "Triangles smaller than this size will not be split any further."
         Ranges from 0.1 to 500. */
     float mTessellateTriSmall; // 0x7c
-    std::vector<RndMesh *> unk80;
-    std::vector<RndMesh *> unk8c;
-    std::vector<RndMesh *> unk98;
-    std::vector<Triangle> unka4;
-    int unkb0;
-    int unkb4;
+    std::vector<RndMesh *> mObjectsCast; // 0x80
+    std::vector<RndMesh *> mObjectsReceive; // 0x8c
+    std::vector<RndMesh *> mObjectsTessellate; // 0x98
+    std::vector<Triangle> mTriList; // 0xa4
+    kdTree<Triangle> *mTree; // 0xb0
+    Quality mQuality; // 0xb4
     std::vector<Vector3> unkb8;
 };

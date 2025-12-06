@@ -1,6 +1,7 @@
 #pragma once
 #include <cmath>
 
+#define kSmallFloat 0.0001f
 #define kHugeFloat 1.0e30f
 // idk where else to put this one
 #define kDbSilence -96.0f
