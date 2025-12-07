@@ -34,6 +34,7 @@ public:
     D3DSurface *GetDepthRT();
     D3DSurface *GetMovieSurface();
     void SwapMovieSurface();
+    D3DTexture *Tex() const { return mTexture; }
 
 private:
     static bool sEDRamChecksEnabled;

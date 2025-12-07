@@ -512,6 +512,27 @@ typedef struct _D3DVERTEXELEMENT9 { /* Size=0xc */
     /* 0x000a */ BYTE UsageIndex;
 } D3DVERTEXELEMENT9;
 
+typedef enum _D3DPRIMITIVETYPE {
+    D3DPT_POINTLIST = 0x0001,
+    D3DPT_LINELIST = 0x0002,
+    D3DPT_LINESTRIP = 0x0003,
+    D3DPT_TRIANGLELIST = 0x0004,
+    D3DPT_TRIANGLEFAN = 0x0005,
+    D3DPT_TRIANGLESTRIP = 0x0006,
+    D3DPT_RECTLIST = 0x0008,
+    D3DPT_QUADLIST = 0x000d,
+    D3DPT_FORCE_DWORD = 0x7fffffff,
+} D3DPRIMITIVETYPE;
+
+typedef struct _D3DVIEWPORT9 { /* Size=0x18 */
+    /* 0x0000 */ UINT X;
+    /* 0x0004 */ UINT Y;
+    /* 0x0008 */ UINT Width;
+    /* 0x000c */ UINT Height;
+    /* 0x0010 */ float MinZ;
+    /* 0x0014 */ float MaxZ;
+} D3DVIEWPORT9;
+
 #define D3DDECL_END()                                                                    \
     { -1, 0, -1, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 0 }
 

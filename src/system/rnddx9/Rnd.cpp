@@ -1,8 +1,19 @@
 #include "rnddx9/Rnd.h"
+#include "Tex.h"
+#include "math/Mtx.h"
 #include "obj/Object.h"
 #include "os/Debug.h"
+#include "os/System.h"
 #include "rndobj/Bitmap.h"
+#include "rndobj/Mat.h"
+#include "rndobj/Mat_NG.h"
+#include "rndobj/Rnd_NG.h"
+#include "rndobj/Shader.h"
+#include "rndobj/ShaderMgr.h"
+#include "rndobj/Tex.h"
 #include "xdk/D3D9.h"
+#include "xdk/d3d9i/d3d9.h"
+#include "xdk/d3d9i/d3d9types.h"
 
 DxRnd TheDxRnd;
 
@@ -10,6 +21,64 @@ BEGIN_HANDLERS(DxRnd)
     HANDLE_ACTION(suspend, Suspend())
     HANDLE_SUPERCLASS(Rnd)
 END_HANDLERS
+
+void DxRnd::DrawRect(
+    const Hmx::Rect &rect,
+    const Hmx::Color &colorRef,
+    RndMat *mat,
+    const Hmx::Color *colorPtr1,
+    const Hmx::Color *colorPtr2
+) {
+    DrawRect(rect, mat, kShaderTypeDrawRect, colorRef, colorPtr1, colorPtr2);
+}
+
+void DxRnd::DrawLine(const Vector3 &v1, const Vector3 &v2, const Hmx::Color &c, bool b4) {
+    float vertices[24];
+    vertices[0] = v1.x;
+    vertices[1] = v1.y;
+    vertices[2] = v1.z;
+    vertices[3] = MakeColor(c);
+    vertices[4] = v2.x;
+    vertices[5] = v2.y;
+    vertices[6] = v2.z;
+    vertices[7] = vertices[3];
+    Transform &xfm = reinterpret_cast<Transform &>(vertices[8]);
+    xfm.Reset();
+    TheShaderMgr.SetTransform(xfm);
+    RndShader::SelectConfig(nullptr, b4 ? kShaderTypeLine : kShaderTypeLineNoz, false);
+    D3DDevice_SetFVF(mD3DDevice, 0x42);
+    D3DDevice_DrawVerticesUP(mD3DDevice, (D3DPRIMITIVETYPE)2, 2, vertices, 0x10);
+}
+
+void DxRnd::MakeDrawTarget() {
+    if (mWorldEnded) {
+        D3DDevice_SetRenderTarget_External(mD3DDevice, 0, unk384);
+        D3DDevice_SetDepthStencilSurface(mD3DDevice, unk38c);
+    } else {
+        D3DDevice_SetRenderTarget_External(mD3DDevice, 0, unk380);
+        D3DDevice_SetDepthStencilSurface(mD3DDevice, unk388);
+    }
+    NgMat::SetCurrent(nullptr);
+}
+
+void DxRnd::SetViewport(const Viewport &v) {
+    if (GetGfxMode() == kNewGfx) {
+        NgRnd::SetViewport(v);
+    }
+    D3DVIEWPORT9 dxViewport;
+    dxViewport.X = v.unk0;
+    dxViewport.Y = v.unk4;
+    dxViewport.Width = v.unk8;
+    dxViewport.Height = v.unkc;
+    if (unk_0x301) {
+        dxViewport.MinZ = 1.0f - v.unk10;
+        dxViewport.MaxZ = 1.0f - v.unk14;
+    } else {
+        dxViewport.MinZ = v.unk10;
+        dxViewport.MaxZ = v.unk14;
+    }
+    D3DDevice_SetViewport(mD3DDevice, &dxViewport);
+}
 
 bool DxRnd::Offscreen() const {
     D3DSurface *back = BackBuffer();
@@ -22,6 +91,43 @@ bool DxRnd::Offscreen() const {
         D3DResource_Release(back);
     }
     return ret;
+}
+
+void DxRnd::DrawLargeQuad(
+    const LargeQuadRenderData &data, const Transform &tf, RndMat *mat, ShaderType s
+) {
+    RndMat *it = mat;
+    RndMat *next = mat ? dynamic_cast<RndMat *>(mat->NextPass()) : nullptr;
+    while (true) {
+        RndShader::SelectConfig(it, s, false);
+        D3DDevice_SetIndices(mD3DDevice, data.unk0);
+        D3DDevice_SetStreamSource(mD3DDevice, 0, data.unk4, 0, 20, 1);
+        D3DDevice_SetFVF(mD3DDevice, 0x102);
+        TheShaderMgr.SetVConstant((VShaderConstant)0x5c, Hmx::Matrix4(tf));
+        DxTex *tex = static_cast<DxTex *>(mat->GetDiffuseTex());
+        D3DDevice_SetTexture(mD3DDevice, 0x10, tex->Tex(), 0x8000);
+        D3DDevice_SetTexture(mD3DDevice, 0, tex->Tex(), 0x80000000);
+        D3DDevice_DrawIndexedVertices(
+            mD3DDevice, D3DPT_QUADLIST, 0, 0, (data.unkc - 1) * (data.unk8 - 1) * 4
+        );
+        if (!next)
+            break;
+        it = next;
+        next = dynamic_cast<RndMat *>(next->NextPass());
+    }
+    D3DDevice_SetIndices(mD3DDevice, nullptr);
+    D3DDevice_SetStreamSource(mD3DDevice, 0, nullptr, 0, 0, 1);
+    D3DDevice_SetTexture(mD3DDevice, 0x10, nullptr, 0x8000);
+}
+
+void DxRnd::SetVertShaderTex(RndTex *tex, int i2) {
+    DxTex *dxTex = static_cast<DxTex *>(tex);
+    D3DDevice_SetTexture(
+        mD3DDevice,
+        i2 + 0x10,
+        dxTex ? dxTex->Tex() : nullptr,
+        0x8000000000000000 >> (i2 + 0x30U & 0x7F)
+    );
 }
 
 void DxRnd::PreDeviceReset() {
@@ -96,4 +202,11 @@ int DxRnd::BitmapOrderForD3DFormat(D3DFORMAT fmt) {
     default:
         return 0;
     }
+}
+
+void DxRnd::ResetDevice() {
+    PreDeviceReset();
+    HRESULT res = D3DDevice_Reset(mD3DDevice, &mPresentParams);
+    DX_ASSERT_CODE(res, 0xD6);
+    PostDeviceReset();
 }

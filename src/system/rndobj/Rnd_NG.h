@@ -9,19 +9,19 @@
 #include "rndobj/SoftParticleBuffer.h"
 #include "rndobj/Tex.h"
 
-struct LargeQuadRenderData {};
+struct LargeQuadRenderData;
 
 class NgRnd : public Rnd {
 public:
     // size 0x18
     struct Viewport {
         Viewport() : unk0(0), unk4(0), unk8(0), unkc(0), unk10(0), unk14(0) {}
-        int unk0;
-        int unk4;
-        int unk8;
-        int unkc;
-        float unk10;
-        float unk14;
+        int unk0; // x
+        int unk4; // y
+        int unk8; // width
+        int unkc; // height
+        float unk10; // minz
+        float unk14; // maxz
     };
     struct RndPointTest {
         RndFlare *unk0;

@@ -52,9 +52,9 @@ protected:
         return mQueryStates[queryIndex][unk1804];
     }
 
-    QueryState mQueryStates[256][2]; // 0x4
-    int unk804[256][2]; // 0x804
-    int unk1004[256][2]; // 0x1004
+    QueryState mQueryStates[kMaxQueries][2]; // 0x4
+    int unk804[kMaxQueries][2]; // 0x804
+    int unk1004[kMaxQueries][2]; // 0x1004
     int unk1804; // 0x1804
     int unk1808; // 0x1808
     int unk180c; // 0x180c

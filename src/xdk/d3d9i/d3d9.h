@@ -445,6 +445,16 @@ D3DBaseTexture *D3DDevice_CreateTexture(
 
 D3DVertexDeclaration *D3DDevice_CreateVertexDeclaration(const D3DVERTEXELEMENT9 *);
 
+void D3DDevice_SetFVF(D3DDevice *, UINT);
+void D3DDevice_DrawVerticesUP(D3DDevice *, D3DPRIMITIVETYPE, UINT, const void *, UINT);
+void D3DDevice_SetRenderTarget_External(D3DDevice *, UINT, D3DSurface *);
+void D3DDevice_SetDepthStencilSurface(D3DDevice *, D3DSurface *);
+void D3DDevice_SetViewport(D3DDevice *, const D3DVIEWPORT9 *);
+void D3DDevice_SetIndices(D3DDevice *, D3DIndexBuffer *);
+void D3DDevice_DrawIndexedVertices(D3DDevice *, D3DPRIMITIVETYPE, INT, UINT, UINT);
+HRESULT D3DDevice_Reset(D3DDevice *, D3DPRESENT_PARAMETERS *);
+void D3DDevice_Clear(D3DDevice *, UINT, const D3DRECT *, UINT, UINT, float, UINT, INT);
+
 #ifdef __cplusplus
 }
 #endif

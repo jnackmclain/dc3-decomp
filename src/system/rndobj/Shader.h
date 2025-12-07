@@ -13,6 +13,7 @@ public:
     virtual bool CheckError(MatFlagErrorType) { return false; }
 
     static void Init();
+    static void SelectConfig(RndMat *, ShaderType, bool);
 
 protected:
     virtual void Select(RndMat *, ShaderType, bool) = 0;

@@ -1,10 +1,18 @@
 #pragma once
+#include "math/Color.h"
 #include "os/Debug.h"
 #include "rnddx9/Object.h"
 #include "rndobj/Bitmap.h"
 #include "rndobj/Rnd_NG.h"
 #include "xdk/D3D9.h"
 #include <types.h>
+
+struct LargeQuadRenderData {
+    D3DIndexBuffer *unk0;
+    D3DVertexBuffer *unk4;
+    int unk8;
+    int unkc;
+};
 
 class DxRnd : public NgRnd {
 public:
@@ -74,6 +82,7 @@ private:
     void PreDeviceReset();
     void PostDeviceReset();
     void CreatePostTextures();
+    void ResetDevice();
 
     int unk220;
     D3DDevice *mD3DDevice; // 0x224
@@ -121,9 +130,9 @@ private:
     bool unk378;
     int unk37c;
     D3DSurface *unk380; // 0x380 - back buffer?
-    int unk384;
-    int unk388;
-    int unk38c;
+    D3DSurface *unk384;
+    D3DSurface *unk388;
+    D3DSurface *unk38c;
     D3DTexture *unk390;
     D3DTexture *unk394;
     RndTex *unk398; // DxTex*
@@ -166,6 +175,11 @@ extern DxRnd TheDxRnd;
 
 int D3DFORMAT_BitsPerPixel(D3DFORMAT);
 
+inline unsigned long MakeColor(const Hmx::Color &c) {
+    return ((int)(c.alpha * 255.0f) & 0xFF) << 24 | ((int)(c.red * 255.0f) & 0xFF) << 16
+        | ((int)(c.green * 255.0f) & 0xFF) << 8 | ((int)(c.blue * 255.0f) & 0xFF);
+}
+
 #define DX_RELEASE(x) (TheDxRnd.AutoRelease(x), x = nullptr)
 
 inline HRESULT DxCheck(void *v) { return v ? ERROR_SUCCESS : E_OUTOFMEMORY; }
@@ -174,6 +188,16 @@ inline HRESULT DxCheck(void *v) { return v ? ERROR_SUCCESS : E_OUTOFMEMORY; }
 #define DX_ASSERT(cond, line)                                                            \
     {                                                                                    \
         HRESULT code = DxCheck(cond);                                                    \
+        ((code)                                                                          \
+         && (TheDebugFailer << MakeString(                                               \
+                 "File: %s Line: %d Error: %s\n", __FILE__, line, DxRnd::Error(code)     \
+             ),                                                                          \
+             0));                                                                        \
+    }
+
+// check that the thing allocated successfully (e.g. no E_OUTOFMEMORY)
+#define DX_ASSERT_CODE(code, line)                                                       \
+    {                                                                                    \
         ((code)                                                                          \
          && (TheDebugFailer << MakeString(                                               \
                  "File: %s Line: %d Error: %s\n", __FILE__, line, DxRnd::Error(code)     \
