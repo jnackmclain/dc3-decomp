@@ -1,6 +1,7 @@
 #pragma once
 #include "xdk/XAPILIB.h"
 #include "xdk/D3D9.h"
+#include "xdk/win_types.h"
 // This is where Xbox related functions that use D3D9 stuff will go.
 
 #ifdef __cplusplus
@@ -54,10 +55,23 @@ typedef struct _XGIDEALSHADERCOST { /* Size=0x54 */
     /* 0x0050 */ float AvgVcAndVcCfInstructions;
 } XGIDEALSHADERCOST;
 
-UINT XGSurfaceSize(UINT, UINT, D3DFORMAT, D3DMULTISAMPLE_TYPE);
-UINT XGHierarchicalZSize(UINT, UINT, D3DMULTISAMPLE_TYPE);
-VOID XGGetTextureDesc(D3DBaseTexture *, UINT, XGTEXTURE_DESC *);
-VOID XGTileTextureLevel(UINT, UINT, UINT, UINT, UINT, VOID *, const tagPOINT *, const VOID *, UINT, const tagRECT *);
+UINT XGSurfaceSize(
+    UINT Width, UINT Height, D3DFORMAT Format, D3DMULTISAMPLE_TYPE MultiSample
+);
+UINT XGHierarchicalZSize(UINT Width, UINT Height, D3DMULTISAMPLE_TYPE MultiSample);
+VOID XGGetTextureDesc(D3DBaseTexture *pTexture, UINT Level, XGTEXTURE_DESC *pDesc);
+VOID XGTileTextureLevel(
+    UINT Width,
+    UINT Height,
+    UINT Level,
+    DWORD GpuFormat,
+    DWORD Flags,
+    VOID *pDestination,
+    const tagPOINT *pPoint,
+    const VOID *pSource,
+    UINT RowPitch,
+    const tagRECT *pRect
+);
 
 void XGGetTextureLayout(
     D3DBaseTexture *pTexture,
@@ -76,6 +90,9 @@ void XGGetTextureLayout(
 INT XGEstimateIdealShaderCost(
     const void *pFunction, UINT pass, XGIDEALSHADERCOST *pShaderCost
 );
+
+void XGRegisterPixelShader(D3DPixelShader *pShader, void *pPhysicalPart);
+void XGRegisterVertexShader(D3DVertexShader *pShader, void *pPhysicalPart);
 
 #ifdef __cplusplus
 }

@@ -164,9 +164,6 @@ void RndShaderMgr::Invalidate(ShaderType t) {
     RndShaderProgram::InitModTime();
 }
 
-#define PS3_SHADERS_TYPE 'PS3S'
-#define PS3_SHADERS_VERSION 1
-
 void RndShaderMgr::LoadShaderFile(FileStream &fs) {
     if (TheLoadMgr.GetPlatform() == kPlatformPS3) {
         RndSplasherResume();

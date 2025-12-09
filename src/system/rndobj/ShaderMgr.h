@@ -7,6 +7,11 @@
 
 class RndShaderProgram;
 
+#define PS3_SHADERS_TYPE 'PS3S'
+#define PS3_SHADERS_VERSION 1
+#define XBOX_SHADERS_TYPE 'XBOX'
+#define XBOX_SHADERS_VERSION 1
+
 // vertex shader constant
 enum VShaderConstant {
 };
@@ -22,7 +27,7 @@ public:
         RndShaderProgram *obj; // fix type
     };
     RndShaderMgr();
-    virtual ~RndShaderMgr();
+    virtual ~RndShaderMgr() {}
     virtual void PreInit();
     virtual void Init();
     virtual void Terminate();

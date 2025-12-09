@@ -160,13 +160,6 @@ typedef enum _XCONTENTDEVICEID {
     // fill in others as you find them out
 } XCONTENTDEVICEID;
 
-typedef struct _GUID { /* Size=0x10 */
-    /* 0x0000 */ DWORD Data1;
-    /* 0x0004 */ WORD Data2;
-    /* 0x0006 */ WORD Data3;
-    /* 0x0008 */ BYTE Data4[8];
-} GUID;
-
 typedef struct _XVIDEO_MODE { /* Size=0x30 */
     /* 0x0000 */ DWORD dwDisplayWidth;
     /* 0x0004 */ DWORD dwDisplayHeight;
