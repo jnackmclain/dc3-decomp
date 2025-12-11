@@ -1,13 +1,19 @@
 #pragma once
-#include "SkillsAwardList.h"
 #include "gesture/FitnessFilter.h"
 #include "hamobj/HamMove.h"
 #include "hamobj/HamNavProvider.h"
+#include "hamobj/HamPlayerData.h"
 #include "meta_ham/HamSongMgr.h"
 #include "meta_ham/Instarank.h"
+#include "meta_ham/Playlist.h"
+#include "meta_ham/SkillsAwardList.h"
 #include "net_ham/RockCentral.h"
+#include "obj/Data.h"
 #include "obj/Object.h"
 #include "os/DateTime.h"
+
+enum PlayerFlag {
+};
 
 class MetaPerformer : public virtual Hmx::Object {
 public:
@@ -16,13 +22,13 @@ public:
     virtual DataNode Handle(DataArray *, bool);
     // MetaPerformer
     virtual bool IsWinning() const = 0;
-    virtual void Clear();
+    virtual void Clear() { ResetSongs(); }
     virtual void ResetSongs();
     virtual void SelectSong(Symbol, int) = 0;
     virtual void CompleteSong(int, int, int, float, bool);
-    virtual void AdvanceSong(int);
-    virtual bool HasInstarankData() { return unk24; }
-    virtual Instarank *GetInstarank() { return unk24; }
+    virtual void AdvanceSong(int i) { mNumCompleted.push_back(i); }
+    virtual bool HasInstarankData() { return mInstarank; }
+    virtual Instarank *GetInstarank() { return mInstarank; }
     virtual void OnLoadSong() {}
 
     Symbol GetSong() const;
@@ -63,13 +69,39 @@ public:
     bool GetPlayedLongIntro(Symbol);
     void SetDefaultCrews();
     bool HasRecommendedPracticeMoves() const;
+    void SetSong(Symbol);
+    bool CanUpdateScoreLeaderboards(bool);
+    void SetVenuePref(Symbol);
+    void StartGameplayTimer();
+    void CalcPrimarySongCharacter(const HamSongMetadata *, Symbol &, Symbol &, Symbol &);
+    void
+    CalcSecondarySongCharacter(const HamSongMetadata *, bool, Symbol, Symbol &, Symbol &, Symbol &);
+    int GetPlaylistIndex() const;
+    Symbol GetCompletedSong() const;
+    bool SongInSet(Symbol) const;
+    void StopGameplayTimer();
+    void ClearCharacters();
+    void
+    CalcCharacters(const HamSongMetadata *, bool, PlayerFlag, HamPlayerData *&, Symbol &, Symbol &, Symbol &, HamPlayerData *&, Symbol &, Symbol &, Symbol &);
+    bool SongEndsWithEndgameSequence() const;
+    int DetermineDanceBattleWinner();
+    bool IsRecommendedPracticeMove(String) const;
+    bool IsRecommendedPracticeMoveGroup(const std::vector<class HamMove *> &) const;
+    void SetDefaultSongCharacter(int);
+    void SetupCharacters();
+    void SetPlaylist(Playlist *);
 
-    bool HasPlaylist() const { return unkbc; }
+    bool HasPlaylist() const { return mPlaylist; }
 
     static void SendSpeechDatapoint(DataArray *, float, Symbol);
+    static MetaPerformer *Current();
 
 private:
+    void SaveAndUploadScores(Symbol, int, int);
+    void SaveDanceBattleScores(Symbol);
+
     static bool sCheatFinale;
+    static class MetaPerformerHook *sScriptHook;
 
 protected:
     virtual void OnMovePassed(int, HamMove *, int, float);
@@ -80,6 +112,9 @@ protected:
     void OnReviewMovePassed(int, HamMove *, int, float);
     void OnRecallMovePassed(int, HamMove *);
     void GetEraInvalid();
+    bool IsCheatWinning() const;
+    Symbol GetRandomVenue();
+    void PotentiallyUpdateLeaderboards(bool, Symbol, int, int, bool);
 
     DataNode OnMsg(const RCJobCompleteMsg &);
 
@@ -87,7 +122,7 @@ protected:
     std::vector<int> mNumCompleted; // 0x10
     int mNumRestarts; // 0x1c
     const HamSongMgr &mSongMgr; // 0x20
-    Instarank *unk24; // 0x24
+    Instarank *mInstarank; // 0x24
     bool mNoFail; // 0x28
     DateTime unk29; // 0x29
     bool mGotNewHighScore; // 0x2f
@@ -118,7 +153,7 @@ protected:
     bool mMoveScored; // 0xa0
     bool mCheckMoveScored; // 0xa1
     std::set<Symbol> mLongIntrosPlayed; // 0xa4
-    int unkbc;
+    Playlist *mPlaylist; // 0xbc
     std::set<int> mSkippedSongs; // 0xc0
     int mPlaylistIndex; // 0xd8
     int mPlaylistElapsedTime; // 0xdc
@@ -126,5 +161,32 @@ protected:
     bool mJustBeatGame; // 0xe1
     bool mSkipPracticeWelcome; // 0xe2
     bool unke3; // 0xe3
-    FitnessFilter unke4[2];
+    FitnessFilter mFitnessFilters[2]; // 0xe4
+};
+
+class QuickplayPerformer : public MetaPerformer {
+public:
+    QuickplayPerformer(const HamSongMgr &);
+    virtual ~QuickplayPerformer() {}
+    virtual DataNode Handle(DataArray *, bool);
+    virtual bool IsWinning() const { return IsCheatWinning() != false; }
+    virtual void SelectSong(Symbol, int);
+    virtual void ChooseVenue();
+
+    DataNode OnSetSong(DataArray *);
+};
+
+class CampaignPerformer;
+
+class MetaPerformerHook : public Hmx::Object {
+public:
+    MetaPerformerHook(const HamSongMgr &);
+    virtual ~MetaPerformerHook();
+    virtual DataNode Handle(DataArray *, bool);
+
+    MetaPerformer *Current();
+
+protected:
+    QuickplayPerformer *mQuickplayPerformer; // 0x2c
+    CampaignPerformer *mCampaignPerformer; // 0x30
 };

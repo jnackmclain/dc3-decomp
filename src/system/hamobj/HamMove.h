@@ -110,6 +110,7 @@ protected:
     void SyncMirror();
     float FindConfusabilty(const HamMove *) const;
     void SetName(Symbol, const char *);
+    bool IsCheatWinning() const;
 
     /** "Move to mirror" */
     ObjPtr<HamMove> mMirror; // 0x30

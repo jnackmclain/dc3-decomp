@@ -19,8 +19,8 @@ class Playlist {
 public:
     virtual ~Playlist(); // 0x0
     // unsure where these go but they are definitely between 0x4 - 0xc
-    virtual bool IsDirty() { return 0; }
     virtual bool IsCustom() const { return 0; }
+    virtual bool IsDirty() { return 0; }
     virtual void SetOnlineID(int) {}
     //
     virtual int GetOnlineID() { return -1; } // 0x10 ?
@@ -41,6 +41,7 @@ public:
     void Clear();
     void InsertSong(int, int);
     int GetNumSongs() const;
+    bool IsEmpty() const { return m_vSongs.empty(); }
 
     Symbol unk4;
     bool unk8;

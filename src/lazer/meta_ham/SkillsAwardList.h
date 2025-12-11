@@ -10,7 +10,8 @@ public:
     class Key {
     public:
     };
-    SkillsAwardList();
+    SkillsAwardList() : unk20(0) { mSaveSizeMethod = SaveSize; }
+    virtual ~SkillsAwardList() {}
     virtual void SaveFixed(FixedSizeSaveableStream &) const;
     virtual void LoadFixed(FixedSizeSaveableStream &, int);
 
@@ -18,6 +19,8 @@ public:
     SkillsAward GetAward(DataArray *);
     void SetAward(DataArray *, SkillsAward);
     void Clear();
+
+    static int SaveSize(int);
 
 protected:
     std::map<Key, SkillsAward> unk8;

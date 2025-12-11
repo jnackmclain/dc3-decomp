@@ -24,7 +24,7 @@ public:
     virtual HamSongMetadata const *Data(int) const;
     virtual bool HasContentAltDirs();
     virtual SongInfo *SongAudioData(int) const;
-    virtual Symbol GetShortNameFromSongID(int, bool) const;
+    virtual Symbol GetShortNameFromSongID(int, bool = true) const;
     virtual int GetSongIDFromShortName(Symbol, bool) const;
     virtual void Terminate();
     virtual void Init();
@@ -50,9 +50,9 @@ public:
     GetCoreStarsForDifficulty(class HamProfile const *, Difficulty, int &, int &) const;
     void GetCharacterStars(class HamProfile const *, Symbol, int &, int &) const;
     void GetCrewStars(class HamProfile const *, Symbol, int &, int &) const;
-    void GetCrewStarsForDifficulty(
-        class HamProfile const *, Symbol, Difficulty, int &, int &
-    ) const;
+    void
+    GetCrewStarsForDifficulty(class HamProfile const *, Symbol, Difficulty, int &, int &)
+        const;
     int GetTotalNumLibrarySongs() const;
     void UploadSongLibraryToServer();
     void GetRankedSongs(std::vector<int> &) const;
@@ -76,13 +76,8 @@ public:
 protected:
     virtual void WriteCachedMetadataToStream(BinStream &) const;
     virtual void AddSongData(DataArray *, DataLoader *, ContentLocT);
-    virtual void AddSongData(
-        DataArray *,
-        std::map<int, SongMetadata *> &,
-        const char *,
-        ContentLocT,
-        std::vector<int> &
-    );
+    virtual void
+    AddSongData(DataArray *, std::map<int, SongMetadata *> &, const char *, ContentLocT, std::vector<int> &);
     virtual void AddSongIDMapping(int, Symbol);
     virtual void ReadCachedMetadataFromStream(BinStream &, int);
 

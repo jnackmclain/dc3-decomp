@@ -1,19 +1,55 @@
 #include "meta_ham/MetaPerformer.h"
+#include "SkillsAwardList.h"
+#include "flow/PropertyEventProvider.h"
+#include "game/GameMode.h"
+#include "game/HamUserMgr.h"
+#include "gesture/GestureMgr.h"
 #include "hamobj/HamGameData.h"
 #include "hamobj/HamMove.h"
 #include "hamobj/HamNavProvider.h"
+#include "hamobj/HamPlayerData.h"
+#include "hamobj/ScoreUtl.h"
+#include "meta_ham/HamProfile.h"
 #include "meta_ham/HamSongMgr.h"
 #include "meta_ham/ProfileMgr.h"
 #include "net_ham/RockCentral.h"
+#include "obj/Data.h"
+#include "obj/DataUtl.h"
 #include "obj/Object.h"
+#include "os/DateTime.h"
+#include "os/Debug.h"
+#include "utl/Symbol.h"
+
+bool CharConflict(Symbol s1, Symbol s2) {
+    bool symsEqual = s1 == s2;
+    if (TheGameMode->InMode("dance_battle", true)) {
+        Symbol crew = s1 == gNullStr ? gNullStr : GetCrewForCharacter(s1);
+        Symbol crew2 = s2 == gNullStr ? gNullStr : GetCrewForCharacter(s2);
+        symsEqual |= crew == crew2;
+    }
+    return symsEqual;
+}
+
+Symbol GetUnlockedOutfit(Symbol s1) {
+    if (!TheProfileMgr.IsContentUnlocked(s1)) {
+        Symbol outfit = GetOutfitCharacter(s1);
+        return GetCharacterOutfit(outfit, 0);
+    } else
+        return s1;
+}
+
+#pragma region MetaPerformer
+
+MetaPerformerHook *MetaPerformer::sScriptHook;
 
 MetaPerformer::MetaPerformer(const HamSongMgr &mgr, const char *)
-    : mNumRestarts(0), mSongMgr(mgr), unk24(0), mNoFail(0), mGotNewHighScore(0), unk30(0),
-      mGotNewBestStars(0), unk32(0), mGotMovesPassedBest(0), mUnlockedNoFlashcards(0),
-      mCompletedSongWithNoFlashcards(0), mUnlockedMediumDifficulty(0),
-      mUnlockedExpertDifficulty(0), unk38(0), mPracticeOverallScore(0), mMoveScored(0),
-      mCheckMoveScored(1), unkbc(0), mPlaylistIndex(0), mPlaylistElapsedTime(0), unke0(0),
-      mSkipPracticeWelcome(0), unke3(0) {
+    : mNumRestarts(0), mSongMgr(mgr), mInstarank(0), mNoFail(0), mGotNewHighScore(0),
+      unk30(0), mGotNewBestStars(0), unk32(0), mGotMovesPassedBest(0),
+      mUnlockedNoFlashcards(0), mCompletedSongWithNoFlashcards(0),
+      mUnlockedMediumDifficulty(0), mUnlockedExpertDifficulty(0), unk38(0),
+      mPracticeOverallScore(0), mMoveScored(0), mCheckMoveScored(1), mPlaylist(0),
+      mPlaylistIndex(0), mPlaylistElapsedTime(0), unke0(0), mSkipPracticeWelcome(0),
+      unke3(0) {
     mNumCompleted.reserve(100);
     mSkippedSongs.clear();
     mEnrollmentIndex[0] = -1;
@@ -136,7 +172,7 @@ BEGIN_HANDLERS(MetaPerformer)
     HANDLE_ACTION(shuffle_playlist, ShufflePlaylist())
     HANDLE_ACTION(repeat_current_playlist_song, RepeatCurrentPlaylistSong())
     HANDLE_EXPR(get_num_songs_in_playlist, GetNumSongsInPlaylist())
-    HANDLE_EXPR(get_playlist_index, mPlaylistIndex)
+    HANDLE_EXPR(get_playlist_index, GetPlaylistIndex())
     HANDLE_ACTION(set_playlist_index, SetPlaylistIndex(_msg->Int(2)))
     HANDLE_EXPR(get_playlist_elapsed_time_string, GetPlaylistElapsedTimeString())
     HANDLE_ACTION(
@@ -187,3 +223,340 @@ bool MetaPerformer::HasRecommendedPracticeMoves() const {
 }
 
 DataNode MetaPerformer::OnMsg(const RCJobCompleteMsg &) { return 1; }
+
+void MetaPerformer::ResetSongs() {
+    mNumCompleted.clear();
+    mNumRestarts = 0;
+    if (mInstarank) {
+        RELEASE(mInstarank);
+    }
+}
+
+MetaPerformer *MetaPerformer::Current() { return sScriptHook->Current(); }
+
+bool MetaPerformer::CanUpdateScoreLeaderboards(bool b1) {
+    if (TheGameMode) {
+        if (TheGameMode->Property("update_leaderboards")->Int() == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void MetaPerformer::SetVenuePref(Symbol venue) {
+    TheProfileMgr.SetVenuePreference(venue);
+}
+
+void MetaPerformer::SetSong(Symbol song) {
+    mPlaylist = 0;
+    ResetSongs();
+    SelectSong(song, 0);
+}
+
+void MetaPerformer::StartGameplayTimer() {
+    if (unk29.ToCode() == 0) {
+        GetDateAndTime(unk29);
+    }
+}
+
+void MetaPerformer::JumpGameplayTimerForward(int x) {
+    if (unk29.ToCode() == 0) {
+        MILO_NOTIFY("This cheat only works while the gameplay timer is running!");
+    } else {
+        unk29 = DateTime(unk29.ToCode() - x);
+    }
+}
+
+void MetaPerformer::GetEraInvalid() {
+    MILO_LOG("Unhandled 'get_era' request made to MetaPerformer.\n");
+}
+
+void MetaPerformer::CalcPrimarySongCharacter(
+    const HamSongMetadata *data, Symbol &s2, Symbol &s3, Symbol &s4
+) {
+    s3 = data->Character();
+    s4 = data->Outfit();
+    s2 = GetCrewForCharacter(s3);
+}
+
+int MetaPerformer::GetPlaylistIndex() const { return mPlaylistIndex; }
+Symbol MetaPerformer::GetCompletedSong() const { return TheGameData->GetSong(); }
+bool MetaPerformer::SongInSet(Symbol song) const {
+    return song == TheGameData->GetSong();
+}
+
+Symbol MetaPerformer::GetSong() const {
+    MILO_ASSERT(TheGameData, 0x118);
+    return TheGameData->GetSong();
+}
+
+bool MetaPerformer::IsLastSong() const {
+    if (mPlaylist) {
+        return mPlaylist->GetLastValidSongIndex() <= mPlaylistIndex;
+    } else {
+        return false;
+    }
+}
+
+void MetaPerformer::StopGameplayTimer() {
+    if (unk29.ToCode()) {
+        unsigned int curCode = unk29.ToCode();
+        DateTime now;
+        GetDateAndTime(now);
+        unsigned int nowCode = now.ToCode();
+        for (int i = 0; i < 2; i++) {
+            HamPlayerData *pPlayer = TheGameData->Player(i);
+            MILO_ASSERT(pPlayer, 0x35E);
+            HamProfile *pProfile = TheProfileMgr.GetProfileFromPad(pPlayer->PadNum());
+            if (pProfile && pProfile->HasValidSaveData()) {
+                // metagamestats
+            }
+        }
+        unk29 = DateTime(0);
+    }
+}
+
+void MetaPerformer::OnFreestylePictureTaken() {
+    for (int i = 0; i < 6; i++) {
+        TheGestureMgr->GetSkeleton(i);
+    }
+}
+
+int MetaPerformer::GetMovesPassed(int i1) {
+    int num = -1;
+    int numMoves = unk40[i1].size();
+    if (numMoves) {
+        int loop_moves = 0;
+        for (int i = 0; i < unk40[i1].size(); i++) {
+            static Symbol move_perfect("move_perfect");
+            static Symbol move_awesome("move_awesome");
+            Symbol rating = RatingState(i);
+            if (rating == move_perfect || rating == move_awesome) {
+                loop_moves++;
+            }
+        }
+        num = loop_moves / numMoves;
+    }
+    return num;
+}
+
+bool MetaPerformer::IsCheatWinning() const { return sCheatFinale && IsLastSong(); }
+
+void MetaPerformer::ClearCharacters() {
+    HamPlayerData *pPlayer1Data = TheGameData->Player(0);
+    MILO_ASSERT(pPlayer1Data, 0x5B9);
+    HamPlayerData *pPlayer2Data = TheGameData->Player(1);
+    MILO_ASSERT(pPlayer2Data, 0x5BB);
+    pPlayer1Data->SetCrew(gNullStr);
+    pPlayer2Data->SetCrew(gNullStr);
+    pPlayer1Data->SetCharacter(gNullStr);
+    pPlayer2Data->SetCharacter(gNullStr);
+}
+
+bool MetaPerformer::IsCrewAvailable(Symbol crew) const {
+    HamPlayerData *pPlayer1Data = TheGameData->Player(0);
+    MILO_ASSERT(pPlayer1Data, 0x699);
+    HamPlayerData *pPlayer2Data = TheGameData->Player(1);
+    MILO_ASSERT(pPlayer2Data, 0x69C);
+    if (pPlayer1Data->Crew() == crew) {
+        return false;
+    } else {
+        return pPlayer2Data->Crew() != crew;
+    }
+}
+
+Symbol MetaPerformer::GetCrewVenue(Symbol s) const {
+    static Symbol CREWS("CREWS");
+    DataArray *pCrewArray = DataGetMacro(CREWS);
+    MILO_ASSERT(pCrewArray, 0x6B0);
+    DataArray *pCrewData = pCrewArray->FindArray(s);
+    MILO_ASSERT(pCrewData, 0x6B3);
+    static Symbol venue("venue");
+    return pCrewData->FindSym(venue);
+}
+
+bool MetaPerformer::IsPlaylistEmpty() const {
+    MILO_ASSERT(mPlaylist, 0x6BC);
+    return mPlaylist->GetNumSongs() == 0;
+}
+
+bool MetaPerformer::IsPlaylistPlayable() const {
+    MILO_ASSERT(mPlaylist, 0x6C7);
+    return mPlaylist->GetLastValidSongIndex() >= 0;
+}
+
+bool MetaPerformer::IsPlaylistCustom() const {
+    MILO_ASSERT(mPlaylist, 0x6CE);
+    return mPlaylist->IsCustom();
+}
+
+int MetaPerformer::GetNumSongsInPlaylist() const {
+    MILO_ASSERT(mPlaylist, 0x758);
+    return mPlaylist->GetNumSongs();
+}
+
+bool MetaPerformer::SongEndsWithEndgameSequence() const {
+    return IsWinning() && IsLastSong();
+}
+
+bool MetaPerformer::IsDifficultyUnlocked(Symbol s) const {
+    if (mPlaylist && IsPlaylistPlayable()) {
+        int numSongs = GetNumSongsInPlaylist();
+        for (int i = 0; i < numSongs; i++) {
+            if (mPlaylist->IsValidSong(i)) {
+                int song = mPlaylist->GetSong(i);
+                Symbol shortname = TheHamSongMgr.GetShortNameFromSongID(song);
+                if (!TheProfileMgr.IsDifficultyUnlocked(shortname, s)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    } else {
+        Symbol song = GetSong();
+        return TheProfileMgr.IsDifficultyUnlocked(song, s);
+    }
+}
+
+int MetaPerformer::DetermineDanceBattleWinner() {
+    HamPlayerData *pPlayer1Data = TheGameData->Player(0);
+    MILO_ASSERT(pPlayer1Data, 0x307);
+    Hmx::Object *pPlayer1Provider = pPlayer1Data->Provider();
+    MILO_ASSERT(pPlayer1Provider, 0x309);
+    static Symbol score("score");
+    const DataNode *pPlayer1Score = pPlayer1Provider->Property(score);
+    MILO_ASSERT(pPlayer1Score, 0x30C);
+    int p1ScoreValue = pPlayer1Score->Int();
+    HamPlayerData *pPlayer2Data = TheGameData->Player(1);
+    MILO_ASSERT(pPlayer2Data, 0x311);
+    Hmx::Object *pPlayer2Provider = pPlayer2Data->Provider();
+    MILO_ASSERT(pPlayer2Provider, 0x313);
+    const DataNode *pPlayer2Score = pPlayer2Provider->Property(score);
+    MILO_ASSERT(pPlayer2Score, 0x315);
+    int p2ScoreValue = pPlayer2Score->Int();
+    if (p2ScoreValue < p1ScoreValue) {
+        return 0;
+    } else if (p1ScoreValue < p2ScoreValue) {
+        return 1;
+    } else
+        return -1;
+}
+
+void MetaPerformer::PotentiallyUpdateLeaderboards(
+    bool b1, Symbol s2, int i3, int i4, bool b5
+) {
+    if (TheHamUserMgr && !b1 && CanUpdateScoreLeaderboards(b5)) {
+        SaveAndUploadScores(s2, i3, i4);
+    }
+}
+
+bool MetaPerformer::IsRecommendedPracticeMove(String move) const {
+    for (int i = 0; i < mRecommendedPracticeMoves.size(); i++) {
+        if (mRecommendedPracticeMoves[i] == move) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool MetaPerformer::IsRecommendedPracticeMoveGroup(
+    const std::vector<class HamMove *> &moves
+) const {
+    DataArrayPtr ptr(new DataArray(moves.size()));
+    for (int i = 0; i < moves.size(); i++) {
+        ptr->Node(i) = moves[i];
+    }
+    return mSkillsAwards->GetAward(ptr) == 1;
+}
+
+void MetaPerformer::SetDefaultCrews() {
+    if (!TheGameMode->InMode("campaign", true)) {
+        ClearCharacters();
+        SetupCharacters();
+    }
+}
+
+void MetaPerformer::UpdateIsLastSong() {
+    bool last = IsLastSong();
+    static Symbol is_last_song("is_last_song");
+    TheHamProvider->SetProperty(is_last_song, last);
+}
+
+void MetaPerformer::SetPlaylist(Playlist *playlist) {
+    ResetSongs();
+    if (unke3) {
+        RELEASE(mPlaylist);
+        unke3 = false;
+    }
+    mPlaylist = playlist;
+    mPlaylistIndex = 0;
+    mSkippedSongs.clear();
+    UpdateIsLastSong();
+}
+
+void MetaPerformer::StartPlaylist() {
+    mPlaylistElapsedTime = 0;
+    if (!TheGameMode) {
+        MILO_ASSERT(mPlaylist, 0x713);
+        MILO_ASSERT(!mPlaylist->IsEmpty(), 0x714);
+        mPlaylistIndex = 0;
+        mSkippedSongs.clear();
+        while (!mPlaylist->IsValidSong(mPlaylistIndex)) {
+            mPlaylistIndex++;
+            MILO_ASSERT(mPlaylistIndex < mPlaylist->GetNumSongs(), 0x71D);
+        }
+    }
+    if (mPlaylist->GetDuration() >= 900) {
+        unke0 = true;
+    }
+    UpdateSongFromPlaylist();
+    UpdateIsLastSong();
+}
+
+#pragma endregion
+#pragma region QuickplayPerformer
+
+QuickplayPerformer::QuickplayPerformer(const HamSongMgr &mgr)
+    : MetaPerformer(mgr, "quickplay_performer") {}
+
+BEGIN_HANDLERS(QuickplayPerformer)
+    HANDLE(set_song, OnSetSong)
+    HANDLE_ACTION(setup_venue, ChooseVenue())
+    HANDLE_SUPERCLASS(MetaPerformer)
+    HANDLE_SUPERCLASS(Hmx::Object)
+END_HANDLERS
+
+void QuickplayPerformer::SelectSong(Symbol song, int) {
+    TheGameData->SetSong(song);
+    if (mNumCompleted.empty()) {
+        SetDefaultCrews();
+        ChooseVenue();
+    }
+}
+
+void QuickplayPerformer::ChooseVenue() {
+    Symbol preferredVenue = TheProfileMgr.GetVenuePreference();
+    static Symbol random_venue("random_venue");
+    static Symbol defaultSym("default");
+    if (preferredVenue == random_venue || preferredVenue == gNullStr) {
+        TheGameData->SetVenue(GetRandomVenue());
+    } else if (preferredVenue == defaultSym) {
+        const HamSongMetadata *pData = TheHamSongMgr.Data(
+            TheHamSongMgr.GetSongIDFromShortName(TheGameData->GetSong(), false)
+        );
+        MILO_ASSERT(pData, 0x7A);
+        TheGameData->SetVenue(pData->Venue());
+    } else {
+        TheGameData->SetVenue(preferredVenue);
+    }
+}
+
+DataNode QuickplayPerformer::OnSetSong(DataArray *a) {
+    SetSong(a->ForceSym(2));
+    return 0;
+}
+
+#pragma endregion
+#pragma region MetaPerformerHook
+
+MetaPerformerHook::~MetaPerformerHook() { delete mQuickplayPerformer; }

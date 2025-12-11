@@ -62,7 +62,7 @@ public:
      * @param [in] fail If true, and the song can't be found, fail the system.
      * @returns The corresponding song shortname.
      */
-    virtual Symbol GetShortNameFromSongID(int songID, bool fail) const = 0;
+    virtual Symbol GetShortNameFromSongID(int songID, bool fail = true) const = 0;
     /** Get the song ID associated with the supplied song shortname.
      * @param [in] shortname The song shortname.
      * @param [in] fail If true, and the song can't be found, fail the system.

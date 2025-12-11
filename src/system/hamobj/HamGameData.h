@@ -47,6 +47,7 @@ public:
     }
     void SetSong(Symbol song) { mSong = song; }
     Symbol GetSong() const { return mSong; }
+    void SetVenue(Symbol venue) { mVenue = venue; }
 
 protected:
     HamGameData();
