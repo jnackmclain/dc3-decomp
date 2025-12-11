@@ -10,6 +10,7 @@
 #include "meta/FixedSizeSaveableStream.h"
 #include "meta/MemcardMgr.h"
 #include "meta/Profile.h"
+#include "meta_ham/HamProfile.h"
 #include "obj/Data.h"
 #include "obj/Dir.h"
 #include "obj/Msg.h"
@@ -662,4 +663,55 @@ void ProfileMgr::HandlePlayerNameChange() {
             }
         }
     }
+}
+
+std::vector<HamProfile *> ProfileMgr::GetNewlySignedIn() {
+    std::vector<HamProfile *> profiles;
+    FOREACH (it, unk90) {
+        HamProfile *pProfile = *it;
+        int padNum = pProfile->GetPadNum();
+        if (ThePlatformMgr.IsSignedIn(padNum) && !ThePlatformMgr.IsPadAGuest(padNum)
+            && pProfile->GetSaveState() == kMetaProfileUnloaded) {
+            profiles.push_back(*it);
+        }
+    }
+    return profiles;
+}
+
+std::vector<HamProfile *> ProfileMgr::GetShouldAutosave() {
+    std::vector<HamProfile *> profiles;
+    FOREACH (it, unk90) {
+        HamProfile *pProfile = *it;
+        int padNum = pProfile->GetPadNum();
+        if (ThePlatformMgr.IsSignedIn(padNum)
+            && pProfile->GetSaveState() == kMetaProfileLoaded && pProfile->IsUnsaved()) {
+            profiles.push_back(pProfile);
+        }
+    }
+    return profiles;
+}
+
+void ProfileMgr::HandleProfileSaveComplete() {
+    UpdateFriendsList();
+    UpdateUsingFitnessState();
+}
+
+void ProfileMgr::HandleProfileLoadComplete() {
+    UpdateFriendsList();
+    UpdateUsingFitnessState();
+    unka8 = true;
+    unka9 = true;
+}
+
+int ProfileMgr::GetNumValidProfiles() const {
+    int count = 0;
+    std::vector<HamProfile *> profiles = TheProfileMgr.GetAll();
+    FOREACH (it, profiles) {
+        HamProfile *pProfile = *it;
+        MILO_ASSERT(pProfile, 0x6EC);
+        if (pProfile->HasValidSaveData()) {
+            count++;
+        }
+    }
+    return count;
 }

@@ -74,6 +74,8 @@ public:
         XShowNuiGuideUI(id);
     }
 
+    int Unk425C() const { return unk425c; }
+
     int TogglePauseOnSkeletonLoss() {
         unk425c = (unk425c + 1) % 3;
         return unk425c;

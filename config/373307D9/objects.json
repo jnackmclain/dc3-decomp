@@ -122,7 +122,7 @@
             "lazer/meta_ham/OptionsPanel.cpp": "MISSING",
             "lazer/meta_ham/OutfitProvider.cpp": "MISSING",
             "lazer/meta_ham/OverlayPanel.cpp": "NonMatching",
-            "lazer/meta_ham/Overshell.cpp": "MISSING",
+            "lazer/meta_ham/Overshell.cpp": "NonMatching",
             "lazer/meta_ham/PassiveMessagesPanel.cpp": "MISSING",
             "lazer/meta_ham/PassiveMessenger.cpp": "MISSING",
             "lazer/meta_ham/Playlist.cpp": "NonMatching",

@@ -100,11 +100,18 @@ public:
     void SetGlobalOptionsSaveState(ProfileSaveState);
     void SaveGlobalOptions(FixedSizeSaveableStream &);
     bool HasActiveProfile(bool) const;
+    std::vector<HamProfile *> GetNewlySignedIn();
+    std::vector<HamProfile *> GetShouldAutosave();
+    void HandleProfileSaveComplete();
+    void HandleProfileLoadComplete();
+    void UpdateUsingFitnessState();
 
     bool GetBassBoost() const { return mBassBoost; }
     bool GetDolby() const { return mDolby; }
 
 private:
+    void UpdateFriendsList();
+
     DataNode OnMsg(const SigninChangedMsg &);
 
 protected:
