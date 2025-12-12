@@ -5,6 +5,7 @@
 #include "meta/DataArraySongInfo.h"
 #include "meta/Jukebox.h"
 #include "meta/SongMgr.h"
+#include "meta_ham/ProfileMgr.h"
 #include "obj/Data.h"
 #include "obj/Dir.h"
 #include "obj/Object.h"
@@ -23,8 +24,8 @@
 
 HamSongMgr TheHamSongMgr;
 
-HamSongMgr::HamSongMgr() : unkd0(0), mJukebox(Jukebox(2000)), unk168(false) {
-    ClearAndShrink<String>(unk150);
+HamSongMgr::HamSongMgr() : unkd0(0), mJukebox(2000), mRandomSongDebug(false) {
+    ClearAndShrink<String>(mContentAltDirs);
 }
 
 BEGIN_HANDLERS(HamSongMgr)
@@ -38,7 +39,7 @@ BEGIN_HANDLERS(HamSongMgr)
     HANDLE_EXPR(rank_tier, RankTier(_msg->Int(2)))
     HANDLE_EXPR(rank_tier_for_song, RankTier(_msg->Sym(2)))
     HANDLE_EXPR(dancer_for_song, GetCharacter(_msg->Sym(2)))
-    HANDLE_EXPR(num_rank_tiers, (int)unk134.size())
+    HANDLE_EXPR(num_rank_tiers, (int)mRankTiers.size())
     HANDLE_EXPR(rank_tier_token, RankTierToken(_msg->Int(2)))
     HANDLE(get_random_song, OnGetRandomSong)
     HANDLE_ACTION(add_recent_song, AddRecentSong(_msg->Sym(2)))
@@ -84,8 +85,8 @@ void HamSongMgr::Init() {
     SongMgr::Init();
     SetName("song_mgr", ObjectDir::Main());
     TheContentMgr.RegisterCallback(this, false);
-    unkd4.clear();
-    unkec.clear();
+    mSongNameLookup.clear();
+    mSongIDLookup.clear();
     static Symbol song_mgr("song_mgr");
     static Symbol alt_dirs("alt_dirs");
     DataArray *cfg = SystemConfig(song_mgr);
@@ -94,16 +95,16 @@ void HamSongMgr::Init() {
         for (int i = 1; i < altDirsArray->Size(); i++) {
             const char *curDir = altDirsArray->Array(i)->Str(0);
             if (strlen(curDir) != 0) {
-                unk150.push_back(curDir);
+                mContentAltDirs.push_back(curDir);
             }
         }
     }
     static Symbol tier_ranges("tier_ranges");
     DataArray *tierArr = cfg->FindArray(tier_ranges);
     int numTiers = tierArr->Size() - 1;
-    unk134.reserve(numTiers);
+    mRankTiers.reserve(numTiers);
     for (int i = 1; i < numTiers; i++) {
-        unk134.push_back(
+        mRankTiers.push_back(
             std::make_pair(tierArr->Array(i)->Int(0), tierArr->Array(i)->Int(1))
         );
     }
@@ -112,9 +113,9 @@ void HamSongMgr::Init() {
 void HamSongMgr::Terminate() {
     RELEASE(unkd0);
     TheContentMgr.UnregisterCallback(this, false);
-    unkd4.clear();
-    unkec.clear();
-    ClearAndShrink<String>(unk150);
+    mSongNameLookup.clear();
+    mSongIDLookup.clear();
+    ClearAndShrink<String>(mContentAltDirs);
     ClearPlaylists();
 }
 
@@ -143,12 +144,12 @@ SongInfo *HamSongMgr::SongAudioData(int songID) const {
 
 Symbol HamSongMgr::GetShortNameFromSongID(int songID, bool fail) const {
     MILO_ASSERT(songID != kSongID_Invalid && songID != kSongID_Any && songID != kSongID_Random, 0x166);
-    auto it = unkd4.find(songID);
-    if (it != unkd4.end()) {
+    auto it = mSongNameLookup.find(songID);
+    if (it != mSongNameLookup.end()) {
         return it->second;
     } else {
-        auto it = unk104.find(songID);
-        if (it != unk104.end()) {
+        auto it = mExtraSongIDMap.find(songID);
+        if (it != mExtraSongIDMap.end()) {
             return it->second;
         } else {
             if (fail) {
@@ -160,12 +161,12 @@ Symbol HamSongMgr::GetShortNameFromSongID(int songID, bool fail) const {
 }
 
 int HamSongMgr::GetSongIDFromShortName(Symbol shortname, bool fail) const {
-    auto it = unkec.find(shortname);
-    if (it != unkec.end()) {
+    auto it = mSongIDLookup.find(shortname);
+    if (it != mSongIDLookup.end()) {
         MILO_ASSERT(it->second != kSongID_Invalid, 0x17D);
         return it->second;
     } else {
-        FOREACH (it, unk104) {
+        FOREACH (it, mExtraSongIDMap) {
             if (it->second == shortname) {
                 MILO_ASSERT(it->first != kSongID_Invalid, 0x186);
                 return it->first;
@@ -231,14 +232,14 @@ void HamSongMgr::AddSongData(
 }
 
 void HamSongMgr::AddSongIDMapping(int songID, Symbol shortname) {
-    auto it = unkd4.find(songID);
-    if (it != unkd4.end() && songID != 0 && it->second != shortname) {
+    auto it = mSongNameLookup.find(songID);
+    if (it != mSongNameLookup.end() && songID != 0 && it->second != shortname) {
         MILO_NOTIFY(
             "Song %s and song %s have duplicate song_id %d!", shortname, it->second, songID
         );
     }
-    auto it2 = unkec.find(shortname);
-    if (it2 != unkec.end() && it2->second != songID) {
+    auto it2 = mSongIDLookup.find(shortname);
+    if (it2 != mSongIDLookup.end() && it2->second != songID) {
         MILO_NOTIFY(
             "SongID %d and SongID %d have duplicate short name %s!",
             songID,
@@ -246,8 +247,8 @@ void HamSongMgr::AddSongIDMapping(int songID, Symbol shortname) {
             shortname
         );
     }
-    unkd4[songID] = shortname;
-    unkec[shortname] = songID;
+    mSongNameLookup[songID] = shortname;
+    mSongIDLookup[shortname] = songID;
 }
 
 void HamSongMgr::ReadCachedMetadataFromStream(BinStream &bs, int) {
@@ -277,9 +278,9 @@ void HamSongMgr::WriteCachedMetadataToStream(BinStream &bs) const {
 }
 
 bool HamSongMgr::ToggleRandomSongDebug() {
-    bool old = unk168;
-    unk168 = !unk168;
-    return unk168;
+    bool old = mRandomSongDebug;
+    mRandomSongDebug = !mRandomSongDebug;
+    return mRandomSongDebug;
 }
 
 const char *HamSongMgr::MidiFile(Symbol shortname) const {
@@ -301,7 +302,7 @@ void HamSongMgr::AddRecentSong(Symbol s) {
 
 Symbol HamSongMgr::GetArtistNameFromShortName(Symbol s) {
     int id = GetSongIDFromShortName(s, true);
-    const HamSongMetadata *meta = (const HamSongMetadata *)Data(id);
+    const HamSongMetadata *meta = Data(id);
     char const *artist = meta->Artist(); // so what was the point of this
     return meta->Artist();
 }
@@ -326,8 +327,8 @@ Playlist *HamSongMgr::GetPlaylistWithLocalizedName(String p) {
     FOREACH (it, mPlaylists) {
         Playlist *playlist = *it;
         MILO_ASSERT(playlist, 0xb5);
-        const char *locName = Localize(playlist->unk4, nullptr, TheLocale);
-        if (locName == p.c_str()) {
+        const char *l = Localize(playlist->unk4, nullptr, TheLocale);
+        if (p == l) {
             return playlist;
         }
     }
@@ -351,7 +352,7 @@ char const *HamSongMgr::BarksFile(Symbol song) const {
 
 int HamSongMgr::GetDuration(Symbol song) const {
     int id = GetSongIDFromShortName(song, true);
-    const HamSongMetadata *data = (const HamSongMetadata *)Data(id);
+    const HamSongMetadata *data = Data(id);
     MILO_ASSERT(data, 0x1f6);
     int length = data->LengthMs();
     return length / 1000;
@@ -359,7 +360,7 @@ int HamSongMgr::GetDuration(Symbol song) const {
 
 Symbol HamSongMgr::GetCharacter(Symbol song) const {
     int id = GetSongIDFromShortName(song, true);
-    const HamSongMetadata *data = (const HamSongMetadata *)Data(id);
+    const HamSongMetadata *data = Data(id);
     MILO_ASSERT(data, 0x1fe);
     Symbol character = data->Character();
     return character;
@@ -367,7 +368,7 @@ Symbol HamSongMgr::GetCharacter(Symbol song) const {
 
 int HamSongMgr::GetBPM(Symbol song) const {
     int id = GetSongIDFromShortName(song, true);
-    const HamSongMetadata *data = (const HamSongMetadata *)Data(id);
+    const HamSongMetadata *data = Data(id);
     MILO_ASSERT(data, 0x207);
     int bpm = data->Bpm();
     return bpm;
@@ -423,10 +424,80 @@ void HamSongMgr::InitializePlaylists() {
 
 void HamSongMgr::ClearPlaylists() {
     FOREACH (it, mPlaylists) {
-        delete (*it);
-        *it = nullptr;
+        RELEASE(*it);
     }
     mPlaylists.clear();
 }
 
 DataNode HamSongMgr::OnGetRandomSong(DataArray *) { return GetRandomSong(); }
+
+const std::vector<int> &HamSongMgr::RankedSongs(SongType s) const {
+    return s == 1 ? unk128 : unk11c;
+}
+
+bool HamSongMgr::IsDummySong(Symbol s) const {
+    return strcmp(SongPath(s, 0), "dummy") == 0;
+}
+
+void HamSongMgr::AddSongs(DataArray *a) {
+    AddSongData(a, nullptr, kLocationRoot);
+    ContentDone();
+}
+
+int HamSongMgr::RankTier(int i1) const {
+    int size = mRankTiers.size();
+    for (int i = 0; i < size; i++) {
+        if (i1 <= mRankTiers[i].second) {
+            return i;
+        }
+    }
+    return size - 1;
+}
+
+int HamSongMgr::RankTier(Symbol s1) const {
+    int songID = GetSongIDFromShortName(s1);
+    return RankTier(Data(songID)->Rank());
+}
+
+int HamSongMgr::GetTotalNumLibrarySongs() const {
+    int num = 0;
+    FOREACH (it, mAvailableSongs) {
+        const HamSongMetadata *data = Data(*it);
+        if (data->IsVersionOK() && data->IsRanked()
+            && TheProfileMgr.IsContentUnlocked(data->ShortName())) {
+            num++;
+        }
+    }
+    return num;
+}
+
+void HamSongMgr::GetRankedSongs(std::vector<int> &songs) const {
+    songs.clear();
+    FOREACH (it, mAvailableSongs) {
+        const HamSongMetadata *data = Data(*it);
+        if (data->IsRanked()) {
+            songs.push_back(*it);
+        }
+    }
+}
+
+Symbol HamSongMgr::GetRandomSong() {
+    std::vector<int> vec58;
+    std::vector<int> vec68;
+    GetRandomlySelectableRankedSongs(vec58);
+    FOREACH (it, vec58) {
+        Symbol shortname = GetShortNameFromSongID(*it);
+        if (TheProfileMgr.IsContentUnlocked(shortname)) {
+            vec68.push_back(*it);
+        }
+    }
+    int randID = mJukebox.Pick(vec68);
+    Symbol ret = GetShortNameFromSongID(randID);
+    if (mRandomSongDebug) {
+        MILO_LOG("Picked %s\n", ret);
+    }
+    int songID = GetSongIDFromShortName(ret);
+    const HamSongMetadata *data = Data(songID);
+    MILO_ASSERT(!data->IsPrivate(), 0x326);
+    return ret;
+}

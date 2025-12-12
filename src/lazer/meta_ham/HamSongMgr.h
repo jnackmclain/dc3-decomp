@@ -17,6 +17,9 @@
 #include "utl/Str.h"
 #include "utl/Symbol.h"
 
+enum SongType {
+};
+
 class HamSongMgr : public SongMgr {
 public:
     HamSongMgr();
@@ -28,7 +31,7 @@ public:
     virtual void ContentDone();
     virtual char const *ContentPattern() { return "songs*.dta"; }
     virtual char const *ContentDir() { return "songs"; }
-    virtual bool HasContentAltDirs() { return unk150.size() > 0; }
+    virtual bool HasContentAltDirs() { return mContentAltDirs.size() > 0; }
     // SongMgr
     virtual void Init();
     virtual void Terminate();
@@ -70,6 +73,8 @@ public:
     void GetValidSongs(class MetaPerformer const &, std::vector<Symbol> &) const;
     const char *MidiFile(Symbol) const;
     bool ToggleRandomSongDebug();
+    const std::vector<int> &RankedSongs(SongType) const;
+    void GetRandomlySelectableRankedSongs(std::vector<int> &) const;
 
 private:
     DataNode OnGetRandomSong(DataArray *);
@@ -84,17 +89,17 @@ protected:
 
     void ClearPlaylists();
 
-    DataArraySongInfo *unkd0;
-    std::map<int, Symbol> unkd4;
-    std::map<Symbol, int> unkec;
-    std::map<int, Symbol> unk104;
-    std::vector<int> unk11c;
-    std::vector<int> unk128;
-    std::vector<std::pair<int, int> > unk134;
+    DataArraySongInfo *unkd0; // 0xd0
+    std::map<int, Symbol> mSongNameLookup; // 0xd4
+    std::map<Symbol, int> mSongIDLookup; // 0xec
+    std::map<int, Symbol> mExtraSongIDMap; // 0x104
+    std::vector<int> unk11c; // 0x11c - ranked?
+    std::vector<int> unk128; // 0x128
+    std::vector<std::pair<int, int> > mRankTiers; // 0x134
     Jukebox mJukebox; // 0x140
-    std::vector<String> unk150;
+    std::vector<String> mContentAltDirs; // 0x150
     std::vector<Playlist *> mPlaylists; // 0x15c
-    bool unk168;
+    bool mRandomSongDebug; // 0x168
 };
 
 extern HamSongMgr TheHamSongMgr;

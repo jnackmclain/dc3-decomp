@@ -37,6 +37,7 @@ public:
     void Integrate(DataArray *, DataArray *, bool);
     char const *Artist() const;
     int LengthMs() const;
+    bool IsPrivate() const; // just returns 0
 
     String mName; // 0x50
     String mArtist; // 0x58
