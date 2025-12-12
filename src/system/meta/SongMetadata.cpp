@@ -142,3 +142,5 @@ BEGIN_HANDLERS(SongMetadata)
     HANDLE_EXPR(id, mID)
     HANDLE_SUPERCLASS(Hmx::Object)
 END_HANDLERS
+
+DataArraySongInfo *SongMetadata::SongBlock() const { return mSongInfo; }

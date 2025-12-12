@@ -2,7 +2,9 @@
 #include "HamSongMetadata.h"
 #include "hamobj/Difficulty.h"
 #include "lazer/meta_ham/Playlist.h"
+#include "meta/DataArraySongInfo.h"
 #include "meta/Jukebox.h"
+#include "meta/SongMetadata.h"
 #include "meta/SongMgr.h"
 #include "obj/Data.h"
 #include "obj/DataFile.h"
@@ -17,21 +19,27 @@
 
 class HamSongMgr : public SongMgr {
 public:
-    virtual DataNode Handle(DataArray *, bool);
-    virtual void ContentMounted(char const *, char const *);
-    virtual char const *ContentPattern();
-    virtual char const *ContentDir();
-    virtual HamSongMetadata const *Data(int) const;
-    virtual bool HasContentAltDirs();
-    virtual SongInfo *SongAudioData(int) const;
-    virtual Symbol GetShortNameFromSongID(int, bool = true) const;
-    virtual int GetSongIDFromShortName(Symbol, bool) const;
-    virtual void Terminate();
-    virtual void Init();
-    virtual void ContentDone();
-
     HamSongMgr();
-    char const *GetAlbumArtPath(Symbol) const;
+    virtual DataNode Handle(DataArray *, bool);
+    // ContentMgr::Callback
+    virtual void ContentMounted(char const *contentName, char const *c2) {
+        SongMgr::ContentMounted(contentName, c2);
+    }
+    virtual void ContentDone();
+    virtual char const *ContentPattern() { return "songs*.dta"; }
+    virtual char const *ContentDir() { return "songs"; }
+    virtual bool HasContentAltDirs() { return unk150.size() > 0; }
+    // SongMgr
+    virtual void Init();
+    virtual void Terminate();
+    virtual const HamSongMetadata *Data(int songID) const {
+        return static_cast<const HamSongMetadata *>(SongMgr::Data(songID));
+    }
+    virtual SongInfo *SongAudioData(int songID) const;
+    virtual Symbol GetShortNameFromSongID(int songID, bool fail = true) const;
+    virtual int GetSongIDFromShortName(Symbol shortname, bool fail = true) const;
+
+    const char *GetAlbumArtPath(Symbol) const;
     bool IsDummySong(Symbol) const;
     void AddSongs(DataArray *);
     void AddRecentSong(Symbol);
@@ -60,31 +68,33 @@ public:
     Symbol GetRandomSong();
     void InitializePlaylists();
     void GetValidSongs(class MetaPerformer const &, std::vector<Symbol> &) const;
+    const char *MidiFile(Symbol) const;
+    bool ToggleRandomSongDebug();
 
-    int *unkd0;
-    std::map<int, Symbol> unkd4;
-    std::map<Symbol, int> unkec;
-    std::map<int, Symbol> unk104;
-    std::vector<int> unk11c;
-    std::vector<int> unk128;
-    std::vector<struct stlpmtx_std::pair<int, int> > unk134;
-    Jukebox mJukebox; // 0x140
-    std::vector<String> unk150;
-    std::vector<Playlist *> mPlaylists; // 0x15c
-    bool unk168;
+private:
+    DataNode OnGetRandomSong(DataArray *);
 
 protected:
-    virtual void WriteCachedMetadataToStream(BinStream &) const;
     virtual void AddSongData(DataArray *, DataLoader *, ContentLocT);
     virtual void
     AddSongData(DataArray *, std::map<int, SongMetadata *> &, const char *, ContentLocT, std::vector<int> &);
     virtual void AddSongIDMapping(int, Symbol);
     virtual void ReadCachedMetadataFromStream(BinStream &, int);
+    virtual void WriteCachedMetadataToStream(BinStream &) const;
 
     void ClearPlaylists();
 
-private:
-    DataNode OnGetRandomSong(DataArray *);
+    DataArraySongInfo *unkd0;
+    std::map<int, Symbol> unkd4;
+    std::map<Symbol, int> unkec;
+    std::map<int, Symbol> unk104;
+    std::vector<int> unk11c;
+    std::vector<int> unk128;
+    std::vector<std::pair<int, int> > unk134;
+    Jukebox mJukebox; // 0x140
+    std::vector<String> unk150;
+    std::vector<Playlist *> mPlaylists; // 0x15c
+    bool unk168;
 };
 
 extern HamSongMgr TheHamSongMgr;

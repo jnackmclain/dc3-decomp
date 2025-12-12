@@ -25,6 +25,11 @@ enum SongMgrState {
 
 class SongMgr : public Hmx::Object, public ContentMgr::Callback {
 public:
+    enum {
+        kSongID_Invalid = 0,
+        kSongID_Any = -1,
+        kSongID_Random = -2
+    };
     SongMgr() {}
     // Hmx::Object
     virtual ~SongMgr();
@@ -45,7 +50,7 @@ public:
      * @param [in] songID The song ID.
      * @returns The corresponding song metadata.
      */
-    virtual const SongMetadata *Data(int songID) const;
+    virtual const SongMetadata *Data(int songID) const; // 0x60
     /** Get the song audio data associated with the supplied song ID. */
     virtual SongInfo *SongAudioData(int songID) const = 0;
     virtual char const *AlternateSongDir() const { return "songs/updates/"; }
@@ -68,7 +73,7 @@ public:
      * @param [in] fail If true, and the song can't be found, fail the system.
      * @returns The corresponding song ID.
      */
-    virtual int GetSongIDFromShortName(Symbol shortname, bool fail) const = 0;
+    virtual int GetSongIDFromShortName(Symbol shortname, bool fail = true) const = 0;
 
     /** Get the song audio data associated with the supplied shortname. */
     SongInfo *SongAudioData(Symbol shortname) const;
@@ -83,7 +88,7 @@ public:
     /** Do we have the supplied songID in our list of available songs? */
     bool HasSong(int songID) const;
     /** Do we have the supplied shortname in our list of available songs? */
-    bool HasSong(Symbol shortname, bool fail) const;
+    bool HasSong(Symbol shortname, bool fail = true) const;
     int GetCachedSongInfoSize() const;
     bool IsSongMounted(Symbol shortname) const;
     bool SaveCachedSongInfo(BufStream &);
