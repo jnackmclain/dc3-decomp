@@ -58,3 +58,6 @@ extern SpeechMgr *TheSpeechMgr;
 DECLARE_MESSAGE(SpeechEnableMsg, "speech_enable")
 SpeechEnableMsg(bool enabled) : Message(Type(), enabled) {}
 END_MESSAGE
+
+DECLARE_MESSAGE(SpeechRecoMessage, "speech_reco")
+END_MESSAGE

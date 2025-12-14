@@ -26,7 +26,7 @@ void ContentLoadingPanel::AllowedToShow(bool b) {
 void ContentLoadingPanel::ContentMountBegun(int i) {
     unk40 = i;
     unk44 = 0;
-    RndGroup *r = GetPanelDir()->Find<RndGroup>("progress.grp", true);
+    RndGroup *r = LoadedDir()->Find<RndGroup>("progress.grp", true);
     r->SetFrame(0, 1.0f);
     ShowIfPossible();
 }

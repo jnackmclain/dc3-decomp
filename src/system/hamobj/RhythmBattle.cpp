@@ -133,11 +133,11 @@ void RhythmBattle::End() {
         if (unk102) {
             static UIPanel *panel =
                 ObjectDir::Main()->Find<UIPanel>("rhythm_detector_panel", false);
-            if (panel && panel->GetPanelDir()) {
+            if (panel && panel->LoadedDir()) {
                 for (int i = 0; i < 6; i++) {
                     String s = MakeString("RhythmDetectorX%d.rhy", i);
                     RhythmDetector *rh =
-                        panel->GetPanelDir()->Find<RhythmDetector>(s.c_str(), true);
+                        panel->LoadedDir()->Find<RhythmDetector>(s.c_str(), true);
                     rh->StopRecording();
                 }
             }
@@ -283,11 +283,11 @@ void RhythmBattle::OnPause() {
         unk102 = true;
         static UIPanel *panel =
             ObjectDir::Main()->Find<UIPanel>("rhythm_detector_panel", false);
-        if (panel && panel->GetPanelDir()) {
+        if (panel && panel->LoadedDir()) {
             for (int i = 0; i < 6; i++) {
                 String s = MakeString("RhythmDetectorX%d.rhy", i);
                 RhythmDetector *detector =
-                    panel->GetPanelDir()->Find<RhythmDetector>(s.c_str(), true);
+                    panel->LoadedDir()->Find<RhythmDetector>(s.c_str(), true);
                 detector->StopRecording();
             }
         }
@@ -300,11 +300,11 @@ void RhythmBattle::OnUnpause() {
         unk102 = false;
         static UIPanel *panel =
             ObjectDir::Main()->Find<UIPanel>("rhythm_detector_panel", false);
-        if (panel && panel->GetPanelDir()) {
+        if (panel && panel->LoadedDir()) {
             for (int i = 0; i < 6; i++) {
                 String s = MakeString("RhythmDetectorX%d.rhy", i);
                 RhythmDetector *detector =
-                    panel->GetPanelDir()->Find<RhythmDetector>(s.c_str(), true);
+                    panel->LoadedDir()->Find<RhythmDetector>(s.c_str(), true);
                 detector->StartRecording();
             }
         }

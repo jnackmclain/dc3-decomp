@@ -45,7 +45,7 @@ void LocalePanel::Enter() {
     mEntries.clear();
     UIScreen *screen = Screen();
     FOREACH (it, screen->PanelList()) {
-        AddDirEntries((ObjectDir *)it->mPanel->GetPanelDir(), it->mPanel->Name());
+        AddDirEntries((ObjectDir *)it->mPanel->LoadedDir(), it->mPanel->Name());
     }
     UIPanel::Enter();
 }

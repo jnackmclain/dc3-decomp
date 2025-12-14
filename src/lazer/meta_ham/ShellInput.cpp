@@ -7,8 +7,10 @@
 #include "gesture/SkeletonUpdate.h"
 #include "gesture/SpeechMgr.h"
 #include "hamobj/HamGameData.h"
-#include "lazer/meta_ham/HamUI.h"
-#include "lazer/meta_ham/HelpBarPanel.h"
+#include "hamobj/HamNavList.h"
+#include "meta_ham/DepthBuffer.h"
+#include "meta_ham/HamUI.h"
+#include "meta_ham/HelpBarPanel.h"
 #include "obj/Data.h"
 #include "obj/Dir.h"
 #include "obj/Object.h"
@@ -18,9 +20,10 @@
 #include "ui/UI.h"
 
 ShellInput::ShellInput()
-    : unk_0x30(0), unk_0x34(this), unk_0x48(0, 15, 0), unk_0x9C(0.2), unk_0xA0(0.25),
-      unk_0xA4(0), unk_0xA8(this), unk_0xBC(0), mCursorPanel(nullptr), unk_0xC4(0),
-      unk_0xC8(0), unk_0xCC(0), unk_0xD0(0), unk_0xDC(0) {
+    : mVoiceControlEnabled(0), unk_0x34(this), unk_0x48(0, 15, 0), unk_0x9C(0.2),
+      unk_0xA0(0.25), unk_0xA4(0), mWrongHandPosAnim(this), mInputPanel(0),
+      mCursorPanel(nullptr), unk_0xC4(0), mDepthBuffer(0), mSkelIdentifier(0),
+      mSkelChooser(0), mSkelExtTracker(0) {
     unk_0x31 = 0;
     unk_0x32 = 0;
 }
@@ -28,6 +31,46 @@ ShellInput::ShellInput()
 ShellInput::~ShellInput() {
     SkeletonUpdateHandle handle = SkeletonUpdate::InstanceHandle();
     handle.RemoveCallback(this);
+    delete mDepthBuffer;
+    delete mSkelIdentifier;
+    delete mSkelChooser;
+    delete mSkelExtTracker;
+}
+
+BEGIN_HANDLERS(ShellInput)
+    HANDLE_ACTION_IF(
+        panel_navigated, !TheGestureMgr->InControllerMode(), EnterControllerMode(false)
+    )
+    HANDLE_EXPR(has_skeleton, HasSkeleton())
+    HANDLE_EXPR(num_tracked_skeletons, NumTrackedSkeletons())
+    HANDLE_ACTION(
+        enter_controller_mode,
+        EnterControllerMode(_msg->Size() >= 3 ? _msg->Int(2) : false)
+    )
+    HANDLE_ACTION(exit_controller_mode, ExitControllerMode(true))
+    HANDLE_EXPR(in_controller_mode, TheGestureMgr->InControllerMode())
+    HANDLE_ACTION(
+        set_last_select_in_controller_mode,
+        HamNavList::sLastSelectInControllerMode = _msg->Int(2)
+    )
+    HANDLE_EXPR(voice_control_enabled, mVoiceControlEnabled)
+    HANDLE_MESSAGE(ButtonDownMsg)
+    HANDLE_MESSAGE(JoypadConnectionMsg)
+    HANDLE_MESSAGE(SpeechRecoMessage)
+    HANDLE_MESSAGE(SpeechEnableMsg)
+    HANDLE_MESSAGE(LeftHandListEngagementMsg)
+    HANDLE_MESSAGE(ResetControllerModeTimeoutMsg)
+    HANDLE_SUPERCLASS(Hmx::Object)
+END_HANDLERS
+
+void ShellInput::PostUpdate(const SkeletonUpdateData *updata) {
+    if (updata) {
+        Skeleton *skeleton = TheGestureMgr->GetActiveSkeleton();
+        if (skeleton) {
+            mHandInvokeGestureFilter->Update(*skeleton, skeleton->ElapsedMs());
+            mHandsUpGestureFilter->Update(*skeleton, skeleton->ElapsedMs());
+        }
+    }
 }
 
 void ShellInput::Init() {
@@ -37,24 +80,26 @@ void ShellInput::Init() {
     mCursorPanel = ObjectDir::Main()->Find<UIPanel>("cursor_panel");
     MILO_ASSERT(mCursorPanel->CheckIsLoaded(), 95);
     MILO_ASSERT(mCursorPanel->LoadedDir(), 96);
-    unk_0xA8 =
+    mDepthBuffer = new DepthBuffer();
+    mDepthBuffer->Init(mCursorPanel);
+    mWrongHandPosAnim =
         mCursorPanel->DataDir()->Find<RndAnimatable>("wrong_hand_position.anim", true);
     MILO_ASSERT(TheGameData, 102);
-    unk_0xCC = new SkeletonIdentifier;
-    unk_0xCC->Init();
-    unk_0xD0 = new SkeletonChooser;
-    unk_0xD4 = new HandInvokeGestureFilter;
-    unk_0xD8 = Hmx::Object::New<HandsUpGestureFilter>();
-    unk_0xD8->mRequiredMs = 1200;
+    mSkelIdentifier = new SkeletonIdentifier;
+    mSkelIdentifier->Init();
+    mSkelChooser = new SkeletonChooser;
+    mHandInvokeGestureFilter = new HandInvokeGestureFilter;
+    mHandsUpGestureFilter = Hmx::Object::New<HandsUpGestureFilter>();
+    mHandsUpGestureFilter->mRequiredMs = 1200;
     mCursorPanel->Enter();
     TheSpeechMgr->AddSink(TheUI);
-    unk_0xDC = new SkeletonExtentTracker;
+    mSkelExtTracker = new SkeletonExtentTracker;
 
     static Symbol reset_controller_mode_timeout("reset_controller_mode_timeout");
     TheHamUI.AddSink(this, reset_controller_mode_timeout);
 }
 
-void ShellInput::Draw() {}
+void ShellInput::Draw() { mCursorPanel->Draw(); }
 
 void ShellInput::Poll() {
     static Symbol is_in_shell_pause("is_in_shell_pause");
@@ -67,7 +112,7 @@ void ShellInput::Poll() {
     }
 }
 
-void ShellInput::UpdateInputPanel(UIPanel *panel) { unk_0xBC = panel; }
+void ShellInput::UpdateInputPanel(UIPanel *panel) { mInputPanel = panel; }
 
 bool ShellInput::IsGameplayPanel() const {
     static Symbol is_gameplay_panel("is_gameplay_panel");
@@ -97,16 +142,6 @@ int ShellInput::NumTrackedSkeletons() const {
 int ShellInput::CycleDrawCursor() {
     unk_0xC4 = !unk_0xC4;
     return unk_0xC4;
-}
-
-void ShellInput::PostUpdate(const SkeletonUpdateData *updata) {
-    if (updata != nullptr) {
-        Skeleton *skeleton = TheGestureMgr->GetActiveSkeleton();
-        if (skeleton) {
-            unk_0xD4->Update(*skeleton, skeleton->ElapsedMs());
-            unk_0xD8->Update(*skeleton, skeleton->ElapsedMs());
-        }
-    }
 }
 
 void ShellInput::SyncVoiceControl() {
@@ -140,11 +175,3 @@ DataNode ShellInput::OnMsg(const JoypadConnectionMsg &msg) {
     }
     return DataNode(kDataUnhandled, 0);
 }
-
-BEGIN_HANDLERS(ShellInput)
-    HANDLE_ACTION(panel_navigated, 0)
-    HANDLE_MESSAGE(ButtonDownMsg)
-    HANDLE_MESSAGE(JoypadConnectionMsg)
-    HANDLE_MESSAGE(SpeechEnableMsg)
-    HANDLE_SUPERCLASS(Hmx::Object)
-END_HANDLERS
