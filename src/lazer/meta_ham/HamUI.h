@@ -8,6 +8,7 @@
 #include "os/PlatformMgr.h"
 #include "rndobj/Mesh.h"
 #include "ui/UI.h"
+#include "ui/UIScreen.h"
 
 class HamUI : public UIManager {
 public:
@@ -19,6 +20,7 @@ public:
 
     void ForceLetterboxOff();
     void ForceLetterboxOffImmediate();
+    void GotoEventScreen(UIScreen *);
 
     HelpBarPanel *unk_0xD8;
     u32 unk_0xDC; // LetterboxPanel*
