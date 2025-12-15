@@ -1,17 +1,49 @@
 #pragma once
-
 #include "hamobj/Difficulty.h"
+#include "meta_ham/HamProfile.h"
 #include "obj/Data.h"
 #include "ui/UILabel.h"
 #include "utl/Symbol.h"
+
+// stolen from RB3 lol
+enum AccomplishmentType {
+    kAccomplishmentTypeUnique = 0,
+    kAccomplishmentTypeSongListConditional = 1,
+    kAccomplishmentTypeSongFilterConditional = 2,
+    kAccomplishmentTypeLessonSongListConditional = 3,
+    kAccomplishmentTypeLessonDiscSongConditional = 4,
+    kAccomplishmentTypePlayerConditional = 5,
+    kAccomplishmentTypeTourConditional = 6,
+    kAccomplishmentTypeTrainerListConditional = 7,
+    kAccomplishmentTypeTrainerCategoryConditional = 8,
+    kAccomplishmentTypeOneShot = 9,
+    kAccomplishmentTypeSetlist = 10,
+    kAccomplishmentTypeDiscSongConditional = 11
+};
+
 class Accomplishment {
 public:
-    virtual ~Accomplishment();
-    virtual bool ShowBestAfterEarn() const;
-    virtual void UpdateIncrementalEntryName(UILabel *, Symbol);
-    virtual bool CanBeLaunched() const;
-
     Accomplishment(DataArray *, int);
+    virtual ~Accomplishment();
+    virtual AccomplishmentType GetType() const { return kAccomplishmentTypeUnique; }
+    virtual bool ShowBestAfterEarn() const;
+    virtual void UpdateIncrementalEntryName(UILabel *, Symbol) {
+        MILO_ASSERT(false, 0x4c);
+    }
+    virtual bool IsFulfilled(HamProfile *) const { return false; }
+    virtual bool IsRelevantForSong(Symbol) const { return false; }
+    virtual Difficulty GetRequiredDifficulty() const { return mDifficulty; }
+    virtual bool InqProgressValues(HamProfile *, int &, int &) { return false; }
+    virtual bool InqIncrementalSymbols(HamProfile *, std::vector<Symbol> &) const {
+        return false;
+    }
+    virtual bool IsSymbolEntryFulfilled(HamProfile *, Symbol) const { return false; }
+    virtual Symbol GetFirstUnfinishedAccomplishmentEntry(HamProfile *) const {
+        return gNullStr;
+    }
+    virtual bool CanBeLaunched() const;
+    virtual bool HasSpecificSongsToLaunch() const { return false; }
+
     Symbol GetCategory() const;
     bool HasGamerpicReward() const;
     bool HasAvatarAssetReward() const;
@@ -20,33 +52,39 @@ public:
     bool IsSecondaryGoal() const;
     bool IsDynamic() const;
     char const *GetIconArt() const;
-    Symbol GetName();
+    Symbol GetName() const;
     Difficulty GetRequiredDifficulty();
+    const std::vector<Symbol> &GetDynamicPrereqsSongs() const;
+    int GetDynamicPrereqsNumSongs() const;
+    int GetAvatarAssetReward() const;
+    int GetContextID() const;
+    int GetGamerpicReward() const;
 
-    Symbol mAccomplishment_Name; // 0x4
-    std::vector<Symbol> m_vSecret_Prereqs; // 0x8
-    int mAccomplishment_Type; // 0x14
+protected:
+    Symbol mName; // 0x4
+    std::vector<Symbol> mSecretPrereqs; // 0x8
+    AccomplishmentType mAccomplishmentType; // 0x14
     Symbol mCategory; // 0x18
     Symbol mAward; // 0x1c
-    Symbol mUnits_Token; // 0x20
-    int mDifficulty; // 0x24
-    Symbol mPassive_Msg_Channel; // 0x28
-    int mPassive_Msg_Priority; // 0x2c
-    bool mRequires_Unison_Ability; // 0x30
-    int mPlayerCount_Min; // 0x34
-    int mPlayerCount_Max; // 0x38
+    Symbol mUnitsToken; // 0x20
+    Difficulty mDifficulty; // 0x24
+    Symbol mPassiveMsgChannel; // 0x28
+    int mPassiveMsgPriority; // 0x2c
+    bool mRequiresUnisonAbility; // 0x30
+    int mPlayerCountMin; // 0x34
+    int mPlayerCountMax; // 0x38
     int mNumSongs; // 0x3c
-    std::vector<Symbol> m_vDynamic_Prereq_Songs; // 0x40
+    std::vector<Symbol> mDynamicPrereqsSongs; // 0x40
     int mProgressStep; // 0x4c
-    int mGamerpic_Reward; // 0x50
-    int mAvatarAsset_Reward; // 0x54
+    int mGamerpicReward; // 0x50
+    int mAvatarAssetReward; // 0x54
     bool mShowBestAfterEarn; // 0x58
     bool mHideProgress; // 0x59
-    int unk5c;
-    int mLastID; // 0x60
+    int mIndex; // 0x5c
+    int mContextID; // 0x60
     bool mEarnedNoFail; // 0x64
     bool mLeaderboard; // 0x65
-    bool isSecondaryGoal; // 0x66
+    bool mIsSecondaryGoal; // 0x66
     bool mGiveToAll; // 0x67
 
 private:
