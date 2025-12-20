@@ -2,6 +2,7 @@
 #include "AccomplishmentConditional.h"
 #include "HamProfile.h"
 #include "HamSongMgr.h"
+#include "game/GameMode.h"
 #include "hamobj/Difficulty.h"
 #include "meta_ham/MetaPerformer.h"
 #include "meta_ham/SongStatusMgr.h"
@@ -14,6 +15,33 @@ AccomplishmentSongConditional::AccomplishmentSongConditional(DataArray *d, int i
     : AccomplishmentConditional(d, i) {}
 
 AccomplishmentSongConditional::~AccomplishmentSongConditional() {}
+
+void AccomplishmentSongConditional::UpdateIncrementalEntryName(UILabel *label, Symbol s) {
+    // needs AppLabel*
+}
+
+bool AccomplishmentSongConditional::InqProgressValues(
+    HamProfile *profile, int &i2, int &i3
+) {
+    i3 = GetTotalNumSongs();
+    i2 = 0;
+    if (profile) {
+        i2 = GetNumCompletedSongs(profile);
+    }
+    return true;
+}
+
+bool AccomplishmentSongConditional::IsSymbolEntryFulfilled(
+    HamProfile *hp, Symbol s
+) const {
+    if (!hp)
+        return false;
+    else {
+        SongStatusMgr *pSongStatusMgr = hp->GetSongStatusMgr();
+        MILO_ASSERT(pSongStatusMgr, 0xc0);
+        return CheckConditionsForSong(pSongStatusMgr, s);
+    }
+}
 
 bool AccomplishmentSongConditional::CheckStarsCondition(
     SongStatusMgr *statusMgr, Symbol s, AccomplishmentCondition const &ac
@@ -54,25 +82,47 @@ bool AccomplishmentSongConditional::CheckNoFlashcardsCondition(
     return false;
 }
 
-bool AccomplishmentSongConditional::IsSymbolEntryFulfilled(
-    HamProfile *hp, Symbol s
+bool AccomplishmentSongConditional::CheckConditionsForSong(
+    SongStatusMgr *mgr, Symbol s
 ) const {
-    if (!hp)
-        return 0;
-    else {
-        SongStatusMgr *pSongStatusMgr = hp->GetSongStatusMgr();
-        MILO_ASSERT(pSongStatusMgr, 0xc0);
-    }
-}
-
-bool AccomplishmentSongConditional::CheckConditionsForSong(SongStatusMgr *, Symbol) const {
     static Symbol stars("stars");
     static Symbol score("score");
     static Symbol practice_percentage("practice_percentage");
     static Symbol played("played");
     FOREACH (it, m_lConditions) {
+        const AccomplishmentCondition &curCond = *it;
+        Symbol curSym = curCond.unk0;
         MetaPerformer *pMetaPerformer = MetaPerformer::Current();
         MILO_ASSERT(pMetaPerformer, 0x60);
+        if (curCond.mNoFlashcards) {
+            if (!CheckNoFlashcardsCondition(mgr, s)) {
+                return false;
+            }
+        } else {
+            if (curCond.mMode != gNullStr && TheGameMode->Mode() != curCond.mMode) {
+                return false;
+            }
+        }
+        if (curSym == stars) {
+            if (CheckStarsCondition(mgr, s, curCond)) {
+                return true;
+            }
+        } else if (curSym == score) {
+            if (CheckScoreCondition(mgr, s, curCond)) {
+                return true;
+            }
+        } else if (curSym == played) {
+            if (mgr->IsSongPlayed(TheHamSongMgr.GetSongIDFromShortName(s))) {
+                return true;
+            }
+        } else if (curSym == practice_percentage) {
+            if (CheckPracticePercentageCondition(mgr, s, curCond)) {
+                return true;
+            }
+        } else {
+            MILO_NOTIFY("Condition is not currently supported: %s ", curSym);
+            return false;
+        }
     }
     return false;
 }

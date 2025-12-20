@@ -1,5 +1,7 @@
-#include "lazer/meta_ham/AccomplishmentCampaignConditional.h"
-#include "AccomplishmentCampaignConditional.h"
+#include "meta_ham/AccomplishmentCampaignConditional.h"
+#include "hamobj/Difficulty.h"
+#include "meta_ham/AccomplishmentConditional.h"
+#include "meta_ham/HamProfile.h"
 #include "obj/Data.h"
 #include "os/Debug.h"
 #include "utl/Symbol.h"
@@ -11,11 +13,32 @@ AccomplishmentCampaignConditional::AccomplishmentCampaignConditional(DataArray *
 
 AccomplishmentCampaignConditional::~AccomplishmentCampaignConditional() {}
 
-bool AccomplishmentCampaignConditional::IsFulfilled(HamProfile *) const {
+bool AccomplishmentCampaignConditional::IsFulfilled(HamProfile *profile) const {
     static Symbol crewsong("crewsong");
     static Symbol crewcomplete("crewcomplete");
     static Symbol crewcomplete_count("crewcomplete_count");
-
+    FOREACH (it, m_lConditions) {
+        const AccomplishmentCondition &curCond = *it;
+        Difficulty curDiff = curCond.mDifficulty;
+        Symbol cur8 = curCond.unk8;
+        int cur4 = curCond.unk4;
+        Symbol curSym = curCond.unk0;
+        CampaignProgress &progress = profile->GetCampaignProgress(curDiff);
+        if (curSym == crewsong) {
+            if (progress.IsDanceCrazeSongAvailable(cur8))
+                return true;
+        } else if (curSym == crewcomplete) {
+            if (progress.IsEraComplete(cur8))
+                return true;
+        } else if (curSym == crewcomplete_count) {
+            if (progress.GetNumCompletedEras() >= cur4) {
+                return true;
+            }
+        } else {
+            MILO_NOTIFY("Condition is not currently supported: %s ", curSym);
+            return false;
+        }
+    }
     return false;
 }
 

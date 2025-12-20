@@ -8,7 +8,9 @@
 #include "meta_ham/AccomplishmentProgress.h"
 #include "meta_ham/HamProfile.h"
 #include "obj/Data.h"
+#include "os/DateTime.h"
 #include "os/Debug.h"
+#include "os/System.h"
 #include "utl/Symbol.h"
 
 AccomplishmentCharacterListConditional::AccomplishmentCharacterListConditional(
@@ -26,7 +28,7 @@ void AccomplishmentCharacterListConditional::Configure(DataArray *i_pConfig) {
     DataArray *pCharConditionArray = i_pConfig->FindArray(charconditions);
     if (pCharConditionArray) {
         MILO_ASSERT(pCharConditionArray->Size() > 1, 0xd6);
-        for (int i = 0; i < pCharConditionArray->Size(); i++) {
+        for (int i = 1; i < pCharConditionArray->Size(); i++) {
             DataArray *pCharConditionEntryArray = pCharConditionArray->Node(i).Array();
             MILO_ASSERT(pCharConditionEntryArray, 0xdc);
             static Symbol characters("characters");
@@ -36,22 +38,24 @@ void AccomplishmentCharacterListConditional::Configure(DataArray *i_pConfig) {
 
             if (pCharConditionEntryArray->Node(0).Sym(0) == characters) {
                 for (int j = 1; j < pCharConditionEntryArray->Size(); j++) {
-                    unk70.push_back(pCharConditionEntryArray->Node(j).Sym());
+                    Symbol sym = pCharConditionEntryArray->Node(j).Sym();
+                    unk70.push_back(sym);
                 }
             }
             if (pCharConditionEntryArray->Node(0).Sym(0) == crews) {
                 for (int j = 1; j < pCharConditionEntryArray->Size(); j++) {
-                    unk7c.push_back(pCharConditionEntryArray->Node(j).Sym());
+                    Symbol sym = pCharConditionEntryArray->Node(j).Sym();
+                    unk7c.push_back(sym);
                 }
-            }
-            if (pCharConditionEntryArray->Node(0).Sym(0) == oldoutfits) {
+            } else if (pCharConditionEntryArray->Node(0).Sym(0) == oldoutfits) {
                 for (int j = 1; j < pCharConditionEntryArray->Size(); j++) {
-                    unk88.push_back(pCharConditionEntryArray->Node(j).Sym());
+                    Symbol sym = pCharConditionEntryArray->Node(j).Sym();
+                    unk88.push_back(sym);
                 }
-            }
-            if (pCharConditionEntryArray->Node(0).Sym(0) == unlockableoutfits) {
+            } else if (pCharConditionEntryArray->Node(0).Sym(0) == unlockableoutfits) {
                 for (int j = 1; j < pCharConditionEntryArray->Size(); j++) {
-                    unk94.push_back(pCharConditionEntryArray->Node(j).Sym());
+                    Symbol sym = pCharConditionEntryArray->Node(j).Sym();
+                    unk94.push_back(sym);
                     unka0.push_back(false);
                 }
             }
@@ -75,24 +79,92 @@ bool AccomplishmentCharacterListConditional::AreOldOutfitListConditionsMet() {
                     p1crew,
                     p2crew
                 );
-
             } else {
                 bool p1 = false;
                 bool p2 = false;
                 if (1 < unk88.size()) {
                     for (int i = 0; i < unk88.size(); i++) {
-                        if (pPlayer1Data->Outfit() == unk88[i]
+                        Symbol curOutfit = unk88[i];
+                        if (pPlayer1Data->Outfit() == curOutfit
                             && pPlayer1Data->IsPlaying()) {
                             p1 = true;
                         }
-                        if (pPlayer2Data->Outfit() == unk88[i]
+                        if (pPlayer2Data->Outfit() == curOutfit
                             && pPlayer2Data->IsPlaying()) {
                             p2 = true;
                         }
                     }
+                    if (p1 && p2)
+                        return true;
                 }
-                if (p1 && p2)
+            }
+        }
+    }
+    return false;
+}
+
+bool AccomplishmentCharacterListConditional::AreCharacterListConditionsMet(
+    Symbol s1, HamPlayerData *hpd, HamProfile *profile
+) {
+    static Symbol dance_use_count("dance_use_count");
+    static Symbol char_birthday("char_birthday");
+    static Symbol crew_use_count("crew_use_count");
+    const AccomplishmentProgress &progress = profile->GetAccomplishmentProgress();
+    FOREACH (it, m_lConditions) {
+        AccomplishmentCondition &curCond = *it;
+        Symbol curSym = curCond.unk0;
+        int cur4 = curCond.unk4;
+        if (curSym == dance_use_count) {
+            for (int i = 0; i < unk70.size(); i++) {
+                if (progress.GetCharacterUseCount(unk70[i]) >= cur4) {
                     return true;
+                }
+            }
+        } else if (curSym == char_birthday) {
+            static Symbol indaclub("indaclub");
+            static Symbol birthday("birthday");
+            if (s1 == indaclub) {
+                DataArray *birthdayCfg = SystemConfig(birthday);
+                DateTime dt;
+                GetDateAndTime(dt);
+                for (int i = 0; i < unk70.size(); i++) {
+                    Symbol cur = unk70[i];
+                    if (hpd->Char() == cur) {
+                        DataArray *arr = birthdayCfg->FindArray(birthday)->FindArray(cur);
+                        if (arr->Node(1).Int() == dt.mMonth + 1) {
+                            if (arr->Node(2).Int() == dt.mDay) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (curSym == crew_use_count) {
+            int i5 = 0;
+            for (int i = 0; i < unk7c.size(); i++) {
+                i5 += progress.GetCharacterUseCount(unk7c[i]);
+            }
+            if (i5 >= cur4) {
+                return true;
+            }
+        } else {
+            MILO_NOTIFY("Condition is not currently supported: %s ", curSym);
+            return false;
+        }
+    }
+    return false;
+}
+
+bool AccomplishmentCharacterListConditional::AreUnlockableOutfitListConditionsMet(
+    HamPlayerData *hpd, HamProfile *profile
+) {
+    if (unk94.size() > 1) {
+        for (int i = 0; i < unk94.size(); i++) {
+            if (hpd->Outfit() == unk94[i] && hpd->IsPlaying()) {
+                if (unka0[i + 1] & unka0[i] == 0) {
+                    unka0[i] |= unka0[i + 1];
+                }
+                break;
             }
         }
     }

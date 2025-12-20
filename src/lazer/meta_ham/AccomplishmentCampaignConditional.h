@@ -1,14 +1,15 @@
 #pragma once
-
-#include "lazer/meta_ham/AccomplishmentConditional.h"
+#include "meta_ham/AccomplishmentConditional.h"
+#include "meta_ham/Accomplishment.h"
 #include "obj/Data.h"
 
 class AccomplishmentCampaignConditional : public AccomplishmentConditional {
 public:
-    virtual ~AccomplishmentCampaignConditional();
-    virtual bool IsFulfilled(class HamProfile *) const;
-
     AccomplishmentCampaignConditional(DataArray *, int);
+    virtual ~AccomplishmentCampaignConditional();
+    virtual AccomplishmentType GetType() const { return (AccomplishmentType)6; }
+    virtual bool IsFulfilled(class HamProfile *) const;
+    virtual bool IsRelevantForSong(Symbol) const { return true; }
 
 private:
     void Configure(DataArray *);

@@ -1,19 +1,21 @@
 #pragma once
 #include "AccomplishmentConditional.h"
+#include "meta_ham/HamProfile.h"
 #include "meta_ham/SongStatusMgr.h"
 #include "obj/Data.h"
 #include "utl/Symbol.h"
 
 class AccomplishmentSongConditional : public AccomplishmentConditional {
 public:
+    AccomplishmentSongConditional(DataArray *, int);
     virtual ~AccomplishmentSongConditional();
     virtual void UpdateIncrementalEntryName(UILabel *, Symbol);
     virtual bool InqProgressValues(HamProfile *, int &, int &);
     virtual bool IsSymbolEntryFulfilled(HamProfile *, Symbol) const;
 
-    AccomplishmentSongConditional(DataArray *, int);
-
 protected:
+    virtual int GetNumCompletedSongs(HamProfile *) const = 0;
+    virtual int GetTotalNumSongs() const = 0;
     virtual bool CheckConditionsForSong(SongStatusMgr *, Symbol) const;
 
     bool
