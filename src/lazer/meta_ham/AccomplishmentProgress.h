@@ -1,18 +1,19 @@
 #pragma once
 #include "Accomplishment.h"
-#include "HamProfile.h"
 #include "meta/FixedSizeSaveable.h"
 #include "meta/FixedSizeSaveableStream.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
-#include "stl/_map.h"
-#include "stl/_pair.h"
-#include "stl/_set.h"
-#include "stl/_vector.h"
 #include "utl/Str.h"
 #include "utl/Symbol.h"
 #include "xdk/xapilibi/xbase.h"
 #include <list>
+#include <utility>
+#include <map>
+#include <set>
+#include <vector>
+
+class HamProfile;
 
 enum GamerAwardType {
     type0,

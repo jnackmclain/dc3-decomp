@@ -35,9 +35,7 @@ public:
     // SongMgr
     virtual void Init();
     virtual void Terminate();
-    virtual const HamSongMetadata *Data(int songID) const {
-        return static_cast<const HamSongMetadata *>(SongMgr::Data(songID));
-    }
+    virtual const HamSongMetadata *Data(int songID) const;
     virtual SongInfo *SongAudioData(int songID) const;
     virtual Symbol GetShortNameFromSongID(int songID, bool fail = true) const;
     virtual int GetSongIDFromShortName(Symbol shortname, bool fail = true) const;
@@ -61,9 +59,9 @@ public:
     GetCoreStarsForDifficulty(class HamProfile const *, Difficulty, int &, int &) const;
     void GetCharacterStars(class HamProfile const *, Symbol, int &, int &) const;
     void GetCrewStars(class HamProfile const *, Symbol, int &, int &) const;
-    void
-    GetCrewStarsForDifficulty(class HamProfile const *, Symbol, Difficulty, int &, int &)
-        const;
+    void GetCrewStarsForDifficulty(
+        class HamProfile const *, Symbol, Difficulty, int &, int &
+    ) const;
     int GetTotalNumLibrarySongs() const;
     void UploadSongLibraryToServer();
     void GetRankedSongs(std::vector<int> &) const;
@@ -81,8 +79,13 @@ private:
 
 protected:
     virtual void AddSongData(DataArray *, DataLoader *, ContentLocT);
-    virtual void
-    AddSongData(DataArray *, std::map<int, SongMetadata *> &, const char *, ContentLocT, std::vector<int> &);
+    virtual void AddSongData(
+        DataArray *,
+        std::map<int, SongMetadata *> &,
+        const char *,
+        ContentLocT,
+        std::vector<int> &
+    );
     virtual void AddSongIDMapping(int, Symbol);
     virtual void ReadCachedMetadataFromStream(BinStream &, int);
     virtual void WriteCachedMetadataToStream(BinStream &) const;

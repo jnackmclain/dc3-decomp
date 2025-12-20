@@ -9,6 +9,7 @@ public:
     AccomplishmentGroup(DataArray *, int);
     bool HasAward() const;
     Symbol GetName() const;
+    Symbol GetAward() const;
 
     Symbol mName;
     int unk8;

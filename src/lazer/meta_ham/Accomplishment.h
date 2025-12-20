@@ -1,9 +1,10 @@
 #pragma once
 #include "hamobj/Difficulty.h"
-#include "meta_ham/HamProfile.h"
 #include "obj/Data.h"
 #include "ui/UILabel.h"
 #include "utl/Symbol.h"
+
+class HamProfile;
 
 // stolen from RB3 lol
 enum AccomplishmentType {

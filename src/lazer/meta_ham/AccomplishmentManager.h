@@ -10,9 +10,9 @@
 #include "os/PlatformMgr.h"
 
 struct GoalAcquisitionInfo {
-    int unk0;
+    Symbol unk0;
     String unk4;
-    int unkc;
+    Symbol unkc;
 };
 
 struct GoalProgressionInfo {
@@ -49,9 +49,30 @@ public:
     bool IsGroupComplete(HamProfile *, Symbol) const;
     bool IsCategoryComplete(HamProfile *, Symbol) const;
     int GetNumCompletedAccomplishments(HamUser *) const;
+    void AddGoalAcquisitionInfo(Symbol, const char *, Symbol);
+    void AddAssetAward(Symbol, Symbol);
+    Symbol GetAssetAward(Symbol) const;
+    void AddAwardSource(Symbol, Symbol);
+    Accomplishment *GetAccomplishment(Symbol) const;
+    Symbol GetAwardSource(Symbol) const;
+    bool HasAccomplishment(Symbol) const;
+    bool HasAccomplishmentCategory(Symbol) const;
+    bool HasAccomplishmentGroup(Symbol) const;
+    bool HasAward(Symbol) const;
+    std::set<Symbol> *GetAccomplishmentSetForCategory(Symbol) const;
+    std::list<Symbol> *GetCategoryListForGroup(Symbol) const;
+    Symbol GetAssetSource(Symbol) const;
+    Award *GetAward(Symbol) const;
+    void EarnAwardForAll(Symbol, bool);
+    void EarnAwardForProfile(HamProfile *, Symbol);
+    Symbol GetReasonForFirstNewAward(HamProfile *) const;
+
+    static void Init(DataArray *);
 
 private:
     void InitializeDiscSongs();
+    void UpdateConsecutiveDaysPlayed(HamProfile *);
+    void UpdateWeekendWarrior(HamProfile *);
 
 protected:
     void Cleanup();
@@ -62,29 +83,24 @@ protected:
     void ConfigureAccomplishmentCategoryGroupingData();
     void ConfigureAccomplishmentGroupToCategoriesData();
     void ConfigureAccomplishmentRewardData(DataArray *);
+    Accomplishment *FactoryCreateAccomplishment(DataArray *, int);
 
     DataNode OnMsg(const SigninChangedMsg &);
 
     bool unk30[2]; // 0x30
-    std::map<Symbol, Accomplishment *> unk34;
-    std::map<Symbol, AccomplishmentCategory *> unk4c;
-    std::map<Symbol, AccomplishmentGroup *> unk64;
-    std::map<Symbol, Award *> unk7c;
-    std::map<Symbol, Symbol> unk94;
-    std::map<Symbol, Symbol> unkac;
-    std::map<Symbol, std::list<Symbol> *> unkc4;
-    std::map<Symbol, std::set<Symbol> *> unkdc;
-    int unkf4;
-    int unkf8;
-    int unkfc;
-    int unk100;
-    int unk104;
-    int unk108;
-    int unk10c;
-    int unk110;
-    std::vector<GoalAcquisitionInfo> unk114;
-    std::vector<GoalProgressionInfo> unk120;
-    std::vector<Symbol> unk12c;
+    std::map<Symbol, Accomplishment *> mAccomplishments; // 0x34
+    std::map<Symbol, AccomplishmentCategory *> mAccomplishmentCategories; // 0x4c
+    std::map<Symbol, AccomplishmentGroup *> mAccomplishmentGroups; // 0x64
+    std::map<Symbol, Award *> mAwards; // 0x7c
+    std::map<Symbol, Symbol> mAssetToAward; // 0x94
+    std::map<Symbol, Symbol> mAwardToSource; // 0xac
+    std::map<Symbol, std::list<Symbol> *> m_mapGroupToCategories; // 0xc4
+    std::map<Symbol, std::set<Symbol> *> m_mapCategoryToAccomplishmentSet; // 0xdc
+    int mLeaderboardThresholds[4]; // 0xf4
+    int mIconThresholds[4]; // 0x104
+    std::vector<GoalAcquisitionInfo> mGoalAcquisitionInfos; // 0x114
+    std::vector<GoalProgressionInfo> mGoalProgressionInfos; // 0x120
+    std::vector<Symbol> mDiscSongs; // 0x12c
 };
 
 extern AccomplishmentManager *TheAccomplishmentMgr;

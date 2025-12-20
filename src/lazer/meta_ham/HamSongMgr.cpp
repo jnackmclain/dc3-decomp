@@ -13,7 +13,6 @@
 #include "os/Debug.h"
 #include "os/File.h"
 #include "os/System.h"
-#include "stl/_vector.h"
 #include "utl/BinStream.h"
 #include "utl/FakeSongMgr.h"
 #include "utl/Locale.h"
@@ -21,6 +20,7 @@
 #include "utl/SongInfoCopy.h"
 #include "utl/Std.h"
 #include "utl/Symbol.h"
+#include <vector>
 
 HamSongMgr TheHamSongMgr;
 SongMgr &TheSongMgr = TheHamSongMgr;
@@ -118,6 +118,10 @@ void HamSongMgr::Terminate() {
     mSongIDLookup.clear();
     ClearAndShrink<String>(mContentAltDirs);
     ClearPlaylists();
+}
+
+const HamSongMetadata *HamSongMgr::Data(int songID) const {
+    return static_cast<const HamSongMetadata *>(SongMgr::Data(songID));
 }
 
 SongInfo *HamSongMgr::SongAudioData(int songID) const {

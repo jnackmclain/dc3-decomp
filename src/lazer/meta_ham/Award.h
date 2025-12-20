@@ -15,6 +15,7 @@ public:
     char const *GetArt() const;
     void GrantAwards(class HamProfile *);
     Symbol GetDisplayName() const;
+    Symbol GetName() const;
 
     Symbol unk4;
     int unk8;

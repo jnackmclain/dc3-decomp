@@ -2,6 +2,7 @@
 #include "game/HamUser.h"
 #include "hamobj/Difficulty.h"
 #include "meta/Profile.h"
+#include "meta_ham/AccomplishmentProgress.h"
 #include "meta_ham/CampaignProgress.h"
 #include "meta_ham/SongStatusMgr.h"
 
@@ -28,6 +29,9 @@ public:
     HamUser *GetHamUser() const;
     SongStatusMgr *GetSongStatusMgr() const;
     CampaignProgress &GetCampaignProgress(Difficulty) const;
+
+    const AccomplishmentProgress &GetAccomplishmentProgress() const;
+    AccomplishmentProgress &AccessAccomplishmentProgress();
 
 protected:
 };
