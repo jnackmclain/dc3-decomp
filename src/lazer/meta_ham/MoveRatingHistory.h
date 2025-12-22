@@ -15,8 +15,8 @@ public:
     public:
         MoveRating unk0[4];
     };
-    MoveRatingHistory();
-    virtual ~MoveRatingHistory();
+    MoveRatingHistory() : unk20(0) { mSaveSizeMethod = SaveSize; }
+    virtual ~MoveRatingHistory() {}
     virtual void SaveFixed(FixedSizeSaveableStream &) const;
     virtual void LoadFixed(FixedSizeSaveableStream &, int);
 

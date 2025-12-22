@@ -1,6 +1,7 @@
 #pragma once
 #include "game/HamUser.h"
 #include "hamobj/Difficulty.h"
+#include "hamobj/HamLabel.h"
 #include "meta/Profile.h"
 #include "meta_ham/AccomplishmentProgress.h"
 #include "meta_ham/CampaignProgress.h"
@@ -9,13 +10,17 @@
 #include "meta_ham/MoveRatingHistory.h"
 #include "meta_ham/Playlist.h"
 #include "meta_ham/SongStatusMgr.h"
+#include "obj/Msg.h"
 #include "os/OnlineID.h"
 
 struct CharacterPref {
-    int unk0;
-    int unk4;
+    Symbol unk0;
+    Symbol unk4;
     int unk8;
 };
+
+DECLARE_MESSAGE(SingleItemEnumCompleteMsg, "single_item_enum_complete")
+END_MESSAGE
 
 class HamProfile : public Profile {
 public:
@@ -23,9 +28,7 @@ public:
     virtual ~HamProfile();
     // Hmx::Object
     virtual DataNode Handle(DataArray *, bool);
-    // FixedSizeSaveable
-    virtual void SaveFixed(FixedSizeSaveableStream &) const;
-    virtual void LoadFixed(FixedSizeSaveableStream &, int);
+
     virtual bool HasCheated() const;
     virtual bool IsUnsaved() const;
     virtual void SaveLoadComplete(ProfileSaveState);
@@ -45,9 +48,49 @@ public:
     void EarnAccomplishment(Symbol);
     void GetFitnessStats(float &, float &, float &);
     void UnlockContent(Symbol);
+    void MarkContentNotNew(Symbol);
+    Symbol CharacterOutfit(Symbol) const;
+    void SetCharacterOutfit(Symbol, Symbol);
+    const char *NextOutfitSample(Symbol);
+    bool HasSongStatus(Symbol) const;
+    void SetFitnessPounds(float);
+    void SetFitnessStats(int, float, float);
+    void UpdateFitnessTime(HamLabel *);
+    void UpdateFitnessTotalTime(HamLabel *);
+    void UpdateFitnessWeight(HamLabel *);
+    void UpdateInfinitePlaylistTime(HamLabel *);
+    int GetBattleWonCount(int) const;
+    int GetBattleLostCount(int) const;
+    bool GetWonLastBattle(int) const;
+    void SetFitnessGoalsThrough(HamLabel *);
+    void SetFitnessGoalDays(HamLabel *);
+    void SetFitnessGoalCalories(HamLabel *);
+    void SetFitnessGoalDaysResult(HamLabel *);
+    void SetFitnessGoalCaloriesResult(HamLabel *);
+    void ResetFitnessGoal();
+    void SetFitnessGoalTargetDays(int);
+    void SetFitnessGoalTargetCalories(int);
+    void SendFitnessGoalToRC();
+    void SetLastNewSong();
+    bool NeedsToBeNagged();
+    Symbol Nag();
+    void CompleteCurrentNag(bool);
+    void CompleteNag(int, bool);
+    void ResetNags();
+    bool IsFitnessDaysGoalMet() const;
+    bool IsFitnessCaloriesGoalMet() const;
+    void IncrementSkippedSongCount() { unk328++; }
+    void UpdateNag() { unk368++; }
 
 private:
+    // FixedSizeSaveable
+    virtual void SaveFixed(FixedSizeSaveableStream &) const;
+    virtual void LoadFixed(FixedSizeSaveableStream &, int);
+
     void ResetOutfitPrefs();
+    void RefreshPlaylists();
+
+    DataNode OnMsg(const SingleItemEnumCompleteMsg &);
 
     SongStatusMgr *unk18; // 0x18
     std::vector<Symbol> unk1c;
