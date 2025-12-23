@@ -1,34 +1,20 @@
 #pragma once
-
+#include "os/NetworkSocket.h"
 #include "os/Timer.h"
 #include "utl/MemMgr.h"
 #include "utl/Str.h"
-class HttpPost {
-public:
-    virtual ~HttpPost();
-    virtual void SetContent(char const *);
-    virtual void SetContentLength(unsigned int);
-
-    HttpPost(unsigned int, unsigned short, char const *, unsigned char);
-
-protected:
-    virtual bool CanRetry();
-    virtual void StartSending();
-    virtual void Sending();
-};
 
 class HttpGet {
 public:
     enum State {
-        state1,
-        state2,
-        state3
     };
 
+    HttpGet(unsigned int, unsigned short, const char *, const char *);
+    HttpGet(unsigned int, unsigned short, const char *, unsigned char, const char *);
     virtual ~HttpGet();
+    virtual void SetContent(const char *) {}
+    virtual void SetContentLength(unsigned int) {}
 
-    HttpGet(unsigned int, unsigned short, char const *, char const *);
-    HttpGet(unsigned int, unsigned short, char const *, unsigned char, char const *);
     bool IsDownloaded();
     bool HasFailed();
     char *DetachBuffer();
@@ -39,39 +25,62 @@ public:
 
     MEM_OVERLOAD(HttpGet, 0x1C);
 
-    int unk8;
-    String unkc;
-    unsigned short unk14;
-    int unk18;
-    bool unk1c;
-    Timer unk20;
-    float unk50;
-    unsigned int unk54;
-    String unk58;
-    int unk60;
-    int unk64;
-    u32 unk68;
-    int unk6c;
-    int unk70;
-    int unk74;
-    int unk78;
-    int unk7c;
-    int unk80;
+private:
+    void AddRequiredHeaders();
+
+    static const float kDefaultTimeoutMs;
+    static const int kMaxRetries;
+    static const int kRecvBufSize;
 
 protected:
     virtual bool CanRetry();
     virtual void StartSending();
-    virtual void Sending();
+    virtual void Sending() {
+        MILO_FAIL("HttpGet::Sending() - shouldn't be calling this");
+    }
 
     void StartReceiving();
     void SafeDisconnect();
     void SafeShutdown();
     void StartConnection();
     bool HasTimedOut();
-    void SetState(HttpGet::State);
+    void SetState(State);
 
-private:
-    void AddRequiredHeaders();
+    NetworkSocket *mSocket; // 0x8
+    String unkc; // 0xc
+    unsigned short unk14; // 0x14
+    int unk18;
+    bool unk1c;
+    Timer unk20;
+    float unk50;
+    unsigned int unk54;
+    String unk58;
+    void *unk60;
+    int mRecvBufPos; // 0x64
+    u32 unk68;
+    char *mFileBuf; // 0x6c
+    int mFileBufSize; // 0x70
+    int mFileBufRecvPos; // 0x74
+    int unk78;
+    int unk7c;
+    int unk80;
+};
 
-    static float const kDefaultTimeoutMs;
+class HttpPost : public HttpGet {
+public:
+    HttpPost(unsigned int, unsigned short, const char *, unsigned char);
+    virtual ~HttpPost();
+    virtual void SetContent(const char *content) { mContent = content; }
+    virtual void SetContentLength(unsigned int);
+
+protected:
+    virtual bool CanRetry();
+    virtual void StartSending();
+    virtual void Sending();
+
+    const char *mContent; // 0x88
+    unsigned int mContentLength; // 0x8c
+    unsigned int unk90; // 0x90
+    String unk94; // 0x94
+    int unk9c;
 };

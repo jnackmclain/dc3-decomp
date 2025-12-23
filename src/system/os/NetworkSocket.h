@@ -34,5 +34,6 @@ public:
     static NetworkSocket *Create(bool);
     static NetAddress SetIPPortFromHostPort(const char *, const char *, unsigned short);
     static unsigned int IPStringToInt(const String &);
+    static String IPIntToString(unsigned int);
     static unsigned int ResolveHostName(String);
 };
