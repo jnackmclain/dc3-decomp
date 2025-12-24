@@ -22,7 +22,7 @@ LockCartJob::LockCartJob(Hmx::Object *o, char const *c) : RCJob("dlc/lockcart/",
 
 void LockCartJob::GetLockData(int &reLockDuration) {
     if (mResult == 1 && mJsonResponse) {
-        JsonObject *pJsonObj = mJsonConverter.GetByName(mJsonResponse, "lock_duration");
+        JsonObject *pJsonObj = mJsonReader.GetByName(mJsonResponse, "lock_duration");
         if (pJsonObj) {
             reLockDuration = (pJsonObj->Int() - 60) * 1000;
         }
@@ -82,5 +82,5 @@ void GetCartJob::GetRows(std::vector<CartRow> *rows) {
     if (!mJsonResponse)
         return;
 
-    ::GetRows(mJsonConverter, mJsonResponse, rows);
+    ::GetRows(mJsonReader, mJsonResponse, rows);
 }
