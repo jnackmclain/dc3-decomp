@@ -8,7 +8,8 @@ class RndFontBase : public Hmx::Object {
 public:
     class KernInfo {
     public:
-        unsigned short unk0, unk2;
+        unsigned short a; // 0x0
+        unsigned short b; // 0x2
         float kerning; // 0x4
     };
 
@@ -20,10 +21,10 @@ public:
     virtual void Copy(const Hmx::Object *, Hmx::Object::CopyType);
     virtual void Load(BinStream &);
     virtual float CharWidth(unsigned short) const { return 0; }
+    virtual float CharAdvance(unsigned short) const { return 0; } // 0x60
     virtual bool CharAdvance(unsigned short, unsigned short, float &) const {
         return false;
-    }
-    virtual float CharAdvance(unsigned short) const { return 0; }
+    } // 0x5c
     virtual float Kerning(unsigned short, unsigned short) const;
     virtual bool CharDefined(unsigned short) const;
     virtual float AspectRatio() const { return 0; }
@@ -41,6 +42,9 @@ public:
     void SetBaseKerning(float);
     void SetKerning(const std::vector<KernInfo> &);
     void GetKerning(std::vector<KernInfo> &) const;
+    const std::vector<unsigned short> &Chars() const { return mChars; }
+    float BaseKerning() const { return mBaseKerning; }
+    bool Monospace() const { return mMonospace; }
 
 protected:
     RndFontBase();
@@ -54,21 +58,3 @@ protected:
     float mBaseKerning; // 0x3c
     class KerningTable *mKerningTable; // 0x40
 };
-
-__forceinline BinStreamRev &operator>>(BinStreamRev &bs, RndFontBase::KernInfo &info) {
-    if (bs.rev < 0x11) {
-        char x;
-        bs >> x;
-        info.unk0 = x;
-        bs >> x;
-        info.unk2 = x;
-    } else {
-        bs >> info.unk0 >> info.unk2;
-    }
-    if (bs.rev < 6) {
-        char x;
-        bs >> x >> x;
-    }
-    bs >> info.kerning;
-    return bs;
-}

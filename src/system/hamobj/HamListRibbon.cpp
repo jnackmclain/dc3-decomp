@@ -1,8 +1,57 @@
 #include "hamobj/HamListRibbon.h"
+#include "hamobj/HamLabel.h"
+#include "math/Mtx.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
 #include "rndobj/Dir.h"
+#include "rndobj/Env.h"
+#include "rndobj/Text.h"
+#include "ui/UIComponent.h"
 #include "utl/BinStream.h"
+#include "utl/Loader.h"
+
+const int HamListRibbon::sNumListSelectable = 4;
+
+#pragma region ScrollAnims
+
+void HamListRibbon::ScrollAnims::SetScrollFrame(float frame) {
+    if (mScrollAnim)
+        mScrollAnim->SetFrame(frame, 1);
+}
+
+void HamListRibbon::ScrollAnims::SetAnims(int i1) {
+    if (mScrollAnim) {
+        float frame = mScrollAnim->GetFrame();
+        if (i1 == 0) {
+            if (mScrollFade)
+                mScrollFade->SetFrame(1 - frame, 1);
+        } else if (i1 > 0 && i1 < 4) {
+            if (mScrollActive)
+                mScrollActive->SetFrame(frame, 1);
+        } else if (i1 == 4) {
+            if (mScrollFade)
+                mScrollFade->SetFrame(frame, 1);
+        } else if (mScrollFaded)
+            mScrollFaded->SetFrame(frame, 1);
+    }
+}
+
+void HamListRibbon::ScrollAnims::Save(BinStream &bs) const {
+    bs << mScrollAnim;
+    bs << mScrollActive;
+    bs << mScrollFade;
+    bs << mScrollFaded;
+}
+
+void HamListRibbon::ScrollAnims::Load(BinStreamRev &bs) {
+    bs >> mScrollAnim;
+    bs >> mScrollActive;
+    bs >> mScrollFade;
+    bs >> mScrollFaded;
+}
+
+#pragma endregion
+#pragma region HamListRibbon
 
 HamListRibbon::HamListRibbon()
     : mScrollAnims(this), mTestMode(0), mTestNumDisplay(4), mTestSelectedIndex(0),
@@ -109,40 +158,165 @@ BEGIN_COPYS(HamListRibbon)
     END_COPYING_MEMBERS
 END_COPYS
 
-void HamListRibbon::ScrollAnims::SetScrollFrame(float frame) {
-    if (mScrollAnim)
-        mScrollAnim->SetFrame(frame, 1);
+INIT_REVS(11, 0)
+
+void HamListRibbon::PreLoad(BinStream &bs) {
+    LOAD_REVS(bs)
+    ASSERT_REVS(0xB, 0)
+    RndDir::PreLoad(d.stream);
+    d.PushRev(this);
 }
 
-void HamListRibbon::ScrollAnims::SetAnims(int i1) {
-    if (mScrollAnim) {
-        float frame = mScrollAnim->GetFrame();
-        if (i1 == 0) {
-            if (mScrollFade)
-                mScrollFade->SetFrame(1 - frame, 1);
-        } else if (i1 > 0 && i1 < 4) {
-            if (mScrollActive)
-                mScrollActive->SetFrame(frame, 1);
-        } else if (i1 == 4) {
-            if (mScrollFade)
-                mScrollFade->SetFrame(frame, 1);
-        } else if (mScrollFaded)
-            mScrollFaded->SetFrame(frame, 1);
+void HamListRibbon::PostLoad(BinStream &bs) {
+    BinStreamRev d(bs, bs.PopRev(this));
+    RndDir::PostLoad(d.stream);
+    d >> mSpacing;
+    d >> mSwellAnim;
+    d >> mSlideAnim;
+    d >> mSelectAnim;
+    d >> mSelectInactiveAnim;
+    d >> mSelectAllAnim;
+    d >> mLabelPlaceholder;
+    if (d.rev >= 2) {
+        mScrollAnims.Load(d);
+    }
+    if (d.rev >= 3) {
+        d >> mDisengageAnim;
+    }
+    if (d.rev >= 4 && d.rev < 9) {
+        Symbol s;
+        int num;
+        d >> num;
+        for (int i = 0; i < num; i++) {
+            d >> s;
+        }
+        d >> num;
+        for (int i = 0; i < num; i++) {
+            d >> s;
+        }
+    }
+    if (d.rev == 4) {
+        Symbol s;
+        d >> s;
+        d >> s;
+    }
+    if (d.rev >= 5) {
+        d >> mSlideSound;
+        d >> mSlideSoundAnim;
+        d >> mScrollSound;
+        d >> mScrollSoundAnim;
+    }
+    if (d.rev >= 10) {
+        d >> mEnterFlow;
+    }
+    if (d.rev >= 6) {
+        d >> mEnterAnim;
+    }
+    if (d.rev >= 7) {
+        d >> mPaddedSize;
+    }
+    if (d.rev >= 8) {
+        d >> mPaddedSpacing;
+    }
+    if (d.rev >= 9) {
+        d >> mHighlightSounds;
+        d >> mSelectSounds;
+    }
+    if (d.rev >= 11) {
+        d >> mSelectToggleAnim;
     }
 }
 
-void HamListRibbon::ScrollAnims::Save(BinStream &bs) const {
-    bs << mScrollAnim;
-    bs << mScrollActive;
-    bs << mScrollFade;
-    bs << mScrollFaded;
+void HamListRibbon::DrawShowing() {
+    if (!mTestMode) {
+        RndDir::DrawShowing();
+    } else {
+        std::vector<HamListRibbonDrawState> drawStates(mTestNumDisplay);
+        for (int i = 0; i < mTestNumDisplay; i++) {
+            if (i == mTestSelectedIndex) {
+                drawStates[i].unk14 = true;
+                if (mMode == kRibbonSwell && !mTestEntering) {
+                    float frame = GetFrame();
+                    drawStates[i].unk0.SetParams(frame, frame, 0);
+                } else {
+                    drawStates[i].unk0.SetParams(1, 1, 0);
+                }
+            } else {
+                drawStates[i].unk14 = false;
+                drawStates[i].unk0.SetParams(0, 0, 0);
+            }
+        }
+        Transform xfm = WorldXfm();
+        Draw(xfm, drawStates, true, false);
+    }
 }
 
-void HamListRibbon::ScrollAnims::Load(BinStreamRev &bs) {
-    bs >> mScrollAnim;
-    bs >> mScrollActive;
-    bs >> mScrollFade;
-    bs >> mScrollFaded;
+float HamListRibbon::StartFrame() {
+    if (mTestEntering && mEnterAnim) {
+        return mEnterAnim->StartFrame();
+    } else {
+        switch (mMode) {
+        case kRibbonSwell:
+            if (mSwellAnim) {
+                return mSwellAnim->StartFrame();
+            } else {
+                return 0;
+            }
+        case kRibbonSlide:
+            if (mSlideAnim) {
+                return mSlideAnim->StartFrame();
+            } else {
+                return 0;
+            }
+        case kRibbonSelect:
+            if (unk26c && mSelectToggleAnim) {
+                return mSelectToggleAnim->StartFrame();
+            } else if (mSelectAnim && !mSelectAllAnim) {
+                return mSelectAnim->StartFrame();
+            } else if (!mSelectAnim && mSelectAllAnim) {
+                return mSelectAllAnim->StartFrame();
+            } else if (mSelectAnim && mSelectAllAnim) {
+                return Min(mSelectAnim->StartFrame(), mSelectAllAnim->StartFrame());
+            }
+            return 0;
+        default:
+            return 0;
+        }
+    }
+}
+
+float HamListRibbon::EndFrame() {
+    if (mTestEntering && mEnterAnim) {
+        return mEnterAnim->EndFrame();
+    } else {
+        switch (mMode) {
+        case kRibbonSwell:
+            if (mSwellAnim) {
+                return mSwellAnim->EndFrame();
+            } else {
+                return 0;
+            }
+        case kRibbonSlide:
+            if (mSlideAnim) {
+                return mSlideAnim->EndFrame();
+            } else {
+                return 0;
+            }
+        case kRibbonSelect:
+            if (unk26c && mSelectToggleAnim) {
+                return mSelectToggleAnim->EndFrame();
+            } else if (mSelectAnim && !mSelectAllAnim) {
+                return mSelectAnim->EndFrame();
+            } else if (!mSelectAnim && mSelectAllAnim) {
+                return mSelectAllAnim->EndFrame();
+            } else if (mSelectAnim && mSelectAllAnim) {
+                return Max(mSelectAnim->EndFrame(), mSelectAllAnim->EndFrame());
+            }
+            return 0;
+        default:
+            return 0;
+        }
+    }
 }
 
 void HamListRibbon::HandleEnter() {
@@ -174,14 +348,234 @@ DataNode HamListRibbon::OnExitBlacklightMode(const DataArray *a) {
 }
 
 void HamListRibbon::PlayHighlightSound(int idx) {
-    if (idx >= mHighlightSounds.size() - 1)
-        return;
-    else
-        mHighlightSounds[idx]->Activate();
+    int numSounds = mHighlightSounds.size();
+    if (numSounds != 0) {
+        mHighlightSounds[Min(idx, numSounds - 1)]->Activate();
+    }
 }
 
 void HamListRibbon::PlaySelectSound(int idx) {
-    if (idx < mSelectSounds.size()) {
-        mSelectSounds[idx]->Activate();
+    int numSounds = mSelectSounds.size();
+    if (numSounds != 0 && idx >= 0) {
+        mSelectSounds[Min(idx, numSounds - 1)]->Activate();
     }
+}
+
+bool HamListRibbon::IsScrollable(int i1) const { return i1 > 6; }
+
+void HamListRibbon::ResetAnims(bool b1) {
+    if (mSelectInactiveAnim && (mSelectInactiveAnim->GetFrame() != 0 || b1)) {
+        mSelectInactiveAnim->SetFrame(0, 1);
+    }
+    if (mSelectAnim && (mSelectAnim->GetFrame() != 0 || b1)) {
+        mSelectAnim->SetFrame(0, 1);
+    }
+    if (mSelectToggleAnim && (mSelectToggleAnim->GetFrame() != 0 || b1)) {
+        mSelectToggleAnim->SetFrame(0, 1);
+    }
+    if (mSlideAnim && (mSlideAnim->GetFrame() != 0 || b1)) {
+        mSlideAnim->SetFrame(0, 1);
+    }
+    if (mSwellAnim && (mSwellAnim->GetFrame() != 0 || b1)) {
+        mSwellAnim->SetFrame(0, 1);
+    }
+}
+
+void HamListRibbon::SetAnims(bool b1, float f2) {
+    if (mTestEntering)
+        return;
+    if (mSwellAnim) {
+        mSwellAnim->SetFrame(f2, 1);
+    }
+    if (b1) {
+        if (mMode == 1 && mSlideAnim) {
+            mSlideAnim->SetFrame(GetFrame(), 1);
+        }
+        if (mMode == 2) {
+            if (unk26c && mSelectToggleAnim) {
+                mSelectToggleAnim->SetFrame(GetFrame(), 1);
+            } else if (mSelectAnim) {
+                mSelectAnim->SetFrame(GetFrame(), 1);
+            }
+        }
+    } else {
+        if (mMode == 2 && !unk26c && mSelectInactiveAnim) {
+            mSelectInactiveAnim->SetFrame(GetFrame(), 1);
+        }
+    }
+}
+
+void HamListRibbon::SetDisengageFrame(float f1) {
+    if (mDisengageAnim) {
+        mDisengageAnim->SetFrame(f1, 1);
+    }
+}
+
+float HamListRibbon::GetLabelTotalAlpha() const {
+    float ret = 1;
+    for (unsigned int i = 0; i < mLabelPlaceholder->NumStyles(); i++) {
+        ret *= mLabelPlaceholder->Style(i).mInfo.mFontColor.alpha;
+    }
+    return ret;
+}
+
+void HamListRibbon::DrawRibbon(
+    int i1,
+    const Transform &tf2,
+    const Transform &tf3,
+    const HamListRibbonDrawState &drawState,
+    int i5,
+    int i6,
+    int i7,
+    bool b8
+) {
+    bool b5 = i1 >= i5 && i1 < i5 + i6;
+    ResetAnims(false);
+    SetAnims(drawState.unk14, drawState.unk0.Level());
+    if (i6 > 6) {
+        mScrollAnims.SetAnims(i1 - i5 - i7);
+    } else if (mScrollAnims.mScrollActive) {
+        mScrollAnims.mScrollActive->SetFrame(0, 1);
+    }
+    Transform tfa0;
+    Multiply(tf2, tf3, tfa0);
+    SetWorldXfm(Transform::GetIdentity());
+
+    if (mLabelPlaceholder) {
+        mLabelPlaceholder->SetShowing(b8 && b5);
+        mLabelPlaceholder->SetCanHaveFocus(true);
+        if (drawState.unk14) {
+            mLabelPlaceholder->SetState(UIComponent::kFocused);
+        } else {
+            mLabelPlaceholder->SetState(UIComponent::kNormal);
+        }
+        if (drawState.unk18) {
+            static Vector3 v1(1.3f, 1, 1.3f);
+            static Vector3 v2(1, 1, 1);
+            Vector3 pos = mLabelPlaceholder->WorldXfm().v;
+            pos.z += tf2.v.z;
+            drawState.unk18->mPos = pos;
+            drawState.unk18->mAlpha = GetLabelTotalAlpha();
+            drawState.unk18->unk14 = drawState.unk20 != 0 ? v1 : v2;
+        }
+    }
+    float alpha = 0;
+    if (TheLoadMgr.EditMode() && mLabelPlaceholder) {
+        alpha = mLabelPlaceholder->Style(0).mInfo.mFontColor.alpha;
+        mLabelPlaceholder->Style(0).mInfo.mFontColor.alpha = GetLabelTotalAlpha();
+    }
+    SetWorldXfm(tfa0);
+    if (!drawState.unk1c) {
+        FOREACH (it, mDraws) {
+            (*it)->Draw();
+        }
+    }
+    if (TheLoadMgr.EditMode() && mLabelPlaceholder) {
+        mLabelPlaceholder->Style(0).mInfo.mFontColor.alpha = alpha;
+        mLabelPlaceholder->SetShowing(true);
+    }
+}
+
+void HamListRibbon::Draw(
+    const Transform &tf1,
+    const std::vector<HamListRibbonDrawState> &drawStates,
+    bool b3,
+    bool b4
+) {
+    RndEnvironTracker t(mEnv, nullptr);
+    if (mSelectAllAnim) {
+        if (mMode == kRibbonSelect && !mTestEntering && !unk26c) {
+            mSelectAllAnim->SetFrame(GetFrame(), 1);
+        } else {
+            mSelectAllAnim->SetFrame(0, 1);
+        }
+    }
+    if (mTestEntering && mEnterAnim) {
+        mEnterAnim->SetFrame(GetFrame(), 1);
+    }
+
+    int numDrawStates = drawStates.size();
+    bool cmp = numDrawStates > 6 ? true : false;
+    int i9 = cmp ? 4 : numDrawStates;
+    int i7 = Max(0, (mPaddedSize - numDrawStates + 1) / 2);
+    std::vector<HamListRibbonDrawState> drawStateVec;
+    HamListRibbonDrawState dummyState;
+    for (int i = 0; i < i7; i++) {
+        drawStateVec.push_back(dummyState);
+    }
+    for (int i = 0; i < numDrawStates; i++) {
+        drawStateVec.push_back(drawStates[i]);
+    }
+    for (int i = 0; i < i7; i++) {
+        drawStateVec.push_back(dummyState);
+    }
+    int i15 = 0;
+    if (cmp) {
+        int div = numDrawStates / 2;
+        i15 = div - 2;
+        if (mTestSelectedIndex < i15 || mTestSelectedIndex > i15 + 4) {
+            mTestSelectedIndex = i15;
+        }
+    } else if (mScrollAnims.mScrollAnim) {
+        mScrollAnims.mScrollAnim->SetFrame(0, 1);
+    }
+
+    int i13 = (mPaddedSize < numDrawStates ? numDrawStates : mPaddedSize) - i9;
+    float f22 = (i9 * mSpacing + i13 * mPaddedSpacing) / 2;
+
+    if (i13 % 2 == 0) {
+        f22 = -(mSpacing / 2 - f22);
+    } else if (i9 < mPaddedSize) {
+        f22 += (mPaddedSpacing - mSpacing) / 2;
+    }
+
+    Transform tf00 = tf1;
+    Transform tf1c0;
+    tf1c0.v.z = f22;
+    tf1c0.m.Identity();
+    tf1c0.v.x = 0;
+    tf1c0.v.y = 0;
+
+    int i14 = -1;
+    Transform tf130;
+    for (int i = 0; i < drawStateVec.size(); i++) {
+        bool b5 = i >= i15 + i7 && i < i15 + i7 + i9 - 1;
+
+        if (b3 != drawStateVec[i].unk24) {
+            if (b5) {
+                tf1c0.v.z -= mSpacing;
+            } else {
+                tf1c0.v.z -= mPaddedSpacing;
+            }
+        }
+
+        else {
+            if (!drawStateVec[i].unk14) {
+                DrawRibbon(i, tf1c0, tf1, drawStateVec[i], i7, numDrawStates, i15, b4);
+            } else {
+                i14 = i;
+                tf130 = tf1c0;
+            }
+
+            if (b5) {
+                tf1c0.v.z -= mSpacing;
+            } else {
+                tf1c0.v.z -= mPaddedSpacing;
+            }
+        }
+    }
+    if (i14 != -1) {
+        DrawRibbon(i14, tf130, tf1, drawStateVec[i14], i7, numDrawStates, i15, b4);
+    }
+
+    if (TheLoadMgr.EditMode()) {
+        SetAnims(true, 1);
+        if (mScrollAnims.mScrollAnim) {
+            float frame = mScrollAnims.mScrollAnim->GetFrame();
+            if (mScrollAnims.mScrollFade) {
+                mScrollAnims.mScrollFade->SetFrame(1 - frame, 1);
+            }
+        }
+    }
+    SetWorldXfm(tf00);
 }

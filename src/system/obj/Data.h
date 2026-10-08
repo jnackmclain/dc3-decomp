@@ -142,14 +142,17 @@ public:
      */
     const DataNode &Evaluate() const;
 
-    // these were implemented to match up in retail
-    // please do not use these in regular code
-    int UncheckedInt() const { return mValue.integer; }
-    const char *UncheckedStr() const { return mValue.symbol; }
-    Hmx::Object *UncheckedObj() const { return mValue.object; }
-    DataArray *UncheckedArray() const { return mValue.array; }
-    DataNode *UncheckedVar() const { return mValue.var; }
-    DataFunc *UncheckedFunc() const { return mValue.func; }
+    // turns out, these were actual functions HMX implemented (a la RBVR)
+    // only use these if you know for sure about the underlying data type
+    // DataNode methods only too, nothing for DataArray
+    int IntValue() const { return mValue.integer; }
+    float FloatValue() const { return mValue.real; }
+    const char *StringValue() const { return mValue.symbol; }
+    Symbol SymbolValue() const { return STR_TO_SYM(mValue.symbol); }
+    Hmx::Object *ObjectValue() const { return mValue.object; }
+    DataArray *ArrayValue() const { return mValue.array; }
+    DataNode *VarValue() const { return mValue.var; }
+    DataFunc *FuncValue() const { return mValue.func; }
 
     /** Evalute this DataNode, and return the resulting int.
      * @param [in] source The DataArray this DataNode comes from.
@@ -269,6 +272,8 @@ public:
     void Load(BinStream &, class ObjectDir *);
 };
 
+#define DATA_UNHANDLED DataNode(kDataUnhandled, 0)
+
 /** An array of DataNodes. */
 class DataArray {
 private:
@@ -288,7 +293,6 @@ private:
     ~DataArray();
 
 public:
-    static Symbol gFile;
     static DataFunc *sDefaultHandler;
     static void SetFile(Symbol);
 
@@ -296,13 +300,6 @@ public:
     int Size() const { return mSize; }
     int Line() const { return mLine; }
     int RefCount() const { return mRefs; }
-
-    int UncheckedInt(int i) const { return Node(i).UncheckedInt(); }
-    Hmx::Object *UncheckedObj(int i) const { return Node(i).UncheckedObj(); }
-    DataNode *UncheckedVar(int i) const { return Node(i).UncheckedVar(); }
-    DataArray *UncheckedArray(int i) const { return Node(i).UncheckedArray(); }
-    DataFunc *UncheckedFunc(int i) const { return Node(i).UncheckedFunc(); }
-    const char *UncheckedStr(int i) const { return Node(i).UncheckedStr(); }
 
     /** Get the DataType at the given node index.
      * @param [in] i The node index.
@@ -358,6 +355,8 @@ public:
      * @returns The resulting DataArray.
      */
     DataArray *Array(int i) const { return Node(i).Array(this); }
+
+    DataArray *LiteralArray(int i) const { return Node(i).LiteralArray(this); }
 
     /** Get the command DataArray at the given node index.
      * @param [in] i The node index.
@@ -528,7 +527,7 @@ public:
     ExecuteScript(int firstCmd, Hmx::Object *_this, const DataArray *_args, int firstArg);
     const DataNode &Evaluate(int i) const { return Node(i).Evaluate(); }
 
-    POOL_OVERLOAD(DataArray, 0xD2);
+    POOL_OVERLOAD(DataArray, 0xd2);
 };
 
 inline TextStream &operator<<(TextStream &ts, const DataNode &node) {
@@ -603,6 +602,21 @@ public:
         mData->Node(1) = node2;
         mData->Node(2) = node3;
         mData->Node(3) = node4;
+    }
+
+    DataArrayPtr(
+        const DataNode &node,
+        const DataNode &node2,
+        const DataNode &node3,
+        const DataNode &node4,
+        const DataNode &node5
+    ) {
+        mData = new DataArray(5);
+        mData->Node(0) = node;
+        mData->Node(1) = node2;
+        mData->Node(2) = node3;
+        mData->Node(3) = node4;
+        mData->Node(4) = node5;
     }
 
     DataArrayPtr(DataArray *da) {

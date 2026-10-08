@@ -10,7 +10,7 @@
 DataNode *TypeProps::KeyValue(Symbol key, bool fail) const {
     if (mMap) {
         for (int i = mMap->Size() - 2; i >= 0; i -= 2) {
-            if ((int)mMap->Node(i).UncheckedStr() == (int)key.Str()) {
+            if ((int)mMap->Node(i).StringValue() == (int)key.Str()) {
                 return &mMap->Node(i + 1);
             }
         }
@@ -46,11 +46,10 @@ int TypeProps::Size() const {
 void TypeProps::ClearKeyValue(Symbol key) {
     if (mMap) {
         for (int i = mMap->Size() - 2; i >= 0; i -= 2) {
-            const char *cur_str = mMap->UncheckedStr(i);
-            if (STR_TO_SYM(cur_str) == key) {
+            if (mMap->Node(i).IntValue() == key) {
                 DataNode &val = mMap->Node(i + 1);
                 if (val.Type() == kDataObject) {
-                    Hmx::Object *obj = val.UncheckedObj();
+                    Hmx::Object *obj = val.ObjectValue();
                     if (obj) {
                         mObjects.remove(obj);
                     }
@@ -61,14 +60,15 @@ void TypeProps::ClearKeyValue(Symbol key) {
                     mMap->Release();
                     mMap = nullptr;
                 }
+                return;
             }
         }
     }
 }
 
-void TypeProps::SetKeyValue(Symbol key, const DataNode &n, bool b) {
-    if (b && n.Type() == kDataObject) {
-        Hmx::Object *obj = n.UncheckedObj();
+void TypeProps::SetKeyValue(Symbol key, const DataNode &value, bool b) {
+    if (b && value.Type() == kDataObject) {
+        Hmx::Object *obj = value.ObjectValue();
         if (obj) {
             mObjects.push_back(obj);
         }
@@ -76,51 +76,53 @@ void TypeProps::SetKeyValue(Symbol key, const DataNode &n, bool b) {
     if (!mMap) {
         mMap = new DataArray(2);
         mMap->Node(0) = key;
-        mMap->Node(1) = n;
+        mMap->Node(1) = value;
     } else {
         int size = mMap->Size();
         for (int i = size - 2; i >= 0; i -= 2) {
-            if (mMap->UncheckedInt(i) == key) {
+            if (mMap->Node(i).IntValue() == key) {
                 DataNode &n = mMap->Node(i + 1);
                 if (n.Type() == kDataObject) {
-                    Hmx::Object *obj = n.UncheckedObj();
+                    Hmx::Object *obj = n.ObjectValue();
                     if (obj) {
                         mObjects.remove(obj);
                     }
                 }
+                n = value;
+                return;
             }
         }
         mMap->Resize(size + 2);
         mMap->Node(size) = key;
-        mMap->Node(size + 1) = n;
+        mMap->Node(size + 1) = value;
     }
 }
 
-void TypeProps::ReplaceObject(DataNode &n, Hmx::Object *o1, Hmx::Object *o2) {
-    Hmx::Object *from = n.UncheckedObj();
-    if (from == o1) {
-        mObjects.remove(from);
-        n = o2;
-        if (o2) {
-            mObjects.push_back(o2);
+void TypeProps::ReplaceObject(DataNode &n, Hmx::Object *from, Hmx::Object *to) {
+    Hmx::Object *fromObj = n.ObjectValue();
+    if (fromObj == from) {
+        mObjects.remove(fromObj);
+        n = to;
+        if (to) {
+            mObjects.push_back(to);
         }
     }
 }
 
-bool TypeProps::Replace(ObjRef *ref, Hmx::Object *obj) {
+bool TypeProps::Replace(ObjRef *from, Hmx::Object *to) {
     if (!mMap)
         return false;
-    Hmx::Object *refObj = ref->GetObj();
+    Hmx::Object *fromObj = from->GetObj();
     for (int i = mMap->Size() - 1; i > 0; i -= 2) {
         DataNode &node = mMap->Node(i);
         if (node.Type() == kDataObject) {
-            ReplaceObject(node, refObj, obj);
+            ReplaceObject(node, fromObj, to);
         } else if (node.Type() == kDataArray) {
-            DataArray *inner = node.UncheckedArray();
+            DataArray *inner = node.ArrayValue();
             for (int j = inner->Size() - 1; j >= 0; j--) {
                 DataNode &node2 = inner->Node(j);
                 if (node2.Type() == kDataObject) {
-                    ReplaceObject(node2, refObj, obj);
+                    ReplaceObject(node2, fromObj, to);
                 }
             }
         }
@@ -138,15 +140,16 @@ void TypeProps::AddRefObjects() {
         for (int i = mMap->Size() - 1; i > 0; i -= 2) {
             DataNode &node = mMap->Node(i);
             if (node.Type() == kDataObject) {
-                Hmx::Object *obj = node.UncheckedObj();
-                if (obj)
+                Hmx::Object *obj = node.ObjectValue();
+                if (obj) {
                     mObjects.push_back(obj);
+                }
             } else if (node.Type() == kDataArray) {
-                DataArray *inner = node.UncheckedArray();
+                DataArray *inner = node.ArrayValue();
                 for (int j = inner->Size() - 1; j >= 0; j--) {
                     DataNode &node2 = inner->Node(j);
                     if (node2.Type() == kDataObject) {
-                        Hmx::Object *obj = node.UncheckedObj();
+                        Hmx::Object *obj = node2.ObjectValue();
                         if (obj)
                             mObjects.push_back(obj);
                     }
@@ -164,46 +167,46 @@ void TypeProps::ClearAll() {
     }
 }
 
-DataArray *TypeProps::GetArray(Symbol key) {
+DataArray *TypeProps::GetArray(Symbol prop) {
     DataArray *typeDef = mOwner->TypeDef();
-    DataNode *n = KeyValue(key, false);
+    DataNode *n = KeyValue(prop, false);
     DataArray *ret;
     if (!n) {
         MILO_ASSERT(typeDef, 0x18);
-        DataArray *keyArray = typeDef->FindArray(key);
+        DataArray *keyArray = typeDef->FindArray(prop);
         DataArray *cloned = keyArray->Array(1)->Clone(true, false, 0);
-        SetKeyValue(key, cloned, true);
+        SetKeyValue(prop, cloned, true);
         ret = cloned;
         cloned->Release();
     } else {
         MILO_ASSERT(n->Type() == kDataArray, 0x1F);
-        ret = n->UncheckedArray();
+        ret = n->ArrayValue();
     }
     return ret;
 }
 
-void TypeProps::SetArrayValue(Symbol key, int i, const DataNode &value) {
-    DataNode &n = GetArray(key)->Node(i);
+void TypeProps::SetArrayValue(Symbol prop, int i, const DataNode &value) {
+    DataNode &n = GetArray(prop)->Node(i);
     if (n.Type() == kDataObject) {
-        Hmx::Object *obj = n.UncheckedObj();
+        Hmx::Object *obj = n.ObjectValue();
         if (obj) {
             mObjects.remove(obj);
         }
     }
     n = value;
     if (n.Type() == kDataObject) {
-        Hmx::Object *obj = n.UncheckedObj();
+        Hmx::Object *obj = n.ObjectValue();
         if (obj) {
             mObjects.push_back(obj);
         }
     }
 }
 
-void TypeProps::RemoveArrayValue(Symbol key, int i) {
-    DataArray *a = GetArray(key);
+void TypeProps::RemoveArrayValue(Symbol prop, int i) {
+    DataArray *a = GetArray(prop);
     DataNode &n = a->Node(i);
     if (n.Type() == kDataObject) {
-        Hmx::Object *obj = n.UncheckedObj();
+        Hmx::Object *obj = n.ObjectValue();
         if (obj) {
             mObjects.remove(obj);
         }
@@ -211,18 +214,19 @@ void TypeProps::RemoveArrayValue(Symbol key, int i) {
     a->Remove(i);
 }
 
-void TypeProps::InsertArrayValue(Symbol key, int i, const DataNode &value) {
-    GetArray(key)->Insert(i, value);
+void TypeProps::InsertArrayValue(Symbol prop, int i, const DataNode &value) {
+    DataArray *array = GetArray(prop);
+    array->Insert(i, value);
     if (value.Type() == kDataObject) {
-        Hmx::Object *obj = value.UncheckedObj();
+        Hmx::Object *obj = value.ObjectValue();
         if (obj) {
             mObjects.push_back(obj);
         }
     }
 }
 
-void TypeProps::Load(BinStreamRev &bs) {
-    bool rev = bs.rev < 2;
+void TypeProps::Load(BinStreamRev &d) {
+    bool rev = d.rev < 2;
     ReleaseObjects();
     DataArray *def = RefOwner()->TypeDef();
     Hmx::Object *theThis = nullptr;
@@ -230,7 +234,7 @@ void TypeProps::Load(BinStreamRev &bs) {
         theThis = DataSetThis(mOwner);
     if (mMap && gLoadingProxyFromDisk) {
         DataArray *oldMap = mMap;
-        bs >> mMap;
+        d >> mMap;
         int oldMapSize = oldMap->Size();
         for (int i = 0; i < oldMapSize; i += 2) {
             Symbol val = oldMap->Sym(i);
@@ -249,7 +253,7 @@ void TypeProps::Load(BinStreamRev &bs) {
             mMap->Release();
             mMap = nullptr;
         }
-        bs >> mMap;
+        d >> mMap;
     }
     if (def) {
         if (mMap && TheLoadMgr.EditMode()) {
@@ -281,92 +285,109 @@ TypeProps &TypeProps::operator=(const TypeProps &t) {
 }
 
 void TypeProps::Save(BinStream &bs) {
-    Hmx::Object *ref = RefOwner();
+    Hmx::Object *owner = RefOwner();
     if (mMap) {
         if (TheLoadMgr.EditMode()) {
-            DataArray *def = ref->TypeDef();
-            if (def) {
-                for (int i = 0; mMap && i < mMap->Size(); i += 2) {
-                    DataArray *arr = def->FindArray(mMap->Sym(i), false);
-                    if (arr && arr->Type(1) != kDataCommand) {
-                        if (arr->Node(1).CompatibleType(mMap->Type(i + 1)))
-                            continue;
+            if (owner->TypeDef()) {
+                DataArray *typeDef = owner->TypeDef();
+                for (int i = 0; mMap && i < mMap->Size();) {
+                    DataArray *arr = typeDef->FindArray(mMap->Sym(i), false);
+                    if (arr && arr->Type(1) != kDataCommand
+                        && !arr->Node(1).CompatibleType(mMap->Type(i + 1))) {
                         ClearKeyValue(mMap->Sym(i));
-                        if (mMap)
-                            i -= 2;
-                        else
+                        if (!mMap) {
                             break;
-                    }
-                }
-            }
-        }
-        if (mMap && ref->DataDir() == ref && ref->Dir() != ref || gLoadingProxyFromDisk) {
-            DataArray *def = ref->TypeDef();
-            std::list<Symbol> classnames;
-            ObjectDir *refDir = dynamic_cast<ObjectDir *>(ref);
-            if (refDir) {
-                for (ObjDirItr<ObjectDir> it(refDir, false); it != nullptr; ++it) {
-                    DataArrayPtr props = it->GetExposedProperties();
-                    for (int i = 0; i < props->Size(); i++) {
-                        classnames.push_back(props->Array(i)->Sym(0));
-                    }
-                }
-            }
-
-            DataArray *arrToWrite = nullptr;
-            int keyIdx = 0;
-            for (int i = 0; i < mMap->Size(); i += 2) {
-                Symbol key = mMap->Sym(i);
-                DataArray *keyArr = def->FindArray(key, false);
-                if (keyArr) {
-                    bool saveProxy = false;
-                    bool saveNone = false;
-                    GetSaveFlags(keyArr, saveProxy, saveNone);
-                    if (!saveNone && saveProxy != gLoadingProxyFromDisk) {
-                        if (!arrToWrite) {
-                            arrToWrite = new DataArray(mMap->Size());
                         }
-                        arrToWrite->Node(keyIdx) = key;
-                        arrToWrite->Node(keyIdx + 1) = mMap->Node(i + 1);
-                        keyIdx += 2;
-                    }
-                }
-            }
-            if (arrToWrite) {
-                // resize arrToWrite to however many properties were actually inserted
-                arrToWrite->Resize(keyIdx);
-                bs << arrToWrite;
-                arrToWrite->Release();
-            } else
-                bs << arrToWrite;
-            return;
-        }
-    }
-    std::list<Symbol> listb0;
-    std::list<Hmx::Object *> lista8;
-    for (int i = 0; i < mMap->Size(); i += 2) {
-        Symbol key = mMap->Sym(i);
-        DataNode &n = mMap->Node(i + 1);
-        if (n.Type() == kDataObject) {
-            Hmx::Object *obj = n.GetObj();
-            if (obj) {
-                ObjectDir *objDir = obj->Dir();
-                if (objDir) {
-                    if (objDir->ClassName() == "EditorDir") {
-                        listb0.push_back(key);
-                        lista8.push_back(obj);
-                        mMap->Remove(i);
-                        mMap->Remove(i);
+                    } else {
+                        i += 2;
                     }
                 }
             }
         }
     }
-    bs << mMap;
-    std::list<Hmx::Object *>::const_iterator oit = lista8.begin();
-    for (std::list<Symbol>::const_iterator sit = listb0.begin(); sit != listb0.end();
-         ++sit, ++oit) {
-        mMap->Insert(0, *oit);
-        mMap->Insert(0, *sit);
+
+    if (!mMap || owner->DataDir() != owner
+        || owner == owner->Dir() && !gLoadingProxyFromDisk) {
+        std::list<Symbol> keys;
+        std::list<Hmx::Object *> values;
+        if (mMap) {
+            for (int i = 0; i < mMap->Size();) {
+                Symbol curKey = mMap->Sym(i);
+                DataNode &curVal = mMap->Node(i + 1);
+                if (curVal.Type() == kDataObject) {
+                    Hmx::Object *curValObj = curVal.GetObj();
+                    if (curValObj && curValObj->Dir()
+                        && curValObj->Dir()->ClassName() == "EditorDir") {
+                        keys.push_back(curKey);
+                        values.push_back(curValObj);
+                        mMap->Remove(i);
+                        mMap->Remove(i);
+                        if (mMap->Size() < 1) {
+                            break;
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        i += 2;
+                    }
+                } else {
+                    i += 2;
+                }
+            }
+        }
+        bs << mMap;
+        auto keysIt = keys.begin();
+        auto valsIt = values.begin();
+        for (; keysIt != keys.end(); ++keysIt, ++valsIt) {
+            mMap->Insert(0, *valsIt);
+            mMap->Insert(0, *keysIt);
+        }
+    } else {
+        DataArray *typeDef = owner->TypeDef();
+        DataArray *arrToWrite = nullptr;
+        int keyIdx = 0;
+        std::list<Symbol> classnames;
+        ObjectDir *ownerDir = dynamic_cast<ObjectDir *>(owner);
+        if (ownerDir) {
+            for (ObjDirItr<ObjectDir> it(ownerDir, false); it != nullptr; ++it) {
+                DataArrayPtr props = it->GetExposedProperties();
+                for (int i = 0; i < props->Size(); i++) {
+                    classnames.push_back(props->Array(i)->Sym(0));
+                }
+            }
+        }
+        for (int i = 0; i < mMap->Size(); i += 2) {
+            Symbol curKey = mMap->Sym(i);
+            DataArray *curArr = nullptr;
+            if (typeDef) {
+                curArr = typeDef->FindArray(curKey, false);
+            }
+            bool none = false;
+            bool proxy = false;
+            if (curArr) {
+                GetSaveFlags(curArr, proxy, none);
+            }
+            if (!none && !proxy && !classnames.empty()) {
+                if (std::find(classnames.begin(), classnames.end(), curKey)
+                    != classnames.end()) {
+                    proxy = !gLoadingProxyFromDisk;
+                }
+            }
+            if (!none && proxy != gLoadingProxyFromDisk) {
+                if (!arrToWrite) {
+                    arrToWrite = new DataArray(mMap->Size());
+                }
+                arrToWrite->Node(keyIdx) = curKey;
+                arrToWrite->Node(keyIdx + 1) = mMap->Node(i + 1);
+                keyIdx += 2;
+            }
+        }
+        if (arrToWrite && keyIdx > 0) {
+            arrToWrite->Resize(keyIdx);
+            bs << arrToWrite;
+            arrToWrite->Release();
+        } else {
+            bs << arrToWrite;
+        }
     }
 }

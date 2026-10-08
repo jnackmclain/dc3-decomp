@@ -2,22 +2,63 @@
 #include "macros.h"
 #include "meta_ham/HamPanel.h"
 #include "meta_ham/ProfileMgr.h"
+#include "obj/Data.h"
 #include "obj/Dir.h"
 #include "obj/Object.h"
 #include "os/Debug.h"
 #include "rndobj/Dir.h"
+#include "rndobj/Group.h"
 #include "synth/Stream.h"
 #include "synth/Synth.h"
 #include "ui/UILabel.h"
 #include "ui/UIListLabel.h"
 #include "ui/UIPanel.h"
+#include "ui/PanelDir.h"
 #include "utl/Symbol.h"
+#include <cmath>
 
 #pragma region CalibrationOffsetProvider
 
 CalibrationOffsetProvider::CalibrationOffsetProvider(UIPanel *up) {
     SetName("calibration_offset_provider", ObjectDir::Main());
     unk3c = up;
+}
+
+BEGIN_HANDLERS(CalibrationOffsetProvider)
+    HANDLE_EXPR(get_offset, GetOffset(_msg->Int(2)))
+END_HANDLERS
+
+void CalibrationOffsetProvider::Text(
+    int, int data, UIListLabel *uiListLabel, UILabel *uiLabel
+) const {
+    MILO_ASSERT_RANGE(data, 0, mOffsets.size(), 0xbf);
+    if (uiListLabel->Matches("offset")) {
+        static Symbol cal_offset("cal_offset");
+        uiLabel->SetTokenFmt(cal_offset, mOffsets[data]);
+    } else if (uiListLabel->Matches("label")) {
+        uiLabel->SetTextToken(gNullStr); // why
+        static Symbol cal_default("cal_default");
+        if (mOffsets[data] != 0) {
+            uiLabel->SetTextToken(gNullStr);
+        } else {
+            uiLabel->SetTextToken(cal_default);
+        }
+    } else if (uiListLabel->Matches("check")) {
+        static Symbol chosen_offset("chosen_offset");
+        const DataNode *node = unk3c->Property(chosen_offset, true);
+        int f = node->Float();
+        if (mOffsets[data] == f) {
+            uiLabel->SetIcon('b');
+        } else
+            uiLabel->SetTextToken(gNullStr);
+    }
+}
+
+void CalibrationOffsetProvider::InitData(RndDir *) {
+    mOffsets.clear();
+    for (int i = 0; i <= 250; i += 10) {
+        mOffsets.push_back(i);
+    }
 }
 
 int CalibrationOffsetProvider::GetOffset(int selectedPos) {
@@ -29,44 +70,17 @@ int CalibrationOffsetProvider::GetOffset(int selectedPos) {
     return mOffsets[size];
 }
 
-void CalibrationOffsetProvider::InitData(RndDir *) {
-    mOffsets.clear();
-    for (int i = 0; i <= 250; i += 10) {
-        mOffsets.push_back(i);
-    }
-}
-
-void CalibrationOffsetProvider::Text(
-    int, int data, UIListLabel *uiListLabel, UILabel *uiLabel
-) const {
-    MILO_ASSERT_RANGE(data, 0, mOffsets.size(), 0xbf);
-    if (uiListLabel->Matches("offset")) {
-        static Symbol cal_offset("cal_offset");
-        uiLabel->SetTokenFmt(cal_offset, mOffsets[data]);
-    } else if (uiListLabel->Matches("label")) {
-        static Symbol cal_default("cal_default");
-    } else if (uiListLabel->Matches("check")) {
-        static Symbol chosen_offset("chosen_offset");
-    }
-}
-
-BEGIN_HANDLERS(CalibrationOffsetProvider)
-    HANDLE_ACTION(get_offset, GetOffset(_msg->Int(2)))
-END_HANDLERS
-
-#pragma endregion CalibrationOffsetProvider
+#pragma endregion
 #pragma region CalibrationPanel
 
 CalibrationPanel::CalibrationPanel()
-    : unk3c(this), unk7c(500.0f), mVolume(-6.0f), mStream(), unk88(false) {}
+    : mProvider(this), unk7c(500.0f), mVolume(-6.0f), mStream(), unk88(false) {}
 
-CalibrationPanel::~CalibrationPanel() { unk3c.mOffsets.clear(); }
+CalibrationPanel::~CalibrationPanel() { mProvider.ClearOffsets(); }
 
-void CalibrationPanel::Poll() {
-    UIPanel::Poll();
-    UpdateAnimation();
-    UpdateStream();
-}
+BEGIN_HANDLERS(CalibrationPanel)
+    HANDLE_SUPERCLASS(HamPanel)
+END_HANDLERS
 
 void CalibrationPanel::Enter() {
     UIPanel::Enter();
@@ -79,6 +93,12 @@ void CalibrationPanel::Exit() {
     unk88 = false;
     if (mStream)
         mStream->Stop();
+}
+
+void CalibrationPanel::Poll() {
+    UIPanel::Poll();
+    UpdateAnimation();
+    UpdateStream();
 }
 
 void CalibrationPanel::InitializeContent() {
@@ -122,8 +142,11 @@ void CalibrationPanel::UpdateStream() {
     }
 }
 
-BEGIN_HANDLERS(CalibrationPanel)
-    HANDLE_SUPERCLASS(HamPanel)
-END_HANDLERS
+void CalibrationPanel::UpdateAnimation() {
+    float f3 = fmod(unk7c * 0.5f + GetAudioTimeMs(), unk7c);
+    f3 = LoadedDir()->Find<RndGroup>("tick.grp")->EndFrame() * (f3 / unk7c);
+    float f2 = fmod(f3, LoadedDir()->Find<RndGroup>("tick.grp")->EndFrame());
+    LoadedDir()->Find<RndGroup>("tick.grp")->SetFrame(f2, 1);
+}
 
-#pragma endregion CalibrationPanel
+#pragma endregion

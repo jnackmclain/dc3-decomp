@@ -6,7 +6,7 @@
 
 // size 0x2dc
 struct DancerFrame {
-    short unk0; // 0x0
+    short mMoveIdx; // 0x0
     short mMoveFrameIdx; // 0x2
     DancerSkeleton mSkeleton; // 0x4
 };
@@ -31,6 +31,7 @@ public:
     NEW_OBJ(DancerSequence);
 
     const std::vector<DancerFrame> &GetDancerFrames() const;
+    const DancerSkeleton *CurSkeleton() const;
 
 protected:
     DancerSequence();

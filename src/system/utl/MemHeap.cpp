@@ -1,12 +1,37 @@
 #include "utl/MemHeap.h"
-#include "MemHeap.h"
+#include "utl/MemMgr.h"
 #include "math/Utl.h"
 #include "os/Debug.h"
+#include "os/OSFuncs.h"
+#include "utl/AllocInfo.h"
 #include "utl/MakeString.h"
+#include "utl/MemTracker.h"
 #include "utl/TextStream.h"
+#include "os/CritSec.h"
+#include <cstdio>
 
 namespace {
     int gTimeStamp;
+
+    void
+    PrintAlloc(TextStream &ts, int *iPtr, int i3, int i4, const AllocInfo *allocInfo) {
+        if (i4 > 0) {
+            if (i4 == 1) {
+                ts << MakeString("(%p ALLOC (size %6i)", iPtr, i3);
+            } else {
+                ts << MakeString("(%p ALLOC (size %6i %i)", iPtr, i3, i4);
+            }
+            if (allocInfo) {
+                for (int i = 0; i < 16; i++) {
+                    if (allocInfo->mStackTrace[i] == 0U) {
+                        break;
+                    }
+                    ts << *allocInfo;
+                }
+            }
+            ts << MakeString(")\n");
+        }
+    }
 }
 
 int MemHeap::GetSizeWords(int size) {
@@ -21,8 +46,8 @@ void MemHeap::FreeBlockStats(int &lFrags, int &rFrags, int &freeBytes, int &i4, 
     int ivar5 = 0;
     int ivar3 = 0;
     int ivar6 = -1;
-    for (FreeBlock *it = mFreeBlockChain; it != nullptr; it = it->mNextBlock, i++) {
-        int size = it->mSizeWords * 4;
+    for (FreeBlock *it = mFreeBlockChain; it != nullptr; it = it->NextBlock(), i++) {
+        int size = it->SizeWords() * 4;
         if (ivar5 < size) {
             ivar5 = size;
             ivar6 = i;
@@ -61,11 +86,11 @@ void MemHeap::InsertFreeBlock(
     FreeBlock *iBlock, int size, FreeBlock *iPrevBlock, FreeBlock *iNextBlock, int time
 ) {
     MILO_ASSERT((iBlock != iPrevBlock) && (iBlock != iNextBlock), 0x68);
-    iBlock->mSizeWords = size;
-    iBlock->mNextBlock = iNextBlock;
-    iBlock->mTimeStamp = time;
+    iBlock->SetSizeWords(size);
+    iBlock->SetNextBlock(iNextBlock);
+    iBlock->SetTimestamp(time);
     if (iPrevBlock) {
-        iPrevBlock->mNextBlock = iBlock;
+        iPrevBlock->SetNextBlock(iBlock);
     } else {
         mFreeBlockChain = iBlock;
     }
@@ -85,49 +110,87 @@ void MemHeap::Init(
     mStart = start;
     mName = name;
     mNum = num;
-    int *i7 = (start - 1) + 0x10;
     mIsHandleHeap = handle;
     mStrategy = strat;
-    mStart = i7;
+    mStart = (int *)(((unsigned int)(start - 1) & ~0xF) + 0x10);
     mAllowTemp = allowTemp;
     unk24 = -1;
     mDebugLevel = debugLevel;
-    mSizeWords = size - (i7 - start >> 2);
-    gTimeStamp++;
-    InsertFreeBlock((FreeBlock *)mStart, mSizeWords, nullptr, nullptr, gTimeStamp);
-    if (mDebugLevel > 0) {
+    mSizeWords = size - (mStart - start);
+    InsertFreeBlock((FreeBlock *)mStart, mSizeWords, nullptr, nullptr, gTimeStamp++);
+    if (mDebugLevel >= 1) {
+        FreeBlock *end = mFreeBlockChain + mFreeBlockChain->SizeWords();
+        for (FreeBlock *it = mFreeBlockChain + 1; it < end; ++it) {
+            it->SetSizeWords(0xDEADDEAD);
+        }
     }
 }
 
-// void __thiscall
-// MemHeap::Init(MemHeap *this,char *param_1,int param_2,int *param_3,int param_4,bool
-// param_5,
-//              Strategy param_6,int param_7,bool param_8)
+void MemHeap::FirstFit(int size, int align, FreeBlockInfo &blockinfo) {
+    FreeBlock *prev = nullptr;
+    for (auto block = mFreeBlockChain; block != nullptr; block = block->NextBlock()) {
+        int start = ((int)block >> 2) + 1;
+        int alignment = start + (1 << align) - 1 >> (1 << align);
+        int pad = alignment - start;
+        if ((int)block->SizeWords() >= pad + size) {
+            blockinfo.mSizeWords = block->SizeWords();
+            blockinfo.mPadWords = pad;
+            blockinfo.mBlock = block;
+            blockinfo.mPrevBlock = prev;
+            return;
+        }
+    }
+}
 
-// {
+bool FreeBlock::AttemptMerge(FreeBlock *block, int i2) {
+    if (&this[mSizeWords] == block) {
+        mTimeStamp = Min(block->mTimeStamp, mTimeStamp);
+        mSizeWords += block->mSizeWords;
+        mNextBlock = block->mNextBlock;
+        if (i2 >= 1) {
+            for (int *theBlock = reinterpret_cast<int *>(block);
+                 theBlock < reinterpret_cast<int *>(block + 1);
+                 ++theBlock) {
+                *theBlock = 0xDEADDEAD;
+            }
+        }
+        return true;
+    }
+    return false;
+}
 
-//   piVar7 = (param_3 + -1 & 0xfffffff0) + 0x10;
-//   this->mIsHandleHeap = param_5;
-//   this->mStrategy = param_6;
-//   this->mStart = piVar7;
-//   this->mAllowTemp = in_stack_00000057;
-//   this->field11_0x24 = -1;
-//   this->mDebugLevel = param_7;
-//   this->mSizeWords = param_4 - (piVar7 - param_3 >> 2);
-//   iVar1 = _anon_AD41C9DD::gTimeStamp;
-//   _anon_AD41C9DD::gTimeStamp = _anon_AD41C9DD::gTimeStamp + 1;
-//   InsertFreeBlock(this,this->mStart,this->mSizeWords,0x0,0x0,iVar1);
-//   if (this->mDebugLevel > 0) {
-//     uVar4 = ZEXT48(this->mFreeBlockChain);
-//     uVar5 = (this->mFreeBlockChain->mSizeWords & 0x3fffffff) * 4 + uVar4;
-//     if ((uVar4 + 0xc & 0xffffffff) < (uVar5 & 0xffffffff)) {
-//       lVar3 = uVar4 + 8;
-//       for (lVar6 = (((uVar5 - (uVar4 + 0xc)) + -1 << 0x20) >> 0x22) + 1; lVar6 != 0;
-//           lVar6 = lVar6 + -1) {
-//         lVar3 = lVar3 + 4;
-//         *lVar3 = 0xdeaddead;
-//       }
-//     }
-//   }
-//   return;
-// }
+int *MemHeap::Alloc(int i1, int i2, int &i3) {
+    int *alloc = TryAlloc(i1, i2, i3);
+    if (!alloc) {
+        int lFrags, rFrags, freeBytes, i4, i5;
+        FreeBlockStats(lFrags, rFrags, freeBytes, i4, i5);
+        if (!MainThread()) {
+            gInsideMemFunc = false;
+            gMemLock->Abandon();
+        }
+        if (gMemTracker && !gMemTracker->GetHeapOnly()) {
+            FILE *file = fopen("devkit:\\out_of_mem_alloc_info.csv", "w");
+            if (file) {
+                MemTracker::SpitAllocInfo(file);
+                fclose(file);
+            }
+        }
+
+        char buffer[2048];
+        strcpy(
+            buffer,
+            MakeString(
+                "Allocation failure, heap \"%s\", want %d bytes\n   lFrags=  %8d\n   rFrags=  %8d\n   Biggest Block=%8d\n   Free Bytes=   %8d\n",
+                mName,
+                i1 * 4,
+                lFrags,
+                rFrags,
+                i5,
+                freeBytes
+            )
+        );
+        MemPrintOverview(-3, buffer + strlen(buffer));
+        MILO_FAIL(buffer);
+    }
+    return alloc;
+}

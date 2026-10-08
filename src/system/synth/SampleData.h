@@ -22,6 +22,7 @@ public:
         bs >> sample;
     }
     int Sample() const { return sample; }
+    const String &Name() const { return name; }
 
 private:
     String name; // 0x0
@@ -55,7 +56,10 @@ public:
     void Dealloc();
     int NumChannels() const { return mNumChannels; }
     int GetSampleRate() const { return mSampleRate; }
+    int NumSamples() const { return mNumSamples; }
+    int NumBytes() const { return mSizeBytes; }
     Format GetFormat() const { return mFormat; }
+    const void *GetData() const { return mData; }
     std::vector<SampleMarker> &AccessMarkers() { return mMarkers; }
 
     static void SetAllocator(SampleDataAllocFunc, SampleDataFreeFunc);

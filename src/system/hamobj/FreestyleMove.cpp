@@ -2,37 +2,71 @@
 #include "gesture/BaseSkeleton.h"
 #include "hamobj/DancerSkeleton.h"
 
-FreestyleMove::FreestyleMove() : unk4(0), unk8(0), unk10(0), unk14(0), unk18(0) {}
+FreestyleMove::FreestyleMove()
+    : mDepthFrames(0), mNumFrames(0), unk10(0), unk14(0), mFreestyleMoveFrames(0) {}
 
 FreestyleMove::~FreestyleMove() {
-    delete unk4;
-    delete[] unk18;
+    delete[] mDepthFrames;
+    delete[] mFreestyleMoveFrames;
 }
 
-void FreestyleMove::Clear() { unk8 = 0; }
+void FreestyleMove::Clear() { mNumFrames = 0; }
 
 void FreestyleMove::Free() {
-    unk8 = 0;
-    delete unk4;
-    delete[] unk18;
-    unk4 = nullptr;
-    unk18 = nullptr;
+    mNumFrames = 0;
+    delete[] mDepthFrames;
+    delete[] mFreestyleMoveFrames;
+    mDepthFrames = nullptr;
+    mFreestyleMoveFrames = nullptr;
 }
 
-void FreestyleMove::Init(int i1) {
-    unk8 = 0;
-    if (!unk4) {
-        unk4 = new DepthFrame();
+void FreestyleMove::Init(int frames) {
+    mNumFrames = 0;
+    if (!mDepthFrames) {
+        mDepthFrames = new DepthFrame[frames];
     }
-    if (!unk18) {
-        unk18 = new FreestyleMoveFrame[i1];
+    if (!mFreestyleMoveFrames) {
+        mFreestyleMoveFrames = new FreestyleMoveFrame[frames];
     }
 }
 
 void FreestyleMove::RecordSkeletonFrame(BaseSkeleton *skeleton, int i2, float f3) {
-    DancerSkeleton ds;
-    ds.Init();
+    FreestyleMoveFrame frame;
+    frame.skeleton.Init();
+    frame.unk2d8 = f3;
     if (skeleton && skeleton->IsTracked()) {
-        ds.Set(*skeleton);
+        frame.skeleton.Set(*skeleton);
     }
+    mFreestyleMoveFrames[i2] = frame;
+}
+
+void FreestyleMove::CalcCentering(int i1) {
+    DepthFrame *whichFrame = &mDepthFrames[i1];
+    float f12 = 0;
+    int i10 = 0;
+    int i170[80];
+    memset(i170, 0, sizeof(i170));
+
+    for (int i = 0; i < 80; i++) {
+        for (int j = 0; j < 60; j++) {
+            bool b = whichFrame[i].structs[j].unk0;
+            if (b) {
+                i10++;
+                i170[i]++;
+                f12 += b;
+            }
+        }
+    }
+    unk14 = f12 / (float)i10;
+
+    int i7 = 0;
+    int i9 = 0;
+    for (int i = 0; i < DIM(i170); i++) {
+        i7 += i170[i];
+        i9 += i170[i] * i;
+    }
+    if (i9 != 0) {
+        i9 /= i7;
+    }
+    unk10 = i9 - 40;
 }

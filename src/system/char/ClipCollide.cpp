@@ -1,9 +1,21 @@
 #include "char/ClipCollide.h"
 #include "CharClipSet.h"
 #include "char/CharClip.h"
+#include "char/CharServoBone.h"
+#include "char/CharUtl.h"
+#include "char/Waypoint.h"
+#include "math/Vec.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
+#include "rndobj/Draw.h"
+#include "rndobj/Mat.h"
+#include "rndobj/Mesh.h"
+#include "rndobj/Trans.h"
 #include "utl/Symbol.h"
+
+void clipcollideunusedlmao(Transform &xfm) {
+    xfm.LookAt(Vector3(0, 0, 0), Vector3(1, 1, 1));
+}
 
 ClipCollide::ClipCollide()
     : mReports(), mGraph(0), mChar(this), mCharPath(""), mWaypoint(this),
@@ -13,6 +25,20 @@ ClipCollide::ClipCollide()
 }
 
 ClipCollide::~ClipCollide() { mGraph->Free(this, false); }
+
+BEGIN_HANDLERS(ClipCollide)
+    HANDLE(list_clips, OnListClips)
+    HANDLE(list_waypoints, OnListWaypoints)
+    HANDLE(list_report, OnListReport)
+    HANDLE_ACTION(demonstrate, Demonstrate())
+    HANDLE_ACTION(collide, Collide())
+    HANDLE_ACTION(test_clips, TestClips())
+    HANDLE_ACTION(test_waypoints, TestWaypoints())
+    HANDLE_ACTION(test_chars, TestChars())
+    HANDLE_ACTION(clear_report, ClearReport())
+    HANDLE(venue_name, OnVenueName)
+    HANDLE_SUPERCLASS(Hmx::Object)
+END_HANDLERS
 
 BEGIN_PROPSYNCS(ClipCollide)
     SYNC_PROP_MODIFY(character, mChar, SyncChar())
@@ -37,15 +63,17 @@ BEGIN_SAVES(ClipCollide)
     bs << mPosition;
 END_SAVES
 
+INIT_REVS(1, 0)
+
 BEGIN_LOADS(ClipCollide)
     LOAD_REVS(bs)
     ASSERT_REVS(1, 0)
     LOAD_SUPERCLASS(Hmx::Object)
-    bs >> mChar;
-    bs >> mCharPath;
-    bs >> mWaypoint;
-    bs >> mPosition;
-    mClip = 0;
+    d >> mChar;
+    d >> mCharPath;
+    d >> mWaypoint;
+    d >> mPosition;
+    mClip = nullptr;
 END_LOADS
 
 BEGIN_COPYS(ClipCollide)
@@ -76,12 +104,30 @@ void ClipCollide::SyncChar() {
 }
 
 void ClipCollide::SyncWaypoint() {
-    if (!mChar || !mWaypoint)
-        return;
-    static Symbol front("front");
-    static Symbol back("back");
-    static Symbol left("left");
-    static Symbol right("right");
+    if (mChar && mWaypoint) {
+        static Symbol front("front");
+        static Symbol back("back");
+        static Symbol left("left");
+        static Symbol right("right");
+        mChar->Enter();
+        Waypoint *w = mWaypoint;
+        mChar->Teleport(w);
+        Transform xfm = w->WorldXfm();
+        float r = w->YRadius();
+        if (r <= 0) {
+            r = w->Radius();
+        }
+        if (mPosition == front) {
+            ScaleAddEq(xfm.v, xfm.m.y, r);
+        } else if (mPosition == back) {
+            ScaleAddEq(xfm.v, xfm.m.y, -r);
+        } else if (mPosition == left) {
+            ScaleAddEq(xfm.v, xfm.m.x, w->Radius());
+        } else {
+            ScaleAddEq(xfm.v, xfm.m.x, -w->Radius());
+        }
+        mChar->SetLocalXfm(xfm);
+    }
 }
 
 void ClipCollide::ClearReport() {
@@ -98,7 +144,13 @@ void ClipCollide::SyncMode() {
     }
 }
 
-void ClipCollide::Demonstrate() {}
+void ClipCollide::Demonstrate() {
+    bool valid = mChar && mWaypoint && mClip;
+    if (valid) {
+        SyncWaypoint();
+        mChar->Driver()->Play(mClip, 2, -1.0f, 1e+30f, 0.0f);
+    }
+}
 
 bool ClipCollide::ValidWaypoint(Waypoint *w) {
     static Message vw("valid_waypoint", 0);
@@ -145,26 +197,26 @@ void ClipCollide::TestChars() {
 }
 
 void ClipCollide::TestWaypoints() {
-    if (!mChar)
-        return;
-    for (ObjDirItr<Waypoint> it(Dir(), true); it != 0; ++it) {
-        if (ValidWaypoint(it)) {
-            mWaypoint = it;
-            TestClips();
+    if (mChar) {
+        for (ObjDirItr<Waypoint> it(Dir(), true); it != nullptr; ++it) {
+            if (ValidWaypoint(it)) {
+                mWaypoint = it;
+                TestClips();
+            }
         }
     }
 }
 
 void ClipCollide::TestClips() {
-    if (!mWaypoint || !mChar)
-        return;
-    for (ObjDirItr<CharClip> it(Clips(), true); it != 0; ++it) {
-        if (ValidClip(it)) {
-            const char *directions[4] = { "front", "back", "left", "right" };
-            for (int i = 0; i < 4; i++) {
-                mPosition = directions[i];
-                mClip = it;
-                Collide();
+    if (mWaypoint && mChar) {
+        for (ObjDirItr<CharClip> it(Clips(), true); it != nullptr; ++it) {
+            if (ValidClip(it)) {
+                const char *directions[4] = { "front", "back", "left", "right" };
+                for (int i = 0; i < 4; i++) {
+                    mPosition = Symbol(directions[i]);
+                    mClip = it;
+                    Collide();
+                }
             }
         }
     }
@@ -172,7 +224,65 @@ void ClipCollide::TestClips() {
 
 ObjectDir *ClipCollide::Clips() { return !mChar ? nullptr : mChar->Driver()->ClipDir(); }
 
-void ClipCollide::Collide() { bool b1 = true; }
+void ClipCollide::Collide() {
+    bool valid = mChar && mWaypoint && mClip;
+    if (valid) {
+        mChar->SetShowing(false);
+        RndDrawable *drawDir = dynamic_cast<RndDrawable *>(Dir());
+        const char *bones[3] = { "bone_L-ankle", "bone_R-ankle", "bone_pos_guitar" };
+        RndTransformable *boneTranses[3];
+        for (int i = 0; i < 3; i++) {
+            boneTranses[i] = CharUtlFindBoneTrans(bones[i], mChar);
+        }
+        SyncWaypoint();
+        CharServoBone *servo = mChar->BoneServo();
+        float addVal = 0;
+        for (float beat = mClip->StartBeat(); beat <= mClip->EndBeat(); beat += 1) {
+            mClip->ScaleDown(*servo, 0);
+            mClip->ScaleAdd(*servo, 1, beat, addVal);
+            servo->Poll(); // possibly wrong virtual call?
+            Vector3 vd0[3];
+            for (int i = 0; i < 3; i++) {
+                Vector3 v150 = boneTranses[i]->WorldXfm().v;
+                if (i == 2) {
+                    ScaleAddEq(v150, boneTranses[i]->WorldXfm().m.z, 2.5f);
+                }
+                if (addVal > 0) {
+                    if (mWorldLines && mGraph) {
+                        mGraph->AddLine(vd0[i], v150, Hmx::Color(1, 0, 0), false);
+                    }
+                    Segment segment;
+                    segment.start = vd0[i];
+                    segment.end = v150;
+                    Vector3 v130;
+                    Plane p;
+                    RndDrawable *collided = drawDir->Collide(segment, v130.x, p);
+                    if (collided) {
+                        Interp(segment.start, segment.end, v130.x, v130);
+                        bool donotadd = v130.z < mChar->WorldXfm().v.z + addVal;
+                        if (!donotadd) {
+                            RndMesh *mesh = dynamic_cast<RndMesh *>(collided);
+                            if (mesh) {
+                                RndMat *mat = mesh->Mat();
+                                if (mat) {
+                                    if (!mat->GetDiffuseTex() && mat->Alpha() <= 0) {
+                                        donotadd = true;
+                                    }
+                                }
+                            }
+                        }
+                        if (!donotadd) {
+                            AddReport(v130);
+                        }
+                    }
+                }
+                vd0[i] = v150;
+            }
+            addVal = 1;
+        }
+        mChar->SetShowing(true);
+    }
+}
 
 void ClipCollide::AddReport(Vector3 v) {
     Report report;
@@ -213,15 +323,11 @@ DataNode ClipCollide::OnListReport(DataArray *da) {
     DataArray *arr = new DataArray(mReports.size() + 1);
     arr->Node(0) = "";
     for (int i = 0; i < mReports.size(); i++) {
-        arr->Node(i + 1) = MakeString(
-            "%d %s %s %s",
-            i + 1,
-            mReports[i].clip,
-            mReports[i].waypoint->Name(),
-            mReports[i].name
-        );
+        Report &cur = mReports[i];
+        arr->Node(i + 1) =
+            MakeString("%d %s %s %s", i + 1, cur.clip, cur.waypoint->Name(), cur.name);
     }
-    DataNode ret(arr, kDataArray);
+    DataNode ret = arr;
     arr->Release();
     return ret;
 }
@@ -230,7 +336,7 @@ DataNode ClipCollide::OnListClips(DataArray *da) {
     std::list<CharClip *> cliplist;
     ObjectDir *clipDir = Clips();
     if (clipDir) {
-        for (ObjDirItr<CharClip> it(clipDir, true); it != 0; ++it) {
+        for (ObjDirItr<CharClip> it(clipDir, true); it != nullptr; ++it) {
             if (ValidClip(it))
                 cliplist.push_back(it);
         }
@@ -243,14 +349,14 @@ DataNode ClipCollide::OnListClips(DataArray *da) {
          it++) {
         arr->Node(idx++) = *it;
     }
-    DataNode ret(arr, kDataArray);
+    DataNode ret = arr;
     arr->Release();
     return ret;
 }
 
 DataNode ClipCollide::OnListWaypoints(DataArray *da) {
     std::list<Waypoint *> waylist;
-    for (ObjDirItr<Waypoint> it(Dir(), true); it != 0; ++it) {
+    for (ObjDirItr<Waypoint> it(Dir(), true); it != nullptr; ++it) {
         if (ValidWaypoint(it))
             waylist.push_back(it);
     }
@@ -262,21 +368,7 @@ DataNode ClipCollide::OnListWaypoints(DataArray *da) {
          it++) {
         arr->Node(idx++) = *it;
     }
-    DataNode ret(arr, kDataArray);
+    DataNode ret = arr;
     arr->Release();
     return ret;
 }
-
-BEGIN_HANDLERS(ClipCollide)
-    HANDLE(list_clips, OnListClips)
-    HANDLE(list_waypoints, OnListWaypoints)
-    HANDLE(list_report, OnListReport)
-    HANDLE_ACTION(demonstrate, Demonstrate())
-    HANDLE_ACTION(collide, Collide())
-    HANDLE_ACTION(test_clips, TestClips())
-    HANDLE_ACTION(test_waypoints, TestWaypoints())
-    HANDLE_ACTION(test_chars, TestChars())
-    HANDLE_ACTION(clear_report, ClearReport())
-    HANDLE(venue_name, OnVenueName)
-    HANDLE_SUPERCLASS(Hmx::Object)
-END_HANDLERS

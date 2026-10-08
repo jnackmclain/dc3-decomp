@@ -24,25 +24,25 @@
 float HamMove::sMinFrameDistBeats = 0.2;
 
 BinStream &operator<<(BinStream &bs, const Ham1NodeWeight &wt) {
-    bs << wt.unk4 << wt.unk8 << wt.unkc << wt.unk10 << wt.unk0;
+    bs << wt.mPerfectDist << wt.mRate << wt.mAnglePerfectDist << wt.mAngleRate << wt.mHasError;
     return bs;
 }
 
 BinStream &operator>>(BinStreamRev &d, Ham1NodeWeight &wt) {
-    d >> wt.unk4;
-    d >> wt.unk8;
-    d >> wt.unkc;
-    d >> wt.unk10;
+    d >> wt.mPerfectDist;
+    d >> wt.mRate;
+    d >> wt.mAnglePerfectDist;
+    d >> wt.mAngleRate;
     if (d.rev > 39) {
-        d >> wt.unk0;
+        d >> wt.mHasError;
     } else if (d.rev > 32) {
         float f1;
         d >> f1;
-        wt.unk0 = f1 != 0;
+        wt.mHasError = f1 != 0;
     } else if (d.rev > 24) {
-        d >> wt.unk0;
+        d >> wt.mHasError;
     } else
-        wt.unk0 = 1;
+        wt.mHasError = 1;
     return d.stream;
 }
 
@@ -118,8 +118,8 @@ BinStream &operator>>(BinStreamRev &d, Ham2FrameWeight &wt) {
 
 void MoveFrame::Save(BinStream &bs) const {
     bs << mBeat;
-    bs << unk4;
-    bs << 16;
+    bs << mFlags;
+    bs << kNumHam1Nodes;
     for (int i = 0; i < kNumMoveModes; i++) {
         for (int j = 0; j < kNumMoveMirrored; j++) {
             for (int k = 0; k < kNumHam1Nodes; k++) {
@@ -146,9 +146,10 @@ void MoveFrame::Load(BinStreamRev &d) {
         MILO_FAIL("Versions less than 14 no longer supported");
     }
     if (d.rev > 0x2B) {
-        d >> unk4;
-    } else
-        unk4 = -1;
+        d >> mFlags;
+    } else {
+        mFlags = -1;
+    }
     int num_ham2_nodes = FilterVersion::NumHam2Nodes();
     int num_ham1_nodes = kNumHam1Nodes;
     if (d.rev > 0x27) {
@@ -156,7 +157,7 @@ void MoveFrame::Load(BinStreamRev &d) {
         MILO_ASSERT(num_ham1_nodes == kNumHam1Nodes, 0x122);
         for (int i = 0; i < kNumMoveModes; i++) {
             for (int j = 0; j < kNumMoveMirrored; j++) {
-                for (int k = 0; k < kNumHam1Nodes; k++) {
+                for (int k = 0; k < num_ham1_nodes; k++) {
                     d >> mHam1NodeWeights[i][j][k];
                 }
             }
@@ -166,7 +167,7 @@ void MoveFrame::Load(BinStreamRev &d) {
         }
         int count;
         d >> count;
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < kNumMoveMirrored; i++) {
             for (int j = 0; j < count; j++) {
                 if (j >= num_ham2_nodes) {
                     if (d.rev < 0x29) {
@@ -195,18 +196,21 @@ void MoveFrame::Load(BinStreamRev &d) {
                     }
                     for (int k = 0; k < 3; k++) {
                         float &cur = mNodeScales[i][j][k];
-                        float set = kHugeFloat;
-                        if (0.0000099999997f <= fabsf(cur)) {
+                        float set;
+                        if (0.00001f > fabsf(cur)) {
+                            set = kHugeFloat;
+                        } else {
                             set = 1.0f / cur;
                         }
-                        mNodeScales[i][j][k] = set;
+                        mNodesInverseScale[i][j][k] = set;
                     }
                 }
             }
         }
-        for (; count < num_ham2_nodes; count++) {
+        for (int i = count; i < num_ham2_nodes; i++) {
             for (int mirror = 0; mirror < kNumMoveMirrored; mirror++) {
-                SetNodeScale(count, (MoveMirrored)mirror, Vector3(1, 1, 1));
+                mNodeWeights[mirror][i].Zero();
+                SetNodeScale(i, (MoveMirrored)mirror, Vector3(1, 1, 1));
             }
         }
     } else {
@@ -229,28 +233,70 @@ void MoveFrame::Load(BinStreamRev &d) {
                 d >> v;
             }
         }
-        std::vector<OldNodeWeight> oldNodeWeights[8];
+        std::vector<OldNodeWeight> oldNodeWeights[2][kNumMoveModes][kNumMoveMirrored];
         if (d.rev < 0x1E) {
             if (d.rev > 0x17) {
-                for (int i = 0; i < 2; i++) {
-                    d >> oldNodeWeights[i];
+                for (int i = 0; i < kNumMoveMirrored; i++) {
+                    d >> oldNodeWeights[0][0][i];
                 }
             }
             if (d.rev > 0x1B) {
-                for (int i = 2; i < 4; i++) {
-                    d >> oldNodeWeights[i];
+                for (int i = 0; i < kNumMoveMirrored; i++) {
+                    d >> oldNodeWeights[0][1][i];
                 }
             }
         } else {
-            for (int i = 0; i < 4; i++) {
-                for (int j = 0; j < 2; j++) {
-                    for (int k = 0; k < 2; k++) {
-                        d >> oldNodeWeights[i + k];
+            for (int i = 0; i < 2; i++) {
+                for (int j = 0; j < kNumMoveModes; j++) {
+                    for (int k = 0; k < kNumMoveMirrored; k++) {
+                        d >> oldNodeWeights[i][j][k];
                     }
                 }
             }
         }
-        // more...
+        for (int i = 0; i < kNumMoveModes; i++) {
+            for (int j = 0; j < kNumMoveMirrored; j++) {
+                for (int k = 0; k < kNumHam1Nodes; k++) {
+                    std::vector<OldNodeWeight> &curOldWeights = oldNodeWeights[0][i][j];
+                    if (k < curOldWeights.size()) {
+                        OldNodeWeight &cur = curOldWeights[k];
+                        Ham1NodeWeight &curHam1 = mHam1NodeWeights[i][j][k];
+                        curHam1.mHasError = cur.unk0 != 0;
+                        curHam1.mAnglePerfectDist = cur.unkc;
+                        curHam1.mAngleRate = cur.unk10;
+                        curHam1.mPerfectDist = cur.unk4;
+                        curHam1.mRate = cur.unk8;
+                    }
+                }
+            }
+        }
+        for (int i = 0; i < kNumMoveMirrored; i++) {
+            std::vector<OldNodeWeight> &curOldWeights = oldNodeWeights[1][0][i];
+            for (int j = 0; j < num_ham2_nodes; j++) {
+                if (j + kNumHam1Nodes < curOldWeights.size()) {
+                    float set = curOldWeights[j + kNumHam1Nodes].unk0;
+                    mNodeWeights[i][j].Set(set, set, set);
+                }
+            }
+        }
+
+        if (d.rev < 0x1E) {
+            if (d.rev > 0x1C) {
+                for (int i = 0; i < kNumMoveMirrored; i++) {
+                    d >> mFrameWeights[i];
+                }
+            }
+        } else {
+            Ham2FrameWeight ham2Weights[2][kNumMoveMirrored];
+            for (int i = 0; i < 2; i++) {
+                for (int j = 0; j < kNumMoveMirrored; j++) {
+                    d >> ham2Weights[i][j];
+                }
+            }
+            for (int i = 0; i < kNumMoveMirrored; i++) {
+                mFrameWeights[i] = ham2Weights[1][i];
+            }
+        }
     }
 }
 
@@ -303,8 +349,8 @@ HamMove::HamMove()
     : mMirror(this), mTex(this), mSmallTex(this), mTexState(kTexNormal), mScored(true),
       mParadiddle(false), mFinalPose(false), mSuppressGuide(false),
       mSuppressPracticeOptions(false), mOmitMinigame(false), mDisplayName(nullptr),
-      mDifficulty(kDifficultyExpert), mShoulderDisplacements(false), unkd0(0),
-      mDancerSeq(this) {
+      mDifficulty(kDifficultyExpert), mShoulderDisplacements(false),
+      mUpdateOverride(false), mDancerSeq(this) {
     SetRate(k480_fpb);
     Symbol lang = SystemLanguage(); // unused lol
     DataArray *supportedLangs = SupportedLanguages(false);
@@ -375,7 +421,7 @@ BEGIN_PROPSYNCS(HamMove)
     SYNC_PROP(awesome_override, mOverrides[kMoveRatingAwesome])
     SYNC_PROP(ok_override, mOverrides[kMoveRatingOk])
     SYNC_PROP(shoulder_displacements, mShoulderDisplacements)
-    SYNC_PROP(confusability_id, mConfusabilityID.mCRC)
+    SYNC_PROP(confusability_id, (int &)mConfusabilityID)
     SYNC_PROP_SET(confusability_count, (int)mConfusabilities.size(), )
     SYNC_SUPERCLASS(RndPropAnim)
 END_PROPSYNCS
@@ -473,13 +519,15 @@ BEGIN_COPYS(HamMove)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(50, 0)
+
 BEGIN_LOADS(HamMove)
     LOAD_REVS(bs)
     ASSERT_REVS(50, 0)
     if (d.rev > 3) {
-        RndPropAnim::Load(bs);
+        LOAD_SUPERCLASS(RndPropAnim)
     } else {
-        Hmx::Object::Load(bs);
+        LOAD_SUPERCLASS(Hmx::Object)
     }
     if (d.rev > 7) {
         d >> mMirror;
@@ -513,14 +561,15 @@ BEGIN_LOADS(HamMove)
         }
     }
     if (d.rev > 4) {
-        LocalizedName name;
+        Symbol language;
+        String name;
         int count;
         d >> count;
         for (int i = 0; i < count; i++) {
-            d >> name.mLanguage;
-            d >> name.mName;
-            if (!unkd0) {
-                SetName(name.mLanguage, name.mName.c_str());
+            d >> language;
+            d >> name;
+            if (!mUpdateOverride) {
+                SetName(language, name.c_str());
             }
         }
     }
@@ -566,7 +615,7 @@ BEGIN_LOADS(HamMove)
     if (d.rev > 0x21) {
         bool omit;
         d >> omit;
-        if (!unkd0) {
+        if (!mUpdateOverride) {
             mOmitMinigame = omit;
         }
     }
@@ -584,20 +633,22 @@ BEGIN_LOADS(HamMove)
     if (d.rev > 0x23) {
         for (int i = 0; i < kNumMoveRatings; i++) {
             d >> mThresholds[i];
-            d >> mOverrides[i];
+            if (d.rev > 0x2C) {
+                d >> mOverrides[i];
+            }
         }
     }
     if (d.rev > 0x2A) {
         std::map<Hmx::CRC, float> confusabilities;
         d >> confusabilities;
-        if (!unkd0) {
+        if (!mUpdateOverride) {
             mConfusabilities = confusabilities;
         }
     }
     if (d.rev > 0x2E) {
         int diff;
         d >> diff;
-        if (!unkd0) {
+        if (!mUpdateOverride) {
             mDifficulty = (Difficulty)diff;
         }
     }
@@ -607,11 +658,11 @@ BEGIN_LOADS(HamMove)
     if (d.rev > 0x30) {
         Hmx::CRC id;
         d >> id;
-        if (!unkd0) {
+        if (!mUpdateOverride) {
             mConfusabilityID = id;
         }
     }
-    unkd0 = false;
+    mUpdateOverride = false;
 END_LOADS
 
 void HamMove::SetFrame(float frame, float blend) {
@@ -704,7 +755,7 @@ void HamMove::Update(const HamMove *other) {
     mConfusabilities = other->mConfusabilities;
     mConfusabilityID = other->mConfusabilityID;
     mDifficulty = other->mDifficulty;
-    unkd0 = true;
+    mUpdateOverride = true;
 }
 
 void HamMove::SyncMirror() {
@@ -774,9 +825,10 @@ float HamMove::ConfusabilityWithMoveDataArray(const DataArray *a) {
             i3++;
             float f5 = Confusability(move);
             if (f5 > f6) {
-                f6 = 0.5f;
                 if (f5 < 0.5f) {
                     f6 = f5;
+                } else {
+                    f6 = 0.5f;
                 }
             }
         }
@@ -796,5 +848,52 @@ float HamMove::AdjustNormalizedPercentToConfusability(float f1, float f2) {
         return (0.5f / fvar1) * f1;
     } else {
         return ((f1 - fvar1) / (perfectFrac - fvar1) + 1.0f) / 2.0f;
+    }
+}
+
+const std::vector<float> *HamMove::RatingOverride() const {
+    if (mRatingStates.front() > 0) {
+        return &mRatingStates;
+    } else {
+        return nullptr;
+    }
+}
+
+float HamMove::PSNRToDetectFrac(float psnr) const {
+    int idx = 0;
+    for (; idx < 4; idx++) {
+        if (psnr > PSNRThreshold((MoveRating)idx)) {
+            break;
+        }
+    }
+    if (idx == 0) {
+        return 1;
+    } else {
+        int r = idx - 1;
+        float f4 = PSNRThreshold((MoveRating)r);
+        float f5;
+        if (idx == 4) {
+            f5 = 0;
+        } else {
+            f5 = PSNRThreshold((MoveRating)idx);
+        }
+        if (f4 <= f5) {
+            MILO_FAIL("upper psnr threshold (%f) not greater than lower (%f)", f4, f5);
+        }
+        f5 = (psnr - f5) / (f4 - f5);
+        f5 = Clamp(0.0f, 1.0f, f5);
+        float f2;
+        if (r == 0) {
+            f2 = 1;
+        } else {
+            f2 = sDefaultRatingThresholds[r - 1];
+        }
+        float f6;
+        if (idx == 4) {
+            f6 = 0;
+        } else {
+            f6 = sDefaultRatingThresholds[idx - 1];
+        }
+        return (f2 - f6) * f5 + f6;
     }
 }

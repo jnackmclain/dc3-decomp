@@ -12,6 +12,7 @@
 #include "hamobj/HamVisDir.h"
 #include "hamobj/MoveDir.h"
 #include "hamobj/MoveGraph.h"
+#include "math/Vec.h"
 #include "obj/Data.h"
 #include "obj/Dir.h"
 #include "obj/Object.h"
@@ -23,9 +24,12 @@
 #include "rndobj/PropKeys.h"
 #include "rndobj/Tex.h"
 #include "rndobj/TexRenderer.h"
+#include "rndobj/Trans.h"
+#include "stl/_vector.h"
 #include "utl/MemMgr.h"
 #include "utl/Song.h"
 #include "utl/Symbol.h"
+#include "utl/TempoMap.h"
 #include "world/CameraManager.h"
 #include "world/Dir.h"
 
@@ -131,6 +135,7 @@ public:
     void CleanOriginalMoveData();
     float BeatFromTag(Symbol);
     void UnloadMergers();
+    void RemapSongAnimToTempoMap(TempoMap *);
 
     void DrawIconMan(Symbol, Symbol, Symbol, float, float, RndTex *);
     void DrawIconMan(Difficulty, float, float, float, float, RndTex *);
@@ -142,6 +147,15 @@ public:
     ObjectDir *MergerDir() const { return mMerger ? mMerger->Dir() : nullptr; }
     HamCamShot *CurShot() const { return mCurShot; }
     FileMerger *GetGameModeMerger() const { return mGameModeMerger; }
+    void SetPickingDisabled(bool disable) { mDisablePicking = disable; }
+    bool Unk33d() const { return unk33d; }
+    void SetUnk2AC(bool b) { unk2ac = b; }
+    PoseFatalities *GetPoseFatalities() const { return mPoseFatalities; }
+    RndPostProc *GetUnk18c() const { return unk18c; }
+    int StartLoopMargin() const { return mStartLoopMargin; }
+    int EndLoopMargin() const { return mEndLoopMargin; }
+    Symbol PracticeStart() const { return mPracticeStart; }
+    Symbol PracticeEnd() const { return mPracticeEnd; }
 
     DataNode OnGetDancerVisemes(DataArray *);
 
@@ -192,6 +206,8 @@ protected:
     ObjectDir *GetDifficultyProxy(Difficulty);
     CharClip *
     GetClipStartAndEndBeats(Symbol, float &, float &, std::pair<float, float> *);
+    void ChangeNextShotIfCharacterCollisionLikely();
+    bool AreCharactersColliding();
 
     DataNode OnShotOver(DataArray *);
     DataNode OnPostProcInterp(DataArray *);
@@ -265,11 +281,12 @@ protected:
     /** 0-1 = players 0-1, 2-3 = backups 0-1 */
     bool mCharsShowing[4]; // 0x255
     bool mDisabled; // 0x259
-    bool unk25a;
+    /** Whether or not to load asynchronously. */
+    bool mAsync; // 0x25a
     /** "currently shown camshot, nice for debugging." */
     ObjPtr<HamCamShot> mCurShot; // 0x25c
     ObjPtr<HamCamShot> mNextShot; // 0x270
-    ObjPtr<HamCamShot> unk284; // 0x284
+    ObjPtr<HamCamShot> mIntroShot; // 0x284
     /** "HamCamShot category" */
     Symbol mShot; // 0x298
     float unk29c; // 0x29c
@@ -297,19 +314,22 @@ protected:
     int mBlendDebug; // 0x2e8
     int unk2ec; // 0x2ec
     Symbol unk2f0; // 0x2f0
-    Symbol unk2f4[2]; // 0x2f4
-    Symbol unk2fc[2]; // 0x2fc
+    /** Each player's current character/outfit (i.e. aubrey02). */
+    Symbol mCharOutfits[2]; // 0x2f4
+    /** Each player's current crew. */
+    Symbol mCrews[2]; // 0x2fc
     HamBackupDancers mBackupDancers; // 0x304
     ObjPtr<ObjectDir> mClipDir; // 0x308
     ObjPtr<ObjectDir> mMoveDir; // 0x31c
-    Symbol unk330; // 0x330
+    /** How fast the crowd should move. Options are "slow", "medium", "fast". */
+    Symbol mTempo; // 0x330
     /** "If true, does not play transitions" */
     bool mNoTransitions; // 0x334
     /** "If true, check character collisions when picking cam shots" */
     bool mCollisionChecks; // 0x335
     bool mLoadedNewSong; // 0x336
     PoseFatalities *mPoseFatalities; // 0x338
-    bool unk33c; // 0x33c
+    bool unk33c; // 0x33c - camshot flag
     bool unk33d; // 0x33d
     ObjPtr<Character> mIconManChar; // 0x340
     ObjPtr<RndTexRenderer> mIconManTex; // 0x354
@@ -326,3 +346,10 @@ public:
     AnimPtr() : ObjPtr<RndPropAnim>(TheHamDirector) {}
     AnimPtr(RndPropAnim *anim) : ObjPtr<RndPropAnim>(TheHamDirector, anim) {}
 };
+
+bool AreDancersColliding1D(
+    std::vector<RndTransformable *> &,
+    std::vector<RndTransformable *> &,
+    const Vector3 &,
+    const Vector3 &
+);

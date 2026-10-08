@@ -1,4 +1,5 @@
 #include "meta_ham/ContextChecker.h"
+#include "game/Game.h"
 #include "game/GameMode.h"
 #include "hamobj/Difficulty.h"
 #include "hamobj/HamGameData.h"
@@ -51,7 +52,8 @@ namespace {
     bool CheckContextModeProperty(const DataArray *arr) {
         MILO_ASSERT(arr->Size() == 3, 0x5B);
         DataNode &other = arr->Node(2);
-        return TheGameMode->Property(arr->Sym(1))->Equal(other, nullptr, true);
+        const DataNode *node = TheGameMode->Property(arr->Sym(1));
+        return node->Equal(other, nullptr, true);
     }
 
     bool CheckContextMode(const DataArray *a) {
@@ -115,10 +117,29 @@ namespace {
         return false;
     }
 
-    // these all require TheGame
-    bool CheckContextNumRestarts(const DataArray *arr);
-    bool CheckContextNumRestartsGreater(const DataArray *);
-    bool CheckContextNumRestartsNot(const DataArray *);
+    bool CheckContextNumRestarts(const DataArray *arr) {
+        if (TheGame) {
+            int numRestarts = TheGame->GetNumRestarts();
+            MILO_ASSERT(arr->Size() >= 2, 0x98);
+            return numRestarts - arr->Int(1) == 0;
+        }
+    }
+
+    bool CheckContextNumRestartsGreater(const DataArray *arr) {
+        if (TheGame) {
+            int numRestarts = TheGame->GetNumRestarts();
+            MILO_ASSERT(arr->Size() >= 2, 0xa9);
+            return arr->Int(1) < numRestarts;
+        }
+    }
+
+    bool CheckContextNumRestartsNot(const DataArray *arr) {
+        if (TheGame) {
+            int numRestarts = TheGame->GetNumRestarts();
+            MILO_ASSERT(arr->Size() >= 2, 0xba);
+            return numRestarts != arr->Int(1);
+        }
+    }
 
     bool CheckContextNumPlayers(const DataArray *arr) {
         int numPlaying = 0;
@@ -126,7 +147,9 @@ namespace {
         MILO_ASSERT(player1, 0xCB);
         HamPlayerData *player2 = TheGameData->Player(1);
         MILO_ASSERT(player2, 0xCD);
-        numPlaying += (int)player1->IsPlaying();
+        if (player1->IsPlaying()) {
+            numPlaying++;
+        }
         if (player2->IsPlaying()) {
             numPlaying++;
         }
@@ -163,7 +186,7 @@ namespace {
     }
 
     bool CheckContextVoicePracticeEnabled(const DataArray *arr) {
-        MILO_ASSERT(arr->Size() >= 2, 0x103);
+        MILO_ASSERT(arr->Size() >= 2, 0x10f);
         bool myBool = arr->Int(1);
         bool enabled = !TheProfileMgr.GetDisableVoicePractice();
         return myBool == enabled;
@@ -253,7 +276,7 @@ void HandleContextUsed(Symbol ctx) { gUsedContexts.insert(ctx); }
 
 __declspec(noinline) int CheckContext(const DataArray *a) {
     gContextWeight = 10;
-    return gContextWeight & CheckContextAnd(a);
+    return CheckContextAnd(a) ? gContextWeight : 0;
 }
 
 bool IsSongSpecificEntry(const DataArray *a) {
@@ -392,3 +415,7 @@ void ContextCheckerInit() {
     DataRegisterFunc("random_context_count", OnRandomContextCount);
     gContextRand.Seed(RandomInt());
 }
+
+// Only here to match in the TU
+template const char *
+MakeString<Symbol, Symbol, int>(const char *, const Symbol &, const Symbol &, const int &);

@@ -2,7 +2,9 @@
 #include "AllocInfo.h"
 #include "MemMgr.h"
 #include "MemTrack.h"
-#include "Memory.h"
+#include "hamobj/HamGameData.h"
+#include "hamobj/HamPlayerData.h"
+#include "os/Memory.h"
 #include "obj/Data.h"
 #include "obj/DataFunc.h"
 #include "os/Debug.h"
@@ -28,15 +30,89 @@ int HashKey(void *ptr, int size) {
     return (uint(ptr) / 8) % size;
 }
 
-void DiffTblReport(const char *, BlockStatTable &, BlockStatTable &, TextStream &);
+void DiffTblReport(
+    const char *caption, BlockStatTable &tbl0, BlockStatTable &tbl1, TextStream &stream
+) {
+    tbl0.SortByName();
+    tbl1.SortByName();
+    int idx0 = 0;
+    int idx1 = 0;
+    int stats0 = tbl0.GetNumStats();
+    int stats1 = tbl1.GetNumStats();
+    std::vector<MemDiffEntry> entries;
+    entries.reserve(stats0 + stats1);
+    while (idx0 < stats0 && idx1 < stats1) {
+        BlockStat &st0 = tbl0.GetBlockStat(idx0);
+        BlockStat &st1 = tbl1.GetBlockStat(idx1);
+        int name_cmp = strcmp(st0.mName, st1.mName);
+        int alloc0, alloc1;
+        int req0, req1;
+        int heap;
+        const char *name = st1.mName;
+        if (name_cmp < 0) {
+            alloc0 = st0.mNumAllocs;
+            alloc1 = 0;
+            req0 = st0.mSizeReq;
+            req1 = 0;
+            name = st0.mName;
+            heap = st0.mHeap;
+            idx0++;
+        } else if (name_cmp > 0) {
+            alloc0 = 0;
+            alloc1 = st1.mNumAllocs;
+            req0 = 0;
+            req1 = st1.mSizeReq;
+            heap = st1.mHeap;
+            idx1++;
+        } else {
+            alloc0 = st0.mNumAllocs;
+            alloc1 = st1.mNumAllocs;
+            req0 = st0.mSizeReq;
+            req1 = st1.mSizeReq;
+            heap = st1.mHeap;
+            idx0++;
+            idx1++;
+        }
+        int alloc_diff = alloc0 - alloc1;
+        int bytes_diff = req0 - req1;
+        if (alloc_diff != 0 || bytes_diff != 0) {
+            MemDiffEntry entry;
+            strncpy(entry.name, name, sizeof(entry.name) - 1);
+            entry.name[sizeof(entry.name) - 1] = '\0';
+            entry.alloc_diff = alloc_diff;
+            entry.bytes_diff = bytes_diff;
+            entry.heap = heap;
+            entries.push_back(entry);
+        }
+    }
+    int totalBytes = 0;
+    int totalAlloc = 0;
+    std::sort(entries.begin(), entries.end());
+    stream << MakeString("%-62s %8s %8s\n", caption, "Num", "Bytes");
+    int lastHeap = -2;
+    FOREACH (it, entries) {
+        MemDiffEntry &cur = *it;
+        if (cur.heap != lastHeap) {
+            stream << MakeString(" HEAP %d ------------------\n", cur.heap);
+            lastHeap = cur.heap;
+        }
+        totalBytes += cur.bytes_diff;
+        totalAlloc += cur.alloc_diff;
+        stream
+            << MakeString("  %-60s %8d %8d\n", cur.name, cur.alloc_diff, cur.bytes_diff);
+    }
+    stream << MakeString(" %-61s %8d %8d\n\n", "TOTAL ------", totalAlloc, totalBytes);
+}
 
-MemTracker::MemTracker(int x, int y)
+MemTracker::MemTracker(int heap, int numAllocs)
     : mHashMem(nullptr), mHashTable(nullptr), mTimeSlice(0), mCurStatTable(0),
-      mFreedInfos(y), mLog(0), mReport(0), mHeap(x) {
-    mHashMem = DebugHeapAlloc(y * 8);
+      mFreedInfos(DebugHeapAlloc(numAllocs * 4), numAllocs), mLog(0), mReport(0),
+      mHeap(heap) {
+    int hashSize = heap * 2;
+    mHashMem = (AllocInfo **)DebugHeapAlloc(numAllocs * 8);
     MILO_ASSERT(mHashMem, 0x4E);
     mHashTable = new KeylessHash<void *, AllocInfo *>(
-        x * 2, (AllocInfo *)0, (AllocInfo *)-1, (AllocInfo **)mHashMem
+        hashSize, (AllocInfo *)0, (AllocInfo *)-1, mHashMem
     );
     mFreeSysMem = _GetFreeSystemMemory();
     mFreePhysMem = _GetFreePhysicalMemory();
@@ -74,9 +150,7 @@ void MemTracker::Alloc(
     }
     gMemTrackerTracking = false;
     AllocInfo::bPrintCsv = true;
-    if (!unk18195) {
-        String str1;
-        String str2;
+    if (!mHeapOnly) {
         AllocInfo *info = new AllocInfo(
             requestedSize,
             actualSize,
@@ -87,8 +161,8 @@ void MemTracker::Alloc(
             strat,
             file,
             line,
-            str1,
-            str2
+            mTopLevelFileName,
+            mTopLevelObjectName
         );
         mHashTable->Insert(info);
         if (pooled || gMemLogType != gNullStr || gMemLogType == type) {
@@ -100,7 +174,8 @@ void MemTracker::Alloc(
                     TheDebug << "::Alloc::" << info->mType << " Allocated "
                              << info->mActSize << " Requested " << info->mReqSize
                              << " Address " << info->mMem << " Heap " << info->mHeap
-                             << str1.c_str() << ":" << str2.c_str() << "\n";
+                             << mTopLevelFileName.c_str() << ":"
+                             << mTopLevelObjectName.c_str() << "\n";
                 }
             }
         } else {
@@ -191,7 +266,7 @@ void MemTracker::StartLog(TextStream &ts) {
         StopLog();
     }
     MILO_ASSERT(!mLog, 0x113);
-    *mLog = ts;
+    mLog = &ts;
     *mLog << "(elf " << TheSystemArgs.front() << ")\n";
     *mLog << "(data\n";
 }
@@ -256,16 +331,16 @@ void MemTracker::HeapReport(TextStream &ts) {
 }
 
 void MemTracker::UpdateStats() {
-    mPoolTable[mCurStatTable].Clear();
-    mMemTable[mCurStatTable].Clear();
+    mPoolTypeStats[mCurStatTable].Clear();
+    mHeapTypeStats[mCurStatTable].Clear();
     for (auto it = mHashTable->Begin(); it != nullptr; it = mHashTable->Next(it)) {
         AllocInfo *info = *it;
         if (info->mPooled) {
-            mPoolTable[mCurStatTable].Update(
+            mPoolTypeStats[mCurStatTable].Update(
                 info->mType, info->mHeap, info->mReqSize, info->mActSize
             );
         } else {
-            mMemTable[mCurStatTable].Update(
+            mHeapTypeStats[mCurStatTable].Update(
                 info->mType, info->mHeap, info->mReqSize, info->mActSize
             );
         }
@@ -287,22 +362,223 @@ void MemTracker::DiffDump(TextStream &ts) {
         ts << "(data\n";
         int count = 0;
         for (auto it = mHashTable->Begin(); it != nullptr; it = mHashTable->Next(it)) {
-            AllocInfo *info = *it;
-            if (mTimeSlice == info->mTimeSlice) {
+            if (mTimeSlice == (*it)->mTimeSlice) {
                 count++;
             }
         }
-        AllocInfoVec vec(count);
-        for (auto it = mHashTable->Begin(); it != nullptr; it = mHashTable->Next(it)) {
-            AllocInfo *info = *it;
-            if (mTimeSlice == info->mTimeSlice) {
-                vec.push_back(info);
+        {
+            AllocInfoVec vec(DebugHeapAlloc(count * 4), count * 4);
+            for (auto it = mHashTable->Begin(); it != nullptr;
+                 it = mHashTable->Next(it)) {
+                if (mTimeSlice == (*it)->mTimeSlice) {
+                    vec.push_back(*it);
+                }
+            }
+            std::sort(vec.begin(), vec.end(), StackLess);
+            std::sort(mFreedInfos.begin(), mFreedInfos.end(), StackLess);
+            auto vecIt = vec.begin();
+            auto freedIt = mFreedInfos.begin();
+            while (vecIt != vec.end() || freedIt != mFreedInfos.end()) {
+                int cmp;
+                if (vecIt == vec.end()) {
+                    cmp = 1;
+                } else if (freedIt == mFreedInfos.end()) {
+                    cmp = -1;
+                } else {
+                    cmp = (*vecIt)->StackCompare(*(*freedIt));
+                }
+                if (cmp < 0) {
+                    ColatedPrint(ts, *vecIt++, "alloc");
+                } else if (cmp > 0) {
+                    ColatedPrint(ts, *freedIt++, "free");
+                } else {
+                    ++vecIt;
+                    ++freedIt;
+                }
             }
         }
-        std::sort(vec.begin(), vec.end(), StackLess);
-        std::sort(mFreedInfos.begin(), mFreedInfos.end(), StackLess);
-        // iterate across both AllocInfoVecs here
+        ts << ")\n";
     }
     mFreedInfos.delete_and_clear();
     mTimeSlice++;
+}
+
+void MemTracker::Report(int minSize, TextStream &stream) {
+    HeapReport(stream);
+    UpdateStats();
+    mHeapTypeStats[mCurStatTable].SortBySize();
+    int curNumStats = mHeapTypeStats[mCurStatTable].GetNumStats();
+    stream << MakeString(
+        "\n  %-30s %2s %5s %10s %10s\n", "TYPE", "Hp", "Num", "SzRequest", "SzActual"
+    );
+    for (int i = 0; i < curNumStats; i++) {
+        BlockStat &curStat = mHeapTypeStats[mCurStatTable].GetBlockStat(i);
+        if (curStat.mSizeAct >= minSize) {
+            stream << MakeString(
+                "  %-30s %2d %5d %10d %10d\n",
+                curStat.mName,
+                curStat.mHeap,
+                curStat.mNumAllocs,
+                curStat.mSizeReq,
+                curStat.mSizeAct
+            );
+        }
+    }
+    mPoolTypeStats[mCurStatTable].SortBySize();
+    curNumStats = mPoolTypeStats[mCurStatTable].GetNumStats();
+    stream << MakeString(
+        "\n  %-30s %5s %10s %10s\n", "POOL TYPE", "Num", "SzRequest", "SzActual"
+    );
+    for (int i = 0; i < curNumStats; i++) {
+        BlockStat &curStat = mPoolTypeStats[mCurStatTable].GetBlockStat(i);
+        if (curStat.mSizeAct >= minSize) {
+            stream << MakeString(
+                "  %-30s %5d %10d %10d\n",
+                curStat.mName,
+                curStat.mNumAllocs,
+                curStat.mSizeReq,
+                curStat.mSizeAct
+            );
+        }
+    }
+    stream << "Diff from last report:\n";
+    DiffTblReport(
+        "MALLOC DIFF TYPES",
+        mHeapTypeStats[mCurStatTable],
+        mHeapTypeStats[1 - mCurStatTable],
+        stream
+    );
+    DiffTblReport(
+        "POOL DIFF TYPES",
+        mPoolTypeStats[mCurStatTable],
+        mPoolTypeStats[1 - mCurStatTable],
+        stream
+    );
+    mCurStatTable = 1 - mCurStatTable;
+}
+
+void MemTracker::ReportMemoryAlloc(const char *cc) {
+    const char *venue = TheGameData->Venue().Str();
+    const char *song = TheGameData->GetSong().Str();
+    const char *char1 = nullptr;
+    const char *char2 = nullptr;
+    HamPlayerData *p1 = TheGameData->Player(0);
+    if (p1) {
+        char1 = p1->Char().Str();
+    }
+    HamPlayerData *p2 = TheGameData->Player(1);
+    if (p2) {
+        char2 = p2->Char().Str();
+    }
+    char buffer[128];
+    Hx_snprintf(
+        buffer,
+        sizeof(buffer),
+        "%s_%s_%s_%s_%s_%s_alloc_info.csv",
+        mAllocInfoName,
+        cc,
+        venue,
+        char1,
+        char2,
+        song
+    );
+    TextFileStream stream(buffer, false);
+    SpitAllocInfo(&stream);
+    stream.File().Flush();
+}
+
+void MemTracker::ReportMemoryUsage(const char *cc) {
+    TextStream *stream = &TheDebug;
+    if (mReport) {
+        stream = mReport;
+    }
+    static bool sHeaderPrinted = false;
+    if (!sHeaderPrinted) {
+        *stream
+            << MakeString("Category,heap,free,biggest,lfrags,requested,allocated,peak\n");
+        sHeaderPrinted = true;
+    }
+    int numHeaps = MemNumHeaps() + 1;
+    for (int i = 0; i < numHeaps; i++) {
+        *stream << MakeString(cc);
+        if (i == MemNumHeaps()) {
+            int freePhys = _GetFreePhysicalMemory();
+            int used = mFreePhysMem - PhysicalUsage();
+            if (used < freePhys) {
+                used = freePhys;
+            }
+            *stream << MakeString(",physicalHeap");
+            *stream << MakeString(",%d", used);
+            *stream << MakeString(",%d", freePhys);
+            *stream << MakeString(",0");
+        } else {
+            int lFrags, rFrags, numFreeBytes, i5, biggestFreeBlock;
+            MemFreeBlockStats(i, lFrags, rFrags, numFreeBytes, i5, biggestFreeBlock);
+            *stream << MakeString(",%sHeap", MemHeapName(i));
+            *stream << MakeString(",%d", numFreeBytes);
+            *stream << MakeString(",%d", biggestFreeBlock);
+            *stream << MakeString(",%d", lFrags);
+        }
+        *stream << MakeString(",%d", mHeapStats[i].mTotalReqSize);
+        *stream << MakeString(",%d", mHeapStats[i].mTotalActSize);
+        *stream << MakeString(",%d\n", mHeapStats[i].mMaxActSize);
+    }
+}
+
+void MemTracker::ReportMemoryUsageOverview(const char *cc) {
+    TextStream *stream = &TheDebug;
+    if (mReport) {
+        stream = mReport;
+    }
+    *stream << MakeString(
+        "\nCategory,Mode,MainPeak,MainAlloc,MainLargest,CharPeak,CharAlloc,CharLargest,PhysPeak,PhysAlloc,PhysLargest\n"
+    );
+    int numHeaps = MemNumHeaps() + 1;
+    *stream << "overview," << cc;
+    for (int i = 0; i < numHeaps; i++) {
+        int used;
+        int i7c;
+        int w, y, z;
+        if (i == MemNumHeaps()) {
+            int freePhys = _GetFreePhysicalMemory();
+            used = mFreePhysMem - PhysicalUsage();
+            if (used < freePhys) {
+                used = freePhys;
+            }
+            i7c = 0;
+        } else {
+            MemFreeBlockStats(i, i7c, w, used, y, z);
+        }
+        *stream << MakeString(",%d", mHeapStats[i].mMaxActSize);
+        *stream << MakeString(",%d", mHeapStats[i].mTotalActSize);
+        *stream << MakeString(",%d", z);
+    }
+}
+
+int MemTracker::SpitAllocInfo(TextStream *stream) {
+    int ret = 1;
+    if (gMemTracker && gMemTracker->mHashTable) {
+        MILO_LOG("----------------BEGIN MemTracker::SpitAllocInfo\n");
+        for (auto it = gMemTracker->mHashTable->Begin(); it != nullptr;
+             it = gMemTracker->mHashTable->Next(it)) {
+            (*it)->Print(*stream);
+        }
+        MILO_LOG("----------------END MemTracker::SpitAllocInfo\n");
+        ret = 0;
+    }
+    return ret;
+}
+
+int MemTracker::SpitAllocInfo(FILE *file) {
+    int ret = 1;
+    if (gMemTracker && gMemTracker->mHashTable) {
+        MILO_LOG("----------------BEGIN MemTracker::SpitAllocInfo\n");
+        for (auto it = gMemTracker->mHashTable->Begin(); it != nullptr;
+             it = gMemTracker->mHashTable->Next(it)) {
+            (*it)->PrintForReport(file);
+        }
+        MILO_LOG("----------------END MemTracker::SpitAllocInfo\n");
+        ret = 0;
+    }
+    return ret;
 }

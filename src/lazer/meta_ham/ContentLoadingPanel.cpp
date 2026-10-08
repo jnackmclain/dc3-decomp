@@ -33,7 +33,7 @@ void ContentLoadingPanel::ContentMountBegun(int i) {
 
 void ContentLoadingPanel::ShowIfPossible() {
     if (!mShowing) {
-        if (unk3c) { // theres an extra check here
+        if (unk3c && (bool)(unk40 > 1)) {
             MILO_ASSERT(CheckIsLoaded(), 0x84);
             Enter();
             mShowing = true;
@@ -41,7 +41,57 @@ void ContentLoadingPanel::ShowIfPossible() {
     }
 }
 
+void ContentLoadingPanel::ContentDone() {
+    unk40 = 0;
+    unk44 = 0;
+    unk3c = false;
+    if (mState == 1 && mShowing) {
+        Exit();
+        mShowing = false;
+    }
+}
+
+void ContentLoadingPanel::Poll() {
+    ShowIfPossible();
+    if (mShowing) {
+        UIPanel::Poll();
+        RndGroup *progressGroup = LoadedDir()->Find<RndGroup>("progress.grp");
+        float frame = progressGroup->GetFrame();
+        static float sFloat = 100.0f;
+        float f;
+        if (unk40 > 0) {
+            f = unk44 * 110.0f / unk40;
+        } else {
+            f = sFloat;
+        }
+        if (f > sFloat) {
+            f = sFloat;
+        }
+        float deltaSeconds = TheTaskMgr.DeltaSeconds();
+        if (deltaSeconds < 0.0f) {
+            deltaSeconds = 0.0f;
+        } else if (deltaSeconds > 1.0f) {
+            deltaSeconds = 1.0f;
+        }
+        float tempFrame = (f - frame) * deltaSeconds + frame;
+        if (unk44 == unk40) {
+            tempFrame = sFloat;
+        }
+        progressGroup->SetFrame(tempFrame, 1.0f);
+    }
+}
+
+void ContentLoadingPanel::ContentMounted(char const *c1, char const *c2) {
+    unk44++;
+    ShowIfPossible();
+}
+
+void ContentLoadingPanel::ContentFailed(const char *) {
+    unk44++;
+    ShowIfPossible();
+}
+
 BEGIN_HANDLERS(ContentLoadingPanel)
-    HANDLE_ACTION_IF(allowed_to_show, unk3c != _msg->Int(2), ShowIfPossible())
+    HANDLE_ACTION(allowed_to_show, AllowedToShow(_msg->Int(2)))
     HANDLE_SUPERCLASS(UIPanel)
 END_HANDLERS

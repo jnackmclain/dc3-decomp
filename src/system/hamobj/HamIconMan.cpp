@@ -64,6 +64,8 @@ BEGIN_COPYS(HamIconMan)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(1, 0)
+
 BEGIN_LOADS(HamIconMan)
     LOAD_REVS(bs)
     ASSERT_REVS(1, 0)
@@ -84,8 +86,7 @@ void HamIconMan::DrawShowing() {
         if (mCharClip) {
             float beat;
             if (mBPMOverride > 0) {
-                float uiSeconds = TheTaskMgr.UISeconds() * 0.016666668f;
-                beat = uiSeconds * mBPMOverride;
+                beat = TheTaskMgr.UISeconds() * (mBPMOverride * 0.016666668f);
             } else {
                 beat = FrameToBeat(TheHamDirector->SongAnim(0)->GetFrame());
             }

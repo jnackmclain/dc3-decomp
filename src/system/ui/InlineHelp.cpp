@@ -1,9 +1,14 @@
 #include "ui/InlineHelp.h"
+#include "math/Mtx.h"
+#include "math/Rot.h"
+#include "math/Trig.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
 #include "obj/Task.h"
+#include "os/Debug.h"
 #include "os/Joypad.h"
 #include "rndobj/Dir.h"
+#include "rndobj/Trans.h"
 #include "ui/UIComponent.h"
 #include "ui/UILabel.h"
 #include "utl/BinStream.h"
@@ -11,6 +16,111 @@
 #include "utl/Std.h"
 #include "utl/Symbol.h"
 
+float InlineHelp::sLastUpdatedTime = 0;
+float InlineHelp::sRotationTime = 0;
+float InlineHelp::sLabelRot = 0;
+bool InlineHelp::sHasFlippedTextThisRotation = false;
+bool InlineHelp::sNeedsTextUpdate = false;
+bool InlineHelp::sRotated = false;
+const float InlineHelp::sRotateDelay = 5;
+const float InlineHelp::sRotateDuration = 1;
+
+#pragma region InlineHelp::ActionElement
+
+InlineHelp::ActionElement::ActionElement()
+    : mAction(kAction_None), mPrimaryToken(gNullStr), mSecondaryToken(gNullStr) {}
+
+InlineHelp::ActionElement::ActionElement(JoypadAction a)
+    : mAction(a), mPrimaryToken(gNullStr), mSecondaryToken(gNullStr) {}
+
+InlineHelp::ActionElement::~ActionElement() {}
+
+BinStream &operator<<(BinStream &bs, const InlineHelp::ActionElement &a) {
+    bs << a.mAction;
+    Symbol primary = a.mPrimaryToken;
+    bs << primary;
+    Symbol secondary = a.mSecondaryToken;
+    bs << secondary;
+    return bs;
+}
+
+BinStream &operator>>(BinStreamRev &d, InlineHelp::ActionElement &a) {
+    int action;
+    d >> action;
+    a.mAction = (JoypadAction)action;
+    Symbol token;
+    d >> token;
+    a.SetToken(token, false);
+    if (d.rev >= 2) {
+        d >> token;
+        a.SetToken(token, true);
+    }
+    return d.stream;
+}
+
+void InlineHelp::ActionElement::SetToken(Symbol token, bool secondary) {
+    if (!secondary) {
+        mPrimaryToken = token;
+        mPrimaryStr = Localize(token, nullptr, TheLocale);
+    } else {
+        mSecondaryToken = token;
+        mSecondaryStr = Localize(token, nullptr, TheLocale);
+    }
+}
+
+void InlineHelp::ActionElement::SetString(const char *str, bool secondary) {
+    if (!secondary) {
+        mPrimaryToken = gNullStr;
+        mPrimaryStr = str;
+    } else {
+        mSecondaryToken = gNullStr;
+        mSecondaryStr = str;
+    }
+}
+
+void InlineHelp::ActionElement::SetConfig(DataNode &dn, bool secondary) {
+    if (dn.Type() == kDataArray) {
+        DataArray *da = dn.Array();
+        if (da->Size() != 0) {
+            FormatString fs(Localize(da->Sym(0), nullptr, TheLocale));
+            for (int i = 1; i < da->Size(); i++) {
+                const DataNode &dn2 = da->Evaluate(i);
+                if (dn2.Type() == kDataSymbol) {
+                    fs << Localize(dn2.Sym(), nullptr, TheLocale);
+                } else {
+                    fs << dn2;
+                }
+            }
+            SetString(fs.Str(), secondary);
+        }
+    } else {
+        SetToken(dn.Sym(), secondary);
+    }
+}
+
+Symbol InlineHelp::ActionElement::GetToken(bool secondary) const {
+    if (secondary) {
+        return mSecondaryToken;
+    } else {
+        return mPrimaryToken;
+    }
+}
+
+const char *InlineHelp::ActionElement::GetText(bool secondary) const {
+    if (secondary && HasSecondaryStr()) {
+        return mSecondaryStr.c_str();
+    } else {
+        return mPrimaryStr.c_str();
+    }
+}
+
+BEGIN_CUSTOM_PROPSYNC(InlineHelp::ActionElement)
+    SYNC_PROP(action, (int &)o.mAction)
+    SYNC_PROP_SET(text_token, o.GetToken(false), o.SetToken(_val.Sym(), false))
+    SYNC_PROP_SET(secondary_token, o.GetToken(true), o.SetToken(_val.Sym(), true))
+END_CUSTOM_PROPSYNC
+
+#pragma endregion
 #pragma region InlineHelp
 
 InlineHelp::InlineHelp()
@@ -24,34 +134,14 @@ InlineHelp::~InlineHelp() {
     }
 }
 
-BEGIN_LOADS(InlineHelp)
-    PreLoad(bs);
-    PostLoad(bs);
-END_LOADS
-
-BEGIN_SAVES(InlineHelp)
-    SAVE_REVS(5, 0)
-    bs << mHorizontal;
-    bs << mSpacing;
-    // bs << mConfig;
-    bs << mResourceDir;
-    bs << mUseConnectedControllers;
-    SAVE_SUPERCLASS(UIComponent)
-END_SAVES
-
-BEGIN_COPYS(InlineHelp)
-    COPY_SUPERCLASS(UIComponent)
-    CREATE_COPY_AS(InlineHelp, c)
-    BEGIN_COPYING_MEMBERS_FROM(c)
-        COPY_MEMBER(mHorizontal)
-        COPY_MEMBER(mSpacing)
-        COPY_MEMBER(mConfig)
-        COPY_MEMBER(mTextColor)
-        COPY_MEMBER(mUseConnectedControllers)
-        COPY_MEMBER(mResourceDir)
-    END_COPYING_MEMBERS
-    Update();
-END_COPYS
+BEGIN_HANDLERS(InlineHelp)
+    HANDLE_ACTION(
+        set_action_token, SetActionToken((JoypadAction)_msg->Int(2), _msg->Node(3))
+    )
+    HANDLE_ACTION(clear_action_token, ClearActionToken((JoypadAction)_msg->Int(2)))
+    HANDLE(set_config, OnSetConfig)
+    HANDLE_SUPERCLASS(UIComponent)
+END_HANDLERS
 
 BEGIN_PROPSYNCS(InlineHelp)
     SYNC_PROP_MODIFY(resource, mResourceDir, Update())
@@ -63,11 +153,149 @@ BEGIN_PROPSYNCS(InlineHelp)
     SYNC_SUPERCLASS(UIComponent)
 END_PROPSYNCS
 
+BEGIN_SAVES(InlineHelp)
+    SAVE_REVS(5, 0)
+    bs << mHorizontal;
+    bs << mSpacing;
+    bs << mConfig;
+    bs << mTextColor;
+    bs << mUseConnectedControllers;
+    bs << mResourceDir;
+    SAVE_SUPERCLASS(UIComponent)
+END_SAVES
+
+BEGIN_COPYS(InlineHelp)
+    COPY_SUPERCLASS(UIComponent)
+    CREATE_COPY(InlineHelp)
+    BEGIN_COPYING_MEMBERS
+        COPY_MEMBER(mHorizontal)
+        COPY_MEMBER(mSpacing)
+        COPY_MEMBER(mConfig)
+        COPY_MEMBER(mTextColor)
+        COPY_MEMBER(mUseConnectedControllers)
+        COPY_MEMBER(mResourceDir)
+    END_COPYING_MEMBERS
+    Update();
+    UpdateIconTypes(false);
+END_COPYS
+
+BEGIN_LOADS(InlineHelp)
+    PreLoad(bs);
+    PostLoad(bs);
+END_LOADS
+
+void InlineHelp::SetTypeDef(DataArray *d) {
+    Hmx::Object::SetTypeDef(d);
+    Update();
+}
+
+INIT_REVS(5, 0)
+
+void InlineHelp::PreLoad(BinStream &bs) {
+    LOAD_REVS(bs)
+    ASSERT_REVS(5, 0)
+    d >> mHorizontal;
+    d >> mSpacing;
+    d >> mConfig;
+    if (d.rev >= 1) {
+        d >> mTextColor;
+    }
+    if (d.rev >= 2 && d.rev < 4) {
+        int x;
+        d >> x;
+    }
+    if (d.rev >= 3) {
+        d >> mUseConnectedControllers;
+    }
+    if (d.rev >= 5) {
+        d >> mResourceDir;
+    }
+    UIComponent::PreLoad(d.stream);
+    d.PushRev(this);
+}
+
 void InlineHelp::PostLoad(BinStream &bs) {
     bs.PopRev(this);
-    // mResourceDir->PostLoad(bs);
+    mResourceDir.PostLoad(nullptr);
     UIComponent::PostLoad(bs);
     Update();
+}
+
+void InlineHelp::DrawShowing() {
+    int numLabels = mTextLabels.size();
+    Transform tf70 = WorldXfm();
+
+    DataArray *t = TypeDef();
+    MILO_ASSERT(t, 0x117);
+
+    Transform tf170;
+    tf170.v.z = 0;
+    tf170.v.x = 0;
+    tf170.m.Identity();
+    tf170.v.y = 0;
+    Transform tf120;
+    if (sLabelRot != 0) {
+        Vector3 v130(sLabelRot * DEG2RAD, 0, 0);
+        Hmx::Matrix3 ma0;
+        MakeRotMatrix(v130, ma0, true);
+        Multiply(tf170, ma0, tf120);
+    } else {
+        tf120.Reset();
+    }
+    for (int i = 0; i < numLabels; i++) {
+        if (i > 0) {
+            if (mHorizontal) {
+                tf170.v.x += mSpacing;
+            } else {
+                tf170.v.z += mSpacing;
+            }
+        }
+        Transform tfe0;
+        Multiply(tf170, tf70, tfe0);
+        if (!mConfig[i].mSecondaryStr.empty()) {
+            Multiply(tf120, tfe0, tfe0);
+        }
+        mTextLabels[i]->SetWorldXfm(tfe0);
+        mTextLabels[i]->Draw();
+    }
+}
+
+void InlineHelp::Poll() {
+    UIComponent::Poll();
+    float uisecs = TheTaskMgr.UISeconds();
+    if (uisecs != sLastUpdatedTime) {
+        sNeedsTextUpdate = false;
+        if (uisecs > sRotationTime) {
+            float f1 = uisecs - sRotationTime;
+            if (f1 >= 1.0f) {
+                sHasFlippedTextThisRotation = false;
+                sRotationTime = uisecs + 5.0f;
+                SetLabelRotationPcts(0);
+            } else {
+                if (!sHasFlippedTextThisRotation && f1 >= 0.5f) {
+                    sHasFlippedTextThisRotation = true;
+                    sRotated = sRotated == 0;
+                    sNeedsTextUpdate = true;
+                }
+                SetLabelRotationPcts(f1);
+            }
+        }
+        sLastUpdatedTime = uisecs;
+    }
+    if (sNeedsTextUpdate)
+        UpdateLabelText();
+}
+
+void InlineHelp::Enter() {
+    UIComponent::Enter();
+    UpdateIconTypes(true);
+    SyncLabelsToConfig();
+}
+
+void InlineHelp::OldResourcePreload(BinStream &bs) {
+    char buf[0x100];
+    bs.ReadString(buf, 0x100);
+    mResourceDir.SetName(buf, true);
 }
 
 void InlineHelp::UpdateLabelText() {
@@ -85,25 +313,13 @@ void InlineHelp::UpdateLabelText() {
 }
 void InlineHelp::Init() { REGISTER_OBJ_FACTORY(InlineHelp) }
 
-void InlineHelp::Enter() {
-    UIComponent::Enter();
-    UpdateIconTypes(true);
-    SyncLabelsToConfig();
-}
-
-void InlineHelp::SetTypeDef(DataArray *d) {
-    Hmx::Object::SetTypeDef(d);
-    Update();
-}
-
 String InlineHelp::GetIconStringFromAction(int idx) {
     static Symbol action_chars("action_chars");
     String ret;
     const DataArray *t = TypeDef();
     MILO_ASSERT(t, 0x1cb);
     DataArray *actionArr = t->FindArray(action_chars);
-    for (std::vector<Symbol>::iterator it = mIconTypes.begin(); it != mIconTypes.end();
-         ++it) {
+    FOREACH (it, mIconTypes) {
         const char *str = actionArr->FindArray(*it)->Str(idx + 1);
         char c = *str;
         if (ret.find(c) == String::npos)
@@ -147,38 +363,11 @@ void InlineHelp::SetLabelRotationPcts(float f) {
         sLabelRot = f * -240.0f - 120.0f;
 }
 
-void InlineHelp::Poll() {
-    UIComponent::Poll();
-    float uisecs = TheTaskMgr.UISeconds();
-    if (uisecs != sLastUpdatedTime) {
-        sNeedsTextUpdate = false;
-        if (uisecs > sRotationTime) {
-            float f1 = uisecs - sRotationTime;
-            if (f1 >= 1.0f) {
-                sHasFlippedTextThisRotation = false;
-                sRotationTime = uisecs + 5.0f;
-                SetLabelRotationPcts(0);
-            } else {
-                if (!sHasFlippedTextThisRotation && f1 >= 0.5f) {
-                    sHasFlippedTextThisRotation = true;
-                    sRotated = sRotated == 0;
-                    sNeedsTextUpdate = true;
-                }
-                SetLabelRotationPcts(f1);
-            }
-        }
-        sLastUpdatedTime = uisecs;
-    }
-    if (sNeedsTextUpdate)
-        UpdateLabelText();
-}
-
 void InlineHelp::SetActionToken(JoypadAction a, DataNode &node) {
     bool found = false;
-    for (std::vector<ActionElement>::iterator it = mConfig.begin(); it != mConfig.end();
-         ++it) {
-        if ((*it).mAction == a) {
-            (*it).SetConfig(node, false);
+    FOREACH (it, mConfig) {
+        if (it->mAction == a) {
+            it->SetConfig(node, false);
             found = true;
             break;
         }
@@ -198,17 +387,35 @@ void InlineHelp::SyncLabelsToConfig() {
     if (cfg_size > labels_size) {
         for (; labels_size < cfg_size; labels_size++) {
             UILabel *lbl = Hmx::Object::New<UILabel>();
+            lbl->Copy(unk88, kCopyShallow);
+            lbl->LStyle(0).mColorOverride = mTextColor;
             mTextLabels.push_back(lbl);
         }
     } else {
         if (labels_size > cfg_size) {
-            for (; cfg_size < labels_size; cfg_size++) {
-                delete mTextLabels[cfg_size];
+            for (int i = cfg_size; i < labels_size; i++) {
+                delete mTextLabels[i];
             }
             mTextLabels.resize(cfg_size);
         }
     }
     UpdateLabelText();
+}
+
+void InlineHelp::UpdateTextColors() {
+    FOREACH (it, mTextLabels) {
+        (*it)->LStyle(0).mColorOverride = mTextColor;
+    }
+}
+
+void InlineHelp::ClearActionToken(JoypadAction a) {
+    FOREACH (it, mConfig) {
+        if (it->mAction == a) {
+            mConfig.erase(it);
+            SyncLabelsToConfig();
+            return;
+        }
+    }
 }
 
 DataNode InlineHelp::OnSetConfig(const DataArray *da) {
@@ -217,113 +424,13 @@ DataNode InlineHelp::OnSetConfig(const DataArray *da) {
     for (int i = 0; i < arr->Size(); i++) {
         DataArray *loopArr = arr->Array(i);
         ActionElement el((JoypadAction)loopArr->Int(0));
-        el.SetConfig(arr->Node(1), false);
+        el.SetConfig(loopArr->Node(1), false);
         if (loopArr->Size() > 2)
-            el.SetConfig(arr->Node(2), true);
+            el.SetConfig(loopArr->Node(2), true);
         mConfig.push_back(el);
     }
     SyncLabelsToConfig();
-    return DataNode(1);
+    return 1;
 }
 
-BEGIN_HANDLERS(InlineHelp)
-    HANDLE_ACTION(
-        set_action_token, SetActionToken((JoypadAction)_msg->Int(2), _msg->Node(3))
-    )
-    HANDLE_ACTION(clear_action_token, ClearActionToken((JoypadAction)_msg->Int(2)))
-    HANDLE(set_config, OnSetConfig)
-    HANDLE_SUPERCLASS(UIComponent)
-END_HANDLERS
-
-#pragma endregion InlineHelp
-#pragma region InlineHelp::ActionElement
-
-InlineHelp::ActionElement::ActionElement()
-    : mAction(kAction_None), mPrimaryToken(gNullStr), mSecondaryToken(gNullStr) {}
-
-InlineHelp::ActionElement::ActionElement(JoypadAction a)
-    : mAction(a), mPrimaryToken(gNullStr), mSecondaryToken(gNullStr) {}
-
-InlineHelp::ActionElement::ActionElement(InlineHelp::ActionElement const &ac)
-    : mAction(ac.mAction), mPrimaryToken(ac.mPrimaryToken),
-      mSecondaryToken(ac.mSecondaryToken), mPrimaryStr(ac.mPrimaryStr),
-      mSecondaryStr(ac.mSecondaryStr) {}
-
-InlineHelp::ActionElement::~ActionElement() {}
-
-void InlineHelp::ActionElement::SetToken(Symbol s, bool secondary) {
-    if (!secondary) {
-        mPrimaryToken = s;
-        mPrimaryStr = Localize(s, 0, TheLocale);
-    } else {
-        mSecondaryToken = s;
-        mSecondaryStr = Localize(s, 0, TheLocale);
-    }
-}
-
-void InlineHelp::ActionElement::SetString(const char *s, bool b) {
-    if (!b) {
-        mPrimaryToken = gNullStr;
-        mPrimaryStr = s;
-    } else {
-        mSecondaryToken = gNullStr;
-        mSecondaryStr = s;
-    }
-}
-
-void InlineHelp::ActionElement::SetConfig(DataNode &dn, bool b) {
-    if (dn.Type() == kDataArray) {
-        DataArray *da = dn.Array();
-        if (da->Size() == 0)
-            return;
-        FormatString fs(Localize(da->Sym(0), 0, TheLocale));
-        for (int i = 1; i < da->Size(); i++) {
-            const DataNode &dn2 = da->Evaluate(i);
-            if (dn2.Type() == kDataSymbol) {
-                fs << Localize(dn2.Sym(), 0, TheLocale);
-            } else {
-                fs << dn2;
-            }
-        }
-        SetString(fs.Str(), b);
-    } else {
-        SetToken(dn.Sym(), b);
-    }
-}
-
-Symbol InlineHelp::ActionElement::GetToken(bool b) const {
-    if (b)
-        return mSecondaryToken;
-    return mPrimaryToken;
-}
-
-BinStream &operator>>(BinStream &bs, InlineHelp::ActionElement &ae) {
-    LOAD_REVS(bs);
-    {
-        int x;
-        bs >> x;
-        ae.mAction = (JoypadAction)x;
-    }
-    Symbol s;
-    bs >> s;
-    ae.SetToken(s, false);
-    if (d.rev >= 2) {
-        bs >> s;
-        ae.SetToken(s, true);
-    }
-    return bs;
-}
-
-const char *InlineHelp::ActionElement::GetText(bool b) const {
-    if (b && HasSecondaryStr())
-        return mSecondaryStr.c_str();
-    return mPrimaryStr.c_str();
-}
-
-BEGIN_CUSTOM_PROPSYNC(InlineHelp::ActionElement)
-    SYNC_PROP(action, (int &)o.mAction)
-    SYNC_PROP_SET(text_token, o.GetToken(false), o.SetToken(_val.Sym(), false))
-    SYNC_PROP_SET(secondary_token, o.GetToken(true), o.SetToken(_val.Sym(), true))
-END_CUSTOM_PROPSYNC
-
-#pragma endregion InlineHelp::ActionElement
+#pragma endregion

@@ -30,8 +30,16 @@ ctx.*
 objdiff.json
 compile_commands.json
 
+# Python
+.venv/
+
 # Miscellaneous
 /*.txt
+!requirements.txt
 *.exe
 *.pdb
 _CL_*
+*.DS_Store
+
+# Doxygen output
+doxygen/

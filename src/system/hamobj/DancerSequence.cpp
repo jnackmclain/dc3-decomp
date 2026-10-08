@@ -26,7 +26,7 @@ BEGIN_SAVES(DancerSequence)
     bs << numFrames;
     for (int i = 0; i < numFrames; i++) {
         const DancerFrame &curFrame = mDancerFrames[i];
-        bs << curFrame.unk0;
+        bs << curFrame.mMoveIdx;
         bs << curFrame.mMoveFrameIdx;
         const DancerSkeleton &skeleton = curFrame.mSkeleton;
         for (int j = 0; j < kNumJoints; j++) {
@@ -45,15 +45,143 @@ BEGIN_COPYS(DancerSequence)
     COPY_MEMBER_FROM(seq, mDancerFrames)
 END_COPYS
 
-const std::vector<DancerFrame> &DancerSequence::GetDancerFrames() const {
-    return mDancerFrames;
-}
+INIT_REVS(8, 0)
 
-float DancerSequence::EndFrame() { return mDancerFrames.size() - 1.0f; }
+BEGIN_LOADS(DancerSequence)
+    LOAD_REVS(bs)
+    ASSERT_REVS(8, 0)
+    LOAD_SUPERCLASS(Hmx::Object)
+    LOAD_SUPERCLASS(RndAnimatable)
+    int numFrames;
+    d >> numFrames;
+    mDancerFrames.resize(numFrames);
+    for (int i = 0; i < numFrames; i++) {
+        DancerFrame &curFrame = mDancerFrames[i];
+        if (d.rev < 1) {
+            int x;
+            d >> x;
+            curFrame.mMoveIdx = curFrame.mMoveFrameIdx = -1;
+        } else if (d.rev < 7) {
+            int x, y;
+            d >> x;
+            d >> y;
+            curFrame.mMoveIdx = x;
+            curFrame.mMoveFrameIdx = y;
+        } else {
+            d >> curFrame.mMoveIdx;
+            d >> curFrame.mMoveFrameIdx;
+        }
+        DancerSkeleton &skeleton = curFrame.mSkeleton;
+        if (d.rev < 7) {
+            int skeletonRev = 5;
+            if (d.rev < 2) {
+                skeletonRev = 0;
+            } else if (d.rev < 3) {
+                skeletonRev = 1;
+            } else if (d.rev < 4) {
+                skeletonRev = 2;
+            } else if (d.rev < 5) {
+                skeletonRev = 3;
+            } else if (d.rev < 6) {
+                skeletonRev = 4;
+            }
+            int ms;
+            if (skeletonRev >= 4) {
+                d >> ms;
+            } else {
+                ms = -1;
+            }
+            skeleton.SetDisplacementElapsedMs(ms);
+            if (skeletonRev < 3) {
+                bool b;
+                d >> b;
+                int x;
+                d >> x;
+            }
+            for (int i = 0; i < kNumJoints; i++) {
+                int count = 6;
+                if (skeletonRev < 1) {
+                    count = 4;
+                } else if (skeletonRev < 2) {
+                    count = 9;
+                }
+                for (int j = 0; j < count; j++) {
+                    if (j >= 6) {
+                        Vector3 v;
+                        d.stream >> v >> v >> v;
+                    } else {
+                        if (j == 0) {
+                            Vector3 pos, disp;
+                            d >> pos;
+                            d >> disp;
+                            skeleton.SetCamJointPos((SkeletonJoint)i, pos);
+                            skeleton.SetCamJointDisplacement((SkeletonJoint)i, disp);
+                        } else {
+                            Vector3 v1, v2;
+                            d.stream >> v1 >> v2;
+                        }
+                        if (skeletonRev < 4) {
+                            Vector3 v;
+                            d >> v;
+                        }
+                    }
+                }
+                if (skeletonRev < 3) {
+                    Vector2 v2;
+                    d >> v2;
+                    int x;
+                    d >> x;
+                } else if (skeletonRev >= 5) {
+                    int x;
+                    d >> x;
+                }
+            }
+            if (skeletonRev < 2) {
+                for (int i = 0; i < 2; i++) {
+                    for (int j = 0; j < 3; j++) {
+                        std::vector<float> floats;
+                        d >> floats;
+                    }
+                }
+            }
+        } else {
+            for (int i = 0; i < kNumJoints; i++) {
+                Vector3 pos;
+                Vector3 disp;
+                d >> pos;
+                d >> disp;
+                skeleton.SetCamJointPos((SkeletonJoint)i, pos);
+                skeleton.SetCamJointDisplacement((SkeletonJoint)i, disp);
+                if (d.rev < 8) {
+                    int x;
+                    d >> x;
+                }
+            }
+            int ms;
+            d >> ms;
+            skeleton.SetDisplacementElapsedMs(ms);
+        }
+    }
+END_LOADS
 
 void DancerSequence::SetFrame(float frame, float blend) {
     RndAnimatable::SetFrame(frame, blend);
     MoveDir *m = dynamic_cast<MoveDir *>(this->Dir());
     if (m)
         m->SetDancerSequence(this);
+}
+
+float DancerSequence::EndFrame() { return mDancerFrames.size() - 1.0f; }
+
+const std::vector<DancerFrame> &DancerSequence::GetDancerFrames() const {
+    return mDancerFrames;
+}
+
+const DancerSkeleton *DancerSequence::CurSkeleton() const {
+    int idx = GetFrame();
+    if (idx >= 0 && idx < mDancerFrames.size()) {
+        return &mDancerFrames[idx].mSkeleton;
+    } else {
+        return nullptr;
+    }
 }

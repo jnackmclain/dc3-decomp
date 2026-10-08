@@ -33,11 +33,17 @@ public:
     void SetMaxYaw(float);
     void SetMinPitch(float);
     void SetMaxPitch(float);
+    RndTransformable *GetSource() const { return mSource ? mSource : mPivot; }
+    RndTransformable *Target() const { return mTarget; }
+    bool Unke1() const { return unke1; } // clamped?
+    static void SetDisableJitter(bool disable) { sDisableJitter = disable; }
 
 protected:
     CharLookAt();
 
     void SyncLimits();
+
+    static bool sDisableJitter;
 
     /** "If non null, the bone which looks at along its Y axis,
         otherwise equal to the pivot" */
@@ -67,7 +73,7 @@ protected:
     /** "radius in degrees of filtered source motion that's allowed through" */
     float mSourceRadius; // 0xa0
     Vector3 unka4; // 0xa4
-    Box unkb4; // 0xb4
+    Box mBounds; // 0xb4
     /** "Graphically show the extreme ranges of motion" */
     bool mShowRange; // 0xd4
     /** "Graphically show range of motion with user specified values" */

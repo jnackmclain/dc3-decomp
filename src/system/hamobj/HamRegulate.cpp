@@ -5,9 +5,11 @@
 #include "obj/Object.h"
 #include "rndobj/Poll.h"
 
+const float kConstFloats[2] = { 4, 4 };
+
 HamRegulate::HamRegulate()
-    : unk14(this), unk28(0), unk2c(0), unk30(0, 0, 0), unk40(0, 0, 0), unk50(0), unk54(4),
-      mLeftFoot(this), mRightFoot(this) {}
+    : unk14(this), unk28(0), unk2c(0), unk30(0, 0, 0), unk40(0, 0, 0), unk50(0),
+      unk54(kConstFloats[0]), mLeftFoot(this), mRightFoot(this) {}
 
 HamRegulate::~HamRegulate() {}
 
@@ -28,6 +30,8 @@ BEGIN_SAVES(HamRegulate)
     bs << mLeftFoot;
     bs << mRightFoot;
 END_SAVES
+
+INIT_REVS(2, 0)
 
 BEGIN_LOADS(HamRegulate)
     LOAD_REVS(bs)

@@ -79,6 +79,20 @@ void MidiReader::ReadTrackHeader(BinStream &bs) {
     }
 }
 
+void MidiReader::SkipCurrentTrack() {
+    if (mState == kInTrack) {
+        if (mCurTrackIndex == mNumTracks) {
+            mState = kEnd;
+            mRcvr.OnEndOfTrack();
+            mRcvr.OnAllTracksRead();
+        } else {
+            mState = kNewTrack;
+            mStream->Seek(mTrackEndPos, BinStream::kSeekBegin);
+            mRcvr.OnEndOfTrack();
+        }
+    }
+}
+
 MidiReader::MidiReader(BinStream &bs, MidiReceiver &rec, const char *name)
     : mStream(&bs), mStreamCreatedHere(0), mStreamName(name), mRcvr(rec), mState(kStart),
       mNumTracks(0), mTicksPerQuarter(0), mDesiredTPQ(480), mCurTrackIndex(0),
@@ -121,10 +135,9 @@ void MidiReader::ProcessMidiList() {
 void MidiReader::ReadMidiEvent(
     int tick, unsigned char status, unsigned char data1, BinStream &bs
 ) {
-    int statusType = status & 0xF0;
     unsigned char data2;
     bool queue = false;
-    switch (statusType) {
+    switch (status & 0xF0) {
     case kNoteOn:
         bs >> data2;
         queue = true;
@@ -152,7 +165,7 @@ void MidiReader::ReadMidiEvent(
             "%s (%s): Cannot parse event %i",
             mStreamName.c_str(),
             mCurTrackName.c_str(),
-            statusType
+            (int)(status & 0xF0)
         );
         break;
     }
@@ -369,7 +382,7 @@ void MidiReader::ReadFileHeader(BinStream &bs) {
             mTicksPerQuarter
         );
     }
-    if (mNumTracks == 0 || midiType != 1 || (mTicksPerQuarter & 0x8000U)
+    if (mNumTracks == 0 || midiType != 1 || ((unsigned short)mTicksPerQuarter & 0x8000U)
         || mTicksPerQuarter != 480) {
         mFail = true;
         return;
@@ -437,9 +450,11 @@ void MidiReader::ReadEvent(BinStream &bs) {
 
 void MidiReader::ReadNextEvent() {
     if (sVerify) {
-        TheDebug.SetTry(true);
-        ReadNextEventImpl();
-        TheDebug.SetTry(false);
+        MILO_TRY { ReadNextEventImpl(); }
+        MILO_CATCH(msg) {
+            mRcvr.Error(msg, mCurTick);
+            mFail = true;
+        }
     } else
         ReadNextEventImpl();
 }
@@ -462,6 +477,14 @@ void MidiReader::ReadNextEventImpl() {
     }
 }
 
+void MidiReader::ReadAllTracks() {
+    if (mStream->Tell() != 0) {
+        mStream->Seek(0, BinStream::kSeekBegin);
+    }
+    while (ReadTrack())
+        ;
+}
+
 bool MidiReader::ReadSomeEvents(int num_events) {
     for (int i2 = 0; i2 < num_events; i2++) {
         ReadNextEvent();
@@ -469,4 +492,13 @@ bool MidiReader::ReadSomeEvents(int num_events) {
             return true;
     }
     return false;
+}
+
+bool MidiReader::ReadTrack() {
+    do {
+        ReadNextEvent();
+        if (mState == kEnd || mState == kNewTrack)
+            break;
+    } while (!mFail);
+    return mState == kNewTrack;
 }

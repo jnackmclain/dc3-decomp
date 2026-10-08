@@ -3,11 +3,13 @@
 #include "obj/DirLoader.h"
 #include "obj/Object.h"
 #include "os/Debug.h"
+#include "os/File.h"
 #include "utl/BinStream.h"
 #include "utl/FilePath.h"
 #include "utl/KeylessHash.h"
 #include "utl/Loader.h"
 #include "utl/MemMgr.h"
+#include "utl/Std.h"
 #include "utl/StringTable.h"
 #include <vector>
 
@@ -22,7 +24,7 @@ template <class C>
 class ObjDirPtr : public ObjRefConcrete<C> {
 public:
     ObjDirPtr() : ObjRefConcrete(nullptr), mLoader(nullptr) {}
-    ObjDirPtr(C *);
+    ObjDirPtr(C *c) : ObjRefConcrete(c), mLoader(nullptr) {}
     ObjDirPtr(const ObjDirPtr &o) : ObjRefConcrete<C>(o.mObject), mLoader(nullptr) {}
     virtual ~ObjDirPtr() { *this = nullptr; }
     virtual bool IsDirPtr() { return true; }
@@ -57,6 +59,7 @@ public:
     }
 
     operator C *() const { return mObject; }
+    C *Ptr() const { return mObject; }
     C *operator->() const {
         MILO_ASSERT(ObjRefConcrete<C>::mObject, 0x5F);
         return mObject;
@@ -109,19 +112,11 @@ public:
 
     void LoadInlinedFile(const FilePath &fp, BinStream &bs) {
         *this = nullptr;
-        // there's more
-        mLoader = new DirLoader(
-            fp,
-            TheLoadMgr.GetLoaderPos() == kLoadStayBack
-                    || TheLoadMgr.GetLoaderPos() == kLoadFrontStayBack
-                ? kLoadFrontStayBack
-                : kLoadFront,
-            nullptr,
-            &bs,
-            nullptr,
-            false,
-            nullptr
-        );
+        LoaderPos pos = TheLoadMgr.GetLoaderPos() == kLoadStayBack
+                || TheLoadMgr.GetLoaderPos() == kLoadFrontStayBack
+            ? kLoadFrontStayBack
+            : kLoadFront;
+        mLoader = new DirLoader(fp, pos, nullptr, &bs, nullptr, false, nullptr);
     }
 
 protected:
@@ -129,7 +124,10 @@ protected:
 };
 
 template <class C>
-BinStream &operator<<(BinStream &bs, const ObjDirPtr<C> &ptr);
+BinStream &operator<<(BinStream &bs, const ObjDirPtr<C> &ptr) {
+    bs << FileRelativePath(FilePath::Root().c_str(), ptr.GetFile().c_str());
+    return bs;
+}
 
 template <class T>
 BinStream &operator>>(BinStream &bs, ObjDirPtr<T> &ptr) {
@@ -159,7 +157,15 @@ class ObjectDir : public virtual Hmx::Object {
 
 public:
     enum ViewportId {
-        kNumViewports = 7
+        kPerspective = 0,
+        kLeft = 1,
+        kRight = 2,
+        kTop = 3,
+        kBottom = 4,
+        kFront = 5,
+        kBack = 6,
+        kCustom = 7,
+        kNumViewports = 8,
     };
 
     class Viewport {
@@ -178,10 +184,8 @@ public:
         Hmx::Object *obj;
     };
 
-protected:
+private:
     struct InlinedDir {
-        InlinedDir();
-        ~InlinedDir();
         ObjDirPtr<ObjectDir> dir; // 0x0
         FilePath file; // 0x14
         bool shared; // 0x1c
@@ -219,14 +223,11 @@ protected:
     FilePath mStoredFile; // 0x68
     std::vector<InlinedDir> mInlinedDirs; // 0x70
     std::vector<Viewport> mViewports; // 0x7c
-    ViewportId mCurViewportID; // 0x88
-    Hmx::Object *unk8c; // 0x8c
+    ViewportId mCurViewport; // 0x88
+    Hmx::Object *mCurAnim; // 0x8c
     Hmx::Object *mCurCam; // 0x90
     int mAlwaysInlined; // 0x94 / -0xC
     const char *mAlwaysInlineHash; // 0x98
-
-    ObjectDir();
-    static ObjectDir *sMainDir;
 
 public:
     // Hmx::Object
@@ -353,6 +354,9 @@ public:
     OBJ_MEM_OVERLOAD(0x111);
 
 protected:
+    ObjectDir();
+    static ObjectDir *sMainDir;
+
     /** Routine to perform when an Object has been added to this ObjectDir. */
     virtual void AddedObject(Hmx::Object *);
     /** Routine to perform when an Object is being removed from this ObjectDir. */
@@ -413,14 +417,7 @@ private:
         mObj = nullptr;
     }
     void RecurseSubdirs(ObjectDir *dir) {
-        if (dir) {
-            std::list<ObjectDir *>::iterator it = mSubDirs.begin();
-            if (it != mSubDirs.end()) {
-                for (; it != mSubDirs.end() && *it != dir; ++it)
-                    ;
-                if (it != mSubDirs.end())
-                    return;
-            }
+        if (dir && std::find(mSubDirs.begin(), mSubDirs.end(), dir) == mSubDirs.end()) {
             mSubDirs.push_back(dir);
             for (int i = 0; i < dir->SubDirs().size(); i++) {
                 RecurseSubdirs(dir->SubDirs()[i]);
@@ -464,6 +461,7 @@ public:
 
     operator T *() { return mObj; }
     T *operator->() { return mObj; }
+    T *Ptr() const { return mObj; }
 };
 
 void PreloadSharedSubdirs(Symbol s);

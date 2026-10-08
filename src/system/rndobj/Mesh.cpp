@@ -1,70 +1,83 @@
 #include "rndobj/Mesh.h"
 #include "Utl.h"
+#include "math/Color.h"
+#include "math/Geo.h"
 #include "math/Mtx.h"
+#include "math/Utl.h"
 #include "math/Vec.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
 #include "obj/PropSync.h"
+#include "obj/Utl.h"
 #include "os/Debug.h"
+#include "os/Platform.h"
 #include "os/System.h"
+#include "os/Timer.h"
 #include "rndobj/BaseMaterial.h"
+#include "rndobj/Dir.h"
 #include "rndobj/Draw.h"
 #include "rndobj/Mat.h"
+#include "rndobj/MeshVertCompress.h"
 #include "rndobj/MultiMesh.h"
 #include "rndobj/Trans.h"
 #include "utl/BinStream.h"
+#include "utl/ChunkStream.h"
+#include "utl/Loader.h"
 #include "utl/MemMgr.h"
 #include "utl/Std.h"
 
 PatchVerts gPatchVerts;
+int RndMesh::sLastCollide = -1;
 int MESH_REV_SEP_COLOR = 0x25;
+CompressedVertex_Xbox gCompressedVertexXbox;
 
-RndMesh::RndMesh()
-    : mMat(this), mGeomOwner(this, this), mBones(this), mMutable(0),
-      mVolume(kVolumeTriangles), mBSPTree(nullptr), mMultiMesh(nullptr), mHasAOCalc(0),
-      mKeepMeshData(0), mCompressedVerts(nullptr), mNumCompressedVerts(0) {
-    unk180 = 0x26;
+void PatchVerts::Add(int vert, RndMesh::VertVector &verts, Vector3 &centroid) {
+    auto harness_tmp_0 = mPatchVerts.insert(mPatchVerts.begin() + GreaterEq(vert), vert);
+    mCentroid += verts[vert].pos;
+    centroid = mCentroid;
+    centroid *= (1.0f / mPatchVerts.size());
 }
 
-RndMesh::~RndMesh() {
-    RELEASE(mBSPTree);
-    RELEASE(mMultiMesh);
-    ClearCompressedVerts();
+#pragma region VertVector
+
+void RndMesh::VertVector::resize(int n) {
+    if (mCapacity > 0) {
+        MILO_ASSERT(n <= mCapacity, 0x227);
+        mNumVerts = n;
+    } else if (n == 0) {
+        delete[] mVerts;
+        mVerts = nullptr;
+        mNumVerts = 0;
+    } else if (n != mNumVerts) {
+        Vert *oldverts = mVerts;
+        Vert *oldit = oldverts;
+        Vert *end = oldverts + Min(n, size());
+        mVerts = new Vert[n];
+        mNumVerts = n;
+
+        Vert *newit = mVerts;
+        while (oldit != end) {
+            *newit++ = *oldit++;
+        }
+
+        delete[] oldverts;
+    }
 }
 
-BEGIN_HANDLERS(RndMesh)
-    HANDLE(compare_edge_verts, OnCompareEdgeVerts)
-    HANDLE(attach_mesh, OnAttachMesh)
-    HANDLE(get_face, OnGetFace)
-    HANDLE(set_face, OnSetFace)
-    HANDLE(get_vert_pos, OnGetVertXYZ)
-    HANDLE(set_vert_pos, OnSetVertXYZ)
-    HANDLE(get_vert_norm, OnGetVertNorm)
-    HANDLE(set_vert_norm, OnSetVertNorm)
-    HANDLE(get_vert_uv, OnGetVertUV)
-    HANDLE(set_vert_uv, OnSetVertUV)
-    HANDLE(unitize_normals, OnUnitizeNormals)
-    HANDLE(build_from_bsp, OnBuildFromBSP)
-    HANDLE(point_collide, OnPointCollide)
-    HANDLE(configure_mesh, OnConfigureMesh)
-    HANDLE_EXPR(estimated_size_kb, EstimatedSizeKb())
-    HANDLE_ACTION(instance_bones, InstanceGeomOwnerBones())
-    HANDLE_EXPR(has_instanced_bones, HasInstancedBones())
-    HANDLE_EXPR(has_bones, !mBones.empty())
-    HANDLE_ACTION(delete_bones, DeleteBones(_msg->Int(2)))
-    HANDLE_ACTION(burn_xfm, BurnXfm())
-    HANDLE_ACTION(reset_normals, ResetNormals())
-    HANDLE_ACTION(tessellate, Tessellate())
-    HANDLE_ACTION(clear_ao, ClearAO())
-    HANDLE_ACTION(clear_bones, mBones.clear())
-    HANDLE_ACTION(copy_geom_from_owner, CopyGeometryFromOwner())
-    HANDLE_SUPERCLASS(RndDrawable)
-    HANDLE_SUPERCLASS(RndTransformable)
-    HANDLE_SUPERCLASS(Hmx::Object)
-END_HANDLERS
-
-bool RndMesh::HasInstancedBones() {
-    return mGeomOwner && !mBones.empty() && mGeomOwner->mBones.Owner() == mBones.Owner();
+void RndMesh::VertVector::operator=(const RndMesh::VertVector &c) {
+    MILO_ASSERT(mCapacity == 0, 0x26D);
+    MILO_ASSERT(c.mCapacity == 0, 0x26E);
+    if (c.mNumVerts != mNumVerts) {
+        delete mVerts;
+        mNumVerts = c.mNumVerts;
+        mVerts = new Vert[mNumVerts];
+    }
+    Vert *otherVerts = c.mVerts;
+    Vert *otherEnd = &otherVerts[mNumVerts];
+    Vert *myVerts = mVerts;
+    while (otherVerts != otherEnd) {
+        *myVerts++ = *otherVerts++;
+    }
 }
 
 BEGIN_CUSTOM_PROPSYNC(RndMesh::Vert)
@@ -73,11 +86,6 @@ BEGIN_CUSTOM_PROPSYNC(RndMesh::Vert)
     SYNC_PROP(color, o.color)
     SYNC_PROP(alpha, o.color.alpha)
     SYNC_PROP(tex, o.tex)
-END_CUSTOM_PROPSYNC
-
-BEGIN_CUSTOM_PROPSYNC(RndBone)
-    SYNC_PROP(bone, o.mBone)
-    SYNC_PROP(offset, o.mOffset)
 END_CUSTOM_PROPSYNC
 
 bool PropSync(
@@ -110,6 +118,80 @@ bool PropSync(
     }
 }
 
+#pragma endregion
+#pragma region RndMesh
+
+RndMesh::RndMesh()
+    : mMat(this), mGeomOwner(this, this), mBones(this), mMutable(0),
+      mVolume(kVolumeTriangles), mBSPTree(nullptr), mMultiMesh(nullptr), mHasAOCalc(0),
+      mKeepMeshData(0), mCompressedVerts(nullptr), mNumCompressedVerts(0) {
+    unk180 = 0x26;
+}
+
+RndMesh::~RndMesh() {
+    RELEASE(mBSPTree);
+    RELEASE(mMultiMesh);
+    ClearCompressedVerts();
+}
+
+bool RndMesh::Replace(ObjRef *from, Hmx::Object *to) {
+    if (&mGeomOwner == from) {
+        if (mGeomOwner == this) {
+            mGeomOwner = this;
+        } else {
+            RndMesh *mesh = dynamic_cast<RndMesh *>(to);
+            if (mesh) {
+                mGeomOwner = mesh->mGeomOwner.Ptr();
+            } else {
+                mGeomOwner = this;
+            }
+        }
+        return true;
+    } else {
+        return RndTransformable::Replace(from, to);
+    }
+}
+
+BEGIN_HANDLERS(RndMesh)
+    HANDLE(compare_edge_verts, OnCompareEdgeVerts)
+    HANDLE(attach_mesh, OnAttachMesh)
+    HANDLE(get_face, OnGetFace)
+    HANDLE(set_face, OnSetFace)
+    HANDLE(get_vert_pos, OnGetVertXYZ)
+    HANDLE(set_vert_pos, OnSetVertXYZ)
+    HANDLE(get_vert_norm, OnGetVertNorm)
+    HANDLE(set_vert_norm, OnSetVertNorm)
+    HANDLE(get_vert_uv, OnGetVertUV)
+    HANDLE(set_vert_uv, OnSetVertUV)
+    HANDLE(unitize_normals, OnUnitizeNormals)
+    HANDLE(build_from_bsp, OnBuildFromBSP)
+    HANDLE(point_collide, OnPointCollide)
+    HANDLE(configure_mesh, OnConfigureMesh)
+    HANDLE_EXPR(estimated_size_kb, EstimatedSizeKb())
+    HANDLE_ACTION(instance_bones, InstanceGeomOwnerBones())
+    HANDLE_EXPR(has_instanced_bones, HasInstancedBones())
+    HANDLE_EXPR(has_bones, !mBones.empty())
+    HANDLE_ACTION(delete_bones, DeleteBones(_msg->Int(2)))
+    HANDLE_ACTION(burn_xfm, BurnXfm())
+    HANDLE_ACTION(reset_normals, ResetNormals())
+    HANDLE_ACTION(tessellate, Tessellate())
+    HANDLE_ACTION(clear_ao, ClearAO())
+    HANDLE_ACTION(clear_bones, CopyBones(nullptr))
+    HANDLE_ACTION(copy_geom_from_owner, CopyGeometryFromOwner())
+    HANDLE_SUPERCLASS(RndDrawable)
+    HANDLE_SUPERCLASS(RndTransformable)
+    HANDLE_SUPERCLASS(Hmx::Object)
+END_HANDLERS
+
+__forceinline bool RndMesh::HasInstancedBones() {
+    return mGeomOwner && !mBones.empty() && mGeomOwner->BoneTransAt(0) != BoneTransAt(0);
+}
+
+BEGIN_CUSTOM_PROPSYNC(RndBone)
+    SYNC_PROP(bone, o.mBone)
+    SYNC_PROP(offset, o.mOffset)
+END_CUSTOM_PROPSYNC
+
 BEGIN_PROPSYNCS(RndMesh)
     SYNC_PROP(mat, mMat)
     SYNC_PROP_MODIFY(geom_owner, mGeomOwner, if (!mGeomOwner) mGeomOwner = this)
@@ -135,7 +217,8 @@ BinStream &operator<<(BinStream &bs, const RndMesh::Face &face) {
 BinStream &operator<<(BinStream &bs, const RndMesh::Vert &vert) {
     bs << vert.pos << vert.norm;
     bs << vert.color << vert.tex << vert.boneWeights << vert.boneIndices[0]
-       << vert.boneIndices[1] << vert.boneIndices[2] << vert.boneIndices[3] << vert.unk50;
+       << vert.boneIndices[1] << vert.boneIndices[2] << vert.boneIndices[3]
+       << vert.tangent;
     return bs;
 }
 
@@ -171,12 +254,14 @@ BEGIN_COPYS(RndMesh)
     CREATE_COPY(RndMesh)
     BEGIN_COPYING_MEMBERS
         COPY_MEMBER(mMat)
-        if (ty != kCopyFromMax)
+        if (ty != kCopyFromMax) {
             COPY_MEMBER(mKeepMeshData)
-        if (ty == kCopyFromMax)
+        }
+        if (ty == kCopyFromMax) {
             mMutable |= c->mMutable;
-        else
+        } else {
             COPY_MEMBER(mMutable)
+        }
         mHasAOCalc = false;
         if (ty == kCopyShallow || (ty == kCopyFromMax && c->mGeomOwner != c)) {
             mGeomOwner = c->mGeomOwner.Ptr();
@@ -220,7 +305,7 @@ BinStreamRev &operator>>(BinStreamRev &d, RndMesh::Vert &vert) {
         d.stream >> vert.boneIndices[3];
     }
     if (d.rev > 0x1D) {
-        d.stream >> vert.unk50;
+        d.stream >> vert.tangent;
     }
     return d;
 }
@@ -243,27 +328,33 @@ BinStream &operator>>(BinStream &bs, RndBone &bone) {
 }
 
 template <class T1, class T2>
-BinStream &CachedRead(BinStream &, std::vector<T1, T2> &);
+BinStream &CachedRead(BinStream &bs, std::vector<T1, T2> &vec) {
+    int size;
+    bs >> size;
+    vec.resize(size);
+    bs.Read(&vec[0], size * sizeof(T1));
+    return bs;
+}
+
+INIT_REVS(0x26, 0)
 
 BEGIN_LOADS(RndMesh)
     LOAD_REVS(bs)
     ASSERT_REVS(0x26, 0)
     if (d.rev > 0x19) {
-        Hmx::Object::Load(d.stream);
+        LOAD_SUPERCLASS(Hmx::Object)
     }
-    RndTransformable::Load(d.stream);
-    RndDrawable::Load(d.stream);
+    LOAD_SUPERCLASS(RndTransformable)
+    LOAD_SUPERCLASS(RndDrawable)
     if (d.rev < 15) {
         ObjPtrList<Hmx::Object> oList(this);
         int dummy;
-        d.stream >> dummy;
-        d.stream >> oList;
+        d >> dummy >> oList;
     }
     int i22 = 0;
     if (d.rev < 0x14) {
         int ib8, ie8;
-        d.stream >> ib8;
-        d.stream >> ie8;
+        d >> ib8 >> ie8;
         if (ib8 == 0 || ie8 == 0) {
             i22 = 0;
         } else if (ib8 == 1) {
@@ -276,9 +367,9 @@ BEGIN_LOADS(RndMesh)
     }
     if (d.rev < 3) {
         int dummy;
-        d.stream >> dummy;
+        d >> dummy;
     }
-    d.stream >> mMat;
+    d >> mMat;
     if (d.rev > 0x1A && d.rev < 0x1C) {
         char buf[0x80];
         d.stream.ReadString(buf, 0x80);
@@ -286,7 +377,7 @@ BEGIN_LOADS(RndMesh)
             mMat = LookupOrCreateMat(buf, Dir());
         }
     }
-    d.stream >> mGeomOwner;
+    d >> mGeomOwner;
     if (!mGeomOwner) {
         mGeomOwner = this;
     }
@@ -295,14 +386,14 @@ BEGIN_LOADS(RndMesh)
     }
     if (d.rev < 0xD) {
         ObjOwnerPtr<RndMesh> mesh(this);
-        d.stream >> mesh;
+        d >> mesh;
         if (mesh != mGeomOwner) {
             MILO_NOTIFY("Combining face and vert owner of %s", Name());
         }
     }
     if (d.rev < 0xF) {
         ObjPtr<RndTransformable> trans(this);
-        d.stream >> trans;
+        d >> trans;
         SetTransParent(trans, false);
         SetTransConstraint((Constraint)2, nullptr, false);
     }
@@ -313,11 +404,11 @@ BEGIN_LOADS(RndMesh)
     }
     if (d.rev < 3) {
         Vector3 v;
-        d.stream >> v;
+        d >> v;
     }
     if (d.rev < 0xF) {
         Sphere s;
-        d.stream >> s;
+        d >> s;
         SetSphere(s);
     }
     if (d.rev > 4 && d.rev < 8) {
@@ -327,22 +418,21 @@ BEGIN_LOADS(RndMesh)
     if (d.rev > 5 && d.rev < 0x15) {
         String str;
         int x;
-        d.stream >> str;
-        d.stream >> x;
+        d >> str >> x;
     }
     if (d.rev > 0xF) {
-        d.stream >> mMutable;
+        d >> mMutable;
     } else if (d.rev > 0xB) {
         bool b;
         d >> b;
         mMutable = b ? 31 : 0;
     }
     if (d.rev > 0x11) {
-        d.stream >> (int &)mVolume;
+        d >> (int &)mVolume;
     }
     if (d.rev > 0x12) {
         RELEASE(mBSPTree);
-        d.stream >> mBSPTree;
+        d >> mBSPTree;
     }
     if (d.rev > 6 && d.rev < 8) {
         bool b;
@@ -350,7 +440,7 @@ BEGIN_LOADS(RndMesh)
     }
     if (d.rev > 8 && d.rev < 0xB) {
         int x;
-        d.stream >> x;
+        d >> x;
     }
     LoadVertices(d);
     if (d.stream.Cached()) {
@@ -361,10 +451,9 @@ BEGIN_LOADS(RndMesh)
     if (d.rev > 4 && d.rev < 0x18) {
         int count;
         unsigned short s1, s2;
-        d.stream >> count;
+        d >> count;
         for (; count != 0; count--) {
-            d.stream >> s1;
-            d.stream >> s2;
+            d >> s1 >> s2;
         }
     }
     if (d.rev > 0x17) {
@@ -377,7 +466,7 @@ BEGIN_LOADS(RndMesh)
         mPatches.clear();
         int count;
         unsigned int ui;
-        bs >> count;
+        d >> count;
         for (; count != 0; count--) {
             std::vector<unsigned short> usvec;
             std::vector<unsigned int> uivec;
@@ -388,8 +477,7 @@ BEGIN_LOADS(RndMesh)
         d >> mPatches;
     if (d.rev > 0x1C) {
         d >> mBones;
-        int max = MaxBones();
-        if (mBones.size() > max) {
+        if (mBones.size() > MaxBones()) {
             MILO_NOTIFY(
                 "%s: exceeds bone limit (%d of %d)",
                 PathName(this),
@@ -400,18 +488,18 @@ BEGIN_LOADS(RndMesh)
         }
     } else if (d.rev > 0xD) {
         ObjPtr<RndTransformable> trans(this);
-        d.stream >> trans;
+        d >> trans;
         if (trans) {
             mBones.resize(4);
             if (d.rev > 0x16) {
                 mBones[0].mBone = trans;
-                bs >> mBones[1].mBone >> mBones[2].mBone >> mBones[3].mBone;
-                bs >> mBones[0].mOffset >> mBones[1].mOffset >> mBones[2].mOffset
+                d.stream >> mBones[1].mBone >> mBones[2].mBone >> mBones[3].mBone;
+                d.stream >> mBones[0].mOffset >> mBones[1].mOffset >> mBones[2].mOffset
                     >> mBones[3].mOffset;
                 if (d.rev < 0x19) {
                     for (Vert *it = mVerts.begin(); it != mVerts.end(); ++it) {
                         it->boneWeights.Set(
-                            ((1.0f - it->boneWeights.x) - it->boneWeights.y)
+                            1.0f - it->boneWeights.x - it->boneWeights.y
                                 - it->boneWeights.z,
                             it->boneWeights.x,
                             it->boneWeights.y,
@@ -421,14 +509,13 @@ BEGIN_LOADS(RndMesh)
                 }
             } else {
                 if (TransConstraint() == RndTransformable::kConstraintParentWorld) {
-                    ObjPtr<RndTransformable> &bone = mBones[0].mBone;
-                    bone = TransParent();
+                    mBones[0].mBone = TransParent();
                 } else {
                     mBones[0].mBone = this;
                 }
                 mBones[0].mOffset.Reset();
                 mBones[1].mBone = trans;
-                bs >> mBones[2].mBone >> mBones[1].mOffset >> mBones[2].mOffset;
+                d.stream >> mBones[2].mBone >> mBones[1].mOffset >> mBones[2].mOffset;
                 mBones[3].mBone = nullptr;
             }
             for (int i = 0; i < 4; i++) {
@@ -451,20 +538,14 @@ BEGIN_LOADS(RndMesh)
         d >> bd4 >> ic0 >> ic4 >> ic8;
         d >> icc;
     }
-    if (d.rev == 0x12) {
-        if (mGeomOwner == this) {
-            SetVolume(mVolume);
-            goto yes;
+    if (d.rev == 0x12 && mGeomOwner == this) {
+        SetVolume(mVolume);
+    }
+    if (d.rev < 0x1E) {
+        if (mMat && mMat->NormalMap()) {
+            MakeTangentsLate(this);
         }
-    } else {
-    yes:
-        if (d.rev >= 0x1E)
-            goto next;
     }
-    if (mMat && mMat->NormalMap()) {
-        MakeTangentsLate(this);
-    }
-next:
     if (d.rev < 0x1F) {
         SetZeroWeightBones();
     }
@@ -473,10 +554,11 @@ next:
     }
     if (d.rev < MESH_REV_SEP_COLOR && IsSkinned()) {
         for (Vert *it = mVerts.begin(); it != mVerts.end(); ++it) {
-            it->boneWeights.Set(
-                it->color.red, it->color.green, it->color.blue, it->color.alpha
-            );
-            it->color.Zero();
+            it->boneWeights.x = it->color.red;
+            it->boneWeights.y = it->color.green;
+            it->boneWeights.z = it->color.blue;
+            it->boneWeights.w = it->color.alpha;
+            it->color.Set(1, 1, 1, 1);
         }
     }
     if (d.rev > 0x25) {
@@ -485,7 +567,7 @@ next:
     Sync(0xBF);
 END_LOADS
 
-TextStream &operator<<(TextStream &ts, RndMesh::Volume v) {
+__forceinline TextStream &operator<<(TextStream &ts, RndMesh::Volume v) {
     if (v == RndMesh::kVolumeEmpty)
         ts << "Empty";
     else if (v == RndMesh::kVolumeTriangles)
@@ -527,7 +609,7 @@ float RndMesh::GetDistanceToPlane(const Plane &p, Vector3 &v) {
         Multiply(Verts()[0].pos, world, v58);
         v = v58;
         float dot = p.Dot(v);
-        for (Vert *it = Verts().begin(); it != Verts().end(); ++it) {
+        FOREACH (it, Verts()) {
             Multiply(it->pos, world, v58);
             float dotted = p.Dot(v58);
             if (std::fabs(dotted) < std::fabs(dot)) {
@@ -539,27 +621,27 @@ float RndMesh::GetDistanceToPlane(const Plane &p, Vector3 &v) {
     }
 }
 
-bool RndMesh::MakeWorldSphere(Sphere &s, bool b) {
-    if (b) {
-        if (mShowing) {
+bool RndMesh::MakeWorldSphere(Sphere &s, bool zero) {
+    if (zero) {
+        if (Showing()) {
             Box box;
             CalcBox(this, box);
             Vector3 v68;
             CalcBoxCenter(v68, box);
             s.Set(v68, 0);
             const Transform &worldXfm = WorldXfm();
-            for (Vert *it = Verts().begin(); it != Verts().end(); ++it) {
+            FOREACH (it, Verts()) {
                 Vector3 v50;
                 Multiply(it->pos, worldXfm, v50);
                 Vector3 v5c;
                 Subtract(v50, s.center, v5c);
-                s.radius = Max(s.GetRadius(), Dot(v5c, v5c));
+                s.radius = Max(s.radius, Dot(v5c, v5c));
             }
-            s.radius = sqrtf(s.GetRadius());
+            s.radius = sqrtf(s.radius);
             return true;
         }
-    } else if (mSphere.GetRadius()) {
-        Multiply(mSphere, WorldXfm(), s);
+    } else if (GetSphere().radius) {
+        Multiply(GetSphere(), WorldXfm(), s);
         return true;
     }
     return false;
@@ -567,62 +649,64 @@ bool RndMesh::MakeWorldSphere(Sphere &s, bool b) {
 
 void RndMesh::Mats(std::list<RndMat *> &mats, bool) {
     if (mMat) {
-        mMat->SetShaderOpts(GetDefaultMatShaderOpts(this, mMat));
+        MatShaderOptions opts = GetDefaultMatShaderOpts(this, mMat);
+        mMat->SetShaderOpts(opts);
         mats.push_back(mMat);
     }
 }
 
-// RndDrawable *RndMesh::CollideShowing(const Segment &seg, float &f, Plane &pl) {
-//     Segment sega0;
-//     Transform tf58;
-//     sLastCollide = -1;
-//     if (IsSkinned() || sRawCollide)
-//         sega0 = seg;
-//     else {
-//         FastInvert(WorldXfm(), tf58);
-//         Multiply(seg.start, tf58, sega0.start);
-//         Multiply(seg.end, tf58, sega0.end);
-//     }
-//     if (mGeomOwner->mBSPTree) {
-//         if (Intersect(sega0, mGeomOwner->mBSPTree, f, pl) && f) {
-//             Multiply(pl, WorldXfm(), pl);
-//             return this;
-//         }
-//     } else {
-//         if (GetVolume() == kVolumeTriangles) {
-//             bool b1 = false;
-//             f = 1.0f;
-//             FOREACH (it, Faces()) {
-//                 const Vert &vert0 = Verts(it->v1);
-//                 const Vert &vert1 = Verts(it->v2);
-//                 const Vert &vert2 = Verts(it->v3);
-//                 Triangle tri;
-//                 if (IsSkinned() && !sRawCollide) {
-//                     tri.Set(
-//                         SkinVertex(vert0, nullptr),
-//                         SkinVertex(vert1, nullptr),
-//                         SkinVertex(vert2, nullptr)
-//                     );
-//                 } else
-//                     tri.Set(vert0.pos, vert1.pos, vert2.pos);
-//                 float fintersect;
-//                 if (Intersect(sega0, tri, false, fintersect)) {
-//                     Interp(sega0.start, sega0.end, fintersect, sega0.end);
-//                     f *= fintersect;
-//                     pl.Set(tri.origin, tri.frame.z);
-//                     b1 = true;
-//                     sLastCollide = (it - Faces().begin());
-//                 }
-//             }
-//             if (b1) {
-//                 if (!sRawCollide)
-//                     Multiply(pl, WorldXfm(), pl);
-//                 return this;
-//             }
-//         }
-//     }
-//     return 0;
-// }
+RndDrawable *RndMesh::CollideShowing(const Segment &seg, float &f, Plane &pl) {
+    Segment sega0;
+    Transform tf58;
+    sLastCollide = -1;
+    if (IsSkinned() || sRawCollide)
+        sega0 = seg;
+    else {
+        FastInvert(WorldXfm(), tf58);
+        Multiply(seg.start, tf58, sega0.start);
+        Multiply(seg.end, tf58, sega0.end);
+    }
+    if (mGeomOwner->mBSPTree) {
+        if (Intersect(sega0, mGeomOwner->mBSPTree, f, pl) && f) {
+            Multiply(pl, WorldXfm(), pl);
+            return this;
+        }
+    } else {
+        if (GetVolume() == kVolumeTriangles) {
+            f = 1.0f;
+            bool b1 = false;
+            bool bbb = mMat && mMat->GetCull() != kCullNone;
+            FOREACH (it, Faces()) {
+                const Vert &vert0 = Verts(it->v1);
+                const Vert &vert1 = Verts(it->v2);
+                const Vert &vert2 = Verts(it->v3);
+                Triangle tri;
+                if (IsSkinned() && !sRawCollide) {
+                    tri.Set(
+                        SkinVertex(vert0, nullptr),
+                        SkinVertex(vert1, nullptr),
+                        SkinVertex(vert2, nullptr)
+                    );
+                } else
+                    tri.Set(vert0.pos, vert1.pos, vert2.pos);
+                float fintersect;
+                if (Intersect(sega0, tri, bbb, fintersect)) {
+                    Interp(sega0.start, sega0.end, fintersect, sega0.end);
+                    f *= fintersect;
+                    pl.Set(tri.origin, tri.frame.z);
+                    b1 = true;
+                    sLastCollide = (it - Faces().begin());
+                }
+            }
+            if (b1) {
+                if (!sRawCollide)
+                    Multiply(pl, WorldXfm(), pl);
+                return this;
+            }
+        }
+    }
+    return 0;
+}
 
 int RndMesh::CollidePlane(const Plane &plane) {
     int super = RndDrawable::CollidePlane(plane);
@@ -633,16 +717,18 @@ int RndMesh::CollidePlane(const Plane &plane) {
     Plane pl58;
     Multiply(plane, tf48, pl58);
     if (GetVolume() == kVolumeTriangles) {
-        if (Faces().empty())
+        auto &faces = Faces();
+        if (faces.empty())
             return -1;
         else {
-            std::vector<Face>::iterator faceIt = Faces().begin();
+            auto faceIt = faces.begin();
             int faceColl = CollidePlane(*faceIt, pl58);
             if (faceColl == 0)
                 return 0;
             else {
+                auto facesEnd = faces.end();
                 ++faceIt;
-                for (; faceIt != Faces().end(); ++faceIt) {
+                for (; faceIt != facesEnd; ++faceIt) {
                     if (faceColl != CollidePlane(*faceIt, pl58)) {
                         return 0;
                     }
@@ -654,50 +740,206 @@ int RndMesh::CollidePlane(const Plane &plane) {
         return 0;
 }
 
-void RndMesh::VertVector::operator=(const RndMesh::VertVector &c) {
-    MILO_ASSERT(mCapacity == 0, 0x26D);
-    MILO_ASSERT(c.mCapacity == 0, 0x26E);
-    if (c.mNumVerts != mNumVerts) {
-        delete mVerts;
-        mNumVerts = c.mNumVerts;
-        mVerts = new Vert[mNumVerts];
+void RndMesh::LoadVertices(BinStreamRev &d) {
+    int numVerts;
+    d >> numVerts;
+    bool c8;
+    if (d.rev > 0x22) {
+        bool b;
+        d >> b;
+        c8 = b;
+    } else {
+        c8 = false;
     }
-    Vert *otherVerts = c.mVerts;
-    Vert *otherEnd = &otherVerts[mNumVerts];
-    Vert *myVerts = mVerts;
-    while (otherVerts != otherEnd) {
-        *myVerts++ = *otherVerts++;
+    unsigned int loadedCompressedSize = 0;
+    unsigned int loadedVersion = 0;
+    unsigned int i8c = 0;
+    unsigned int i88 = 0;
+    unsigned int i9 = 0;
+    bool b3 = false;
+    if (c8) {
+        d >> loadedCompressedSize;
+        d >> loadedVersion;
+        MILO_ASSERT(IsVertexCompressionSupported(TheLoadMgr.GetPlatform()), 0x29C);
+        if (TheLoadMgr.GetPlatform() != kPlatformXBox) {
+            MILO_FAIL("Unsupported platform for vertex compression");
+        } else {
+            i9 = 36;
+            i8c = 36;
+            i88 = 1;
+        }
+        b3 = i9 == loadedCompressedSize && i88 == loadedVersion;
+        if (!b3) {
+            MILO_NOTIFY(
+                "Loaded stale compressed vertex data, resave mesh file \"%s\"(loaded size = %d, current = %d; loaded ver = %d, current = %d",
+                d.stream.Name(),
+                loadedCompressedSize,
+                i8c,
+                loadedVersion,
+                i88
+            );
+        }
+    }
+    if (c8) {
+        if (b3) {
+            mNumCompressedVerts = numVerts;
+            if (mNumCompressedVerts != 0) {
+                unsigned int compressedSize = mNumCompressedVerts * i9;
+                unsigned int i99 = i9 << 9;
+                MILO_ASSERT(compressedSize > 0, 0x2D4);
+                {
+                    MemDoTempAllocations tmp;
+                    mCompressedVerts = new unsigned char[compressedSize];
+                }
+                ReadChunks(d.stream, mCompressedVerts, compressedSize, i99);
+            }
+        } else {
+            loadedCompressedSize *= numVerts;
+            MILO_ASSERT(loadedCompressedSize> 0, 0x2E7);
+            d.stream.Seek(loadedCompressedSize, BinStream::kSeekCur);
+        }
+    } else {
+        mVerts.resize(numVerts);
+        int i5 = 0;
+        for (Vert *it = mVerts.begin(); it != mVerts.end(); ++it) {
+            d >> *it;
+            i5++;
+            if ((i5 & 0x1FF) == 0) {
+                while (d.stream.Eof() != NotEof) {
+                    Timer::Sleep(0);
+                }
+            }
+        }
     }
 }
 
-void RndMesh::VertVector::resize(int n) {
-    if (mCapacity > 0) {
-        MILO_ASSERT(n <= mCapacity, 0x227);
-        mNumVerts = n;
-    } else if (n == 0) {
-        delete[] mVerts;
-        mVerts = nullptr;
-        mNumVerts = 0;
-    } else if (n != mNumVerts) {
-        Vert *oldverts = mVerts;
-        Vert *oldit = oldverts;
-        Vert *end = oldverts + Min(n, size());
-        mVerts = new Vert[n];
-        mNumVerts = n;
-
-        Vert *newit = mVerts;
-        while (oldit != end) {
-            *newit++ = *oldit++;
+void RndMesh::SaveVertices(BinStream &bs) {
+    bool b3 = bs.Cached()
+        && (bs.GetPlatform() == kPlatformPS3 || bs.GetPlatform() == kPlatformXBox);
+    bool b1 = mMutable & 0x1F && mKeepMeshData;
+    bool b2 = IsVertexCompressionSupported(TheLoadMgr.GetPlatform()) && b3 && !b1;
+    bs << mVerts.size();
+    bool b7 = true;
+    bs << b2;
+    if (b2) {
+        int size = 0;
+        bool xbox;
+        if (TheLoadMgr.GetPlatform() != kPlatformXBox) {
+            unsigned int compressedSize = 0;
+            unsigned int compressedVersion = 0;
+            MILO_FAIL("Unsupported platform for vertex compression");
+            MILO_ASSERT(compressedSize > 0, 0x339);
+            MILO_ASSERT(compressedVersion > 0, 0x33A);
+            xbox = false;
+        } else {
+            size = 36;
+            xbox = true;
         }
+        bs << size;
+        bs << (int)xbox;
+    }
+    int i8 = 0;
+    for (Vert *it = mVerts.begin(); it != mVerts.end(); ++it) {
+        if (b3 && b2) {
+            if (TheLoadMgr.GetPlatform() != kPlatformXBox) {
+                MILO_FAIL("Unsupported platform for vertex compression");
+                b7 = false;
+            } else {
+                FillCompressedVertex(gCompressedVertexXbox, *it, b7);
+                SaveCompressedVertex(gCompressedVertexXbox, bs);
+            }
+        } else {
+            bs << *it;
+        }
+        i8++;
+        if (bs.GetPlatform() == kPlatformWii && (i8 & 0x1FF) == 0) {
+            MarkChunk(bs);
+        }
+    }
+}
 
-        delete[] oldverts;
+void FaceCenter(RndMesh *mesh, RndMesh::Face *face, Vector3 &v) {
+    v.Set(0, 0, 0);
+    for (int i = 0; i < 3; i++) {
+        v += mesh->Verts((*face)[i]).pos;
+    }
+    v /= 3;
+}
+
+void RndMesh::OnSync(int flags) {
+    if (mGeomOwner == this && !(flags & 0x80) && flags & 0x20) {
+        mPatches.clear();
+        if (PatchOkay(mVerts.size(), mFaces.size())) {
+            mPatches.push_back(mFaces.size());
+        } else if (flags & 0x100) {
+            int patch = 0;
+            unsigned short globalMax = 0;
+            unsigned short globalMin = -1;
+            FOREACH (it, mFaces) {
+                globalMax = Max(Max(globalMax, it->v1, it->v2), it->v3);
+                globalMin = Min(Min(globalMin, it->v1, it->v2), it->v3);
+                if (!PatchOkay((globalMax - globalMin) + 1, patch + 1)) {
+                    mPatches.push_back(patch);
+                    globalMax = Max(it->v1, it->v2, it->v3);
+                    globalMin = Min(it->v1, it->v2, it->v3);
+                    patch = 1;
+                } else {
+                    patch++;
+                }
+            }
+            mPatches.push_back(patch);
+        } else {
+            gPatchVerts.Clear();
+            std::vector<Face> faces;
+            Vector3 ve0(0, 0, 0);
+            int patch = 0;
+            while (!mFaces.empty()) {
+                int i17 = 4;
+                float distsq = 0;
+                Face *theFace = mFaces.begin();
+                FOREACH (it, mFaces) {
+                    int sum = !gPatchVerts.HasVert(it->v1) + !gPatchVerts.HasVert(it->v2)
+                        + !gPatchVerts.HasVert(it->v3);
+                    if (sum < i17) {
+                        theFace = it;
+                        i17 = sum;
+                        Vector3 vcenter;
+                        FaceCenter(this, it, vcenter);
+                        distsq = DistanceSquared(vcenter, ve0);
+                    } else if (sum == i17) {
+                        Vector3 vcenter;
+                        FaceCenter(this, it, vcenter);
+                        float dist = DistanceSquared(vcenter, ve0);
+                        if (MinEq(distsq, dist)) {
+                            theFace = it;
+                            i17 = sum;
+                        }
+                    }
+                }
+                if (!PatchOkay(i17 + gPatchVerts.NumVerts(), patch + 1)) {
+                    gPatchVerts.Clear();
+                    mPatches.push_back(patch);
+                    patch = 0;
+                }
+                for (int i = 0; i < 3; i++) {
+                    if (!gPatchVerts.HasVert((*theFace)[i])) {
+                        gPatchVerts.Add((*theFace)[i], mVerts, ve0);
+                    }
+                }
+                faces.push_back(*theFace);
+                mFaces.erase(theFace);
+                patch++;
+            }
+            mPatches.push_back(patch);
+            std::swap(mFaces, faces);
+        }
     }
 }
 
 int RndMesh::EstimatedSizeKb() const {
     // sizeof(Vert) is 0x50 here
     // but the actual struct is size 0x60
-    return (NumVerts() * 0x50 + NumFaces() * sizeof(Face)) / 1024;
+    return (NumVerts() * 0x50 + NumFaces() * (int)sizeof(Face)) / 1024;
 }
 
 void RndMesh::ClearCompressedVerts() {
@@ -717,8 +959,8 @@ void RndMesh::SetKeepMeshData(bool keep) {
         mKeepMeshData = keep;
         if (!mKeepMeshData) {
             mVerts.resize(0);
-            ClearAndShrink(mFaces);
-            ClearAndShrink(mPatches);
+            mFaces.swap(std::vector<Face>());
+            mPatches.swap(std::vector<unsigned char>());
         }
     }
 }
@@ -822,11 +1064,9 @@ void RndMesh::BurnXfm() {
     if (mGeomOwner != this) {
         MILO_NOTIFY("Must be geom owner to burn xfm");
     } else {
-        for (std::list<RndTransformable *>::iterator it = mChildren.begin();
-             it != mChildren.end();
-             ++it) {
+        FOREACH (it, Children()) {
             Transform xfm;
-            Multiply((*it)->LocalXfm(), mLocalXfm, xfm);
+            Multiply((*it)->LocalXfm(), LocalXfm(), xfm);
             (*it)->SetLocalXfm(xfm);
         }
         ::BurnXfm(this, false);
@@ -876,6 +1116,204 @@ void RndMesh::CopyGeometry(const RndMesh *mesh, bool b2) {
     if (b2)
         SetVolume(mesh->mGeomOwner->mVolume);
     mBones = mesh->mBones;
+}
+
+int RndMesh::CollidePlane(const RndMesh::Face &face, const Plane &plane) {
+    bool first = Verts(face.v1).pos <= plane;
+    bool second = Verts(face.v2).pos <= plane;
+    bool third = Verts(face.v3).pos <= plane;
+    if (first == second && second == third) {
+        return first ? 1 : -1;
+    } else
+        return 0;
+}
+
+Vector3 TransformNormal(const Vector3 &v, const Hmx::Matrix3 &m) {
+    Hmx::Matrix3 inv;
+    FastInvert(m, inv);
+    Transpose(inv, inv);
+    Vector3 out;
+    Multiply(v, inv, out);
+    return out;
+}
+
+Vector3 RndMesh::SkinVertex(const RndMesh::Vert &vert, Vector3 *vptr) {
+    Vector3 ret(0, 0, 0);
+    if (NumBones() > 0) {
+        Transform xfm;
+        xfm.Zero();
+        short *boneItr = (short *)&vert.boneIndices;
+        float *weightItr = (float *)&vert.boneWeights;
+        for (int i = 0; i < 4; i++) {
+            short boneIdx = boneItr[i];
+            if (boneIdx < NumBones()) {
+                RndTransformable *curBoneTrans = BoneTransAt(boneIdx);
+                if (weightItr[i] && curBoneTrans) {
+                    Transform tf90;
+                    Multiply(BoneOffsetAt(boneIdx), curBoneTrans->WorldXfm(), tf90);
+                    ScaleAddEq(xfm, tf90, weightItr[i]);
+                }
+            }
+        }
+        Multiply(vert.pos, xfm, ret);
+        if (vptr) {
+            *vptr = TransformNormal(vert.norm, xfm.m);
+        }
+    } else {
+        const Transform &xfm = WorldXfm();
+        Multiply(vert.pos, xfm, ret);
+        if (vptr) {
+            *vptr = TransformNormal(vert.norm, xfm.m);
+        }
+    }
+    return ret;
+}
+
+void RndMesh::DeleteBones(bool b1) {
+    if (!mBones.empty()) {
+        std::vector<RndTransformable *> transes;
+        transes.resize(mBones.size());
+        for (int i = 0; i < transes.size(); i++) {
+            transes[i] = BoneTransAt(i);
+        }
+        RndTransformable *t = nullptr;
+        if (b1) {
+            for (RndTransformable *parent = BoneTransAt(0); parent != nullptr;
+                 parent = parent->TransParent()) {
+                if (dynamic_cast<RndDir *>(parent->TransParent())) {
+                    t = parent;
+                    break;
+                }
+                MILO_ASSERT(parent != parent->TransParent(), 0x5A1);
+            }
+        }
+        mBones.clear();
+        for (int i = 0; i < transes.size(); i++) {
+            delete transes[i];
+        }
+        if (t) {
+            delete t;
+        }
+    }
+}
+
+void RndMesh::InstanceGeomOwnerBones() {
+    if (!mGeomOwner) {
+        MILO_NOTIFY("Cannot duplicate bones if mesh is not a Geom Owner!");
+        return;
+    } else if (!dynamic_cast<RndDir *>(Dir())) {
+        MILO_NOTIFY("Cannot duplicate bones if parent Dir is not a RndDir.");
+        return;
+    } else if (!mBones.empty()) {
+        if (HasInstancedBones()) {
+            DeleteBones(true);
+            if (mGeomOwner) {
+                mBones = mGeomOwner->mBones;
+            } else {
+                mBones.clear();
+            }
+        }
+
+        RndTransformable *oldRoot = nullptr;
+        RndTransformable *parent;
+        for (parent = mGeomOwner->BoneTransAt(0); parent != nullptr;
+             parent = parent->TransParent()) {
+            if (dynamic_cast<RndDir *>(parent->TransParent())) {
+                oldRoot = parent;
+                break;
+            }
+        }
+        MILO_ASSERT(oldRoot, 0x5E9);
+
+        RndTransformable *newTrans = Hmx::Object::New<RndTransformable>();
+        newTrans->SetName(NextName(parent->Name(), Dir()), Dir());
+        newTrans->Copy(oldRoot, kCopyShallow);
+        newTrans->SetTransParent(dynamic_cast<RndDir *>(Dir()), false);
+
+        for (int i = 0; i < mBones.size(); i++) {
+            RndTransformable *curNewTrans = Hmx::Object::New<RndTransformable>();
+            curNewTrans->SetName(
+                NextName(mGeomOwner->BoneTransAt(i)->Name(), Dir()), Dir()
+            );
+            curNewTrans->Copy(mGeomOwner->BoneTransAt(i), kCopyShallow);
+            mBones[i].mBone = curNewTrans;
+            int boneIdx =
+                mGeomOwner->GetBoneIndex(mGeomOwner->BoneTransAt(i)->TransParent());
+            RndTransformable *parentToSet =
+                boneIdx == -1 ? newTrans : mGeomOwner->BoneTransAt(boneIdx);
+            mBones[i].mBone->SetTransParent(parentToSet, false);
+        }
+    }
+}
+
+void RndMesh::SetVolume(Volume v) {
+    if (mGeomOwner != this) {
+        mGeomOwner->SetVolume(v);
+    } else {
+        mVolume = v;
+        RELEASE(mBSPTree);
+        if (!mVerts.empty() && !mFaces.empty()) {
+            if (mVolume == kVolumeBox) {
+                Box box;
+                FOREACH (it, mVerts) {
+                    box.GrowToContain(it->pos, it == mVerts.begin());
+                }
+                BSPNode *n = new BSPNode();
+                mBSPTree = n;
+                for (int i = 0; i < 6; i++) {
+                    Vector3 v3;
+                    v3.Zero();
+                    v3[i % 3] = i > 2 ? -1.0f : 1.0f;
+                    n->plane.Set(i > 2 ? box.mMin : box.mMax, v3);
+                    n->front = nullptr;
+                    if (i == 5) {
+                        n->back = nullptr;
+                    } else {
+                        n->back = new BSPNode();
+                        n = n->back;
+                    }
+                }
+            } else if (mVolume == kVolumeBSP) {
+                std::list<BSPFace> bspFaces;
+                for (int i = mFaces.size() - 1; i >= 0; i--) {
+                    Face &curFace = mFaces[i];
+                    const Vector3 &v1 = mVerts[curFace.v1].pos;
+                    const Vector3 &v2 = mVerts[curFace.v2].pos;
+                    const Vector3 &v3 = mVerts[curFace.v3].pos;
+                    BSPFace curBSPFace;
+                    curBSPFace.Set(v1, v2, v3);
+                    bspFaces.push_back(curBSPFace);
+                }
+                if (!MakeBSPTree(mBSPTree, bspFaces, 0)) {
+                    RELEASE(mBSPTree);
+                }
+                if (mBSPTree) {
+                    Box box;
+                    FOREACH (it, mVerts) {
+                        box.GrowToContain(it->pos, it == mVerts.begin());
+                    }
+                    if (!CheckBSPTree(mBSPTree, box)) {
+                        MILO_NOTIFY("BSP tree outside bounding box");
+                        RELEASE(mBSPTree);
+                    }
+                }
+                if (mBSPTree) {
+                    int numNodes = 0;
+                    int maxDepth = 0;
+                    NumNodes(mBSPTree, numNodes, maxDepth);
+                    MILO_LOG(
+                        "Made BSP tree for \"%s\" (nodes:%d depth:%d)\n",
+                        Name(),
+                        numNodes,
+                        maxDepth
+                    );
+                } else {
+                    MILO_NOTIFY("Couldn't make BSP tree for \"%s\"", Name());
+                    mVolume = kVolumeEmpty;
+                }
+            }
+        }
+    }
 }
 
 DataNode RndMesh::OnPointCollide(const DataArray *da) {
@@ -1017,3 +1455,74 @@ DataNode RndMesh::OnConfigureMesh(const DataArray *da) {
     }
     return 0;
 }
+
+DataNode RndMesh::OnCompareEdgeVerts(const DataArray *da) {
+    std::vector<int> vec20(Verts().size(), -1);
+    std::list<int> vec28;
+    std::vector<std::list<int> > vec30(Verts().size());
+    for (int i = 0; i < Verts().size(); i++) {
+        if (vec20[i] == -1) {
+            vec20[i] = i;
+            for (int j = i + 1; j < Verts().size(); j++) {
+                if (Verts(j).pos == Verts(i).pos) {
+                    vec20[j] = i;
+                }
+            }
+        }
+    }
+    FOREACH (it, Faces()) {
+        int i40 = vec20[it->v1];
+        int i44 = vec20[it->v2];
+        int i48 = vec20[it->v3];
+        vec30[i40].push_back(i44);
+        vec30[i40].push_back(i48);
+        vec30[i44].push_back(i40);
+        vec30[i44].push_back(i48);
+        vec30[i48].push_back(i40);
+        vec30[i48].push_back(i44);
+    }
+    for (int i = 0; i < Verts().size(); i++) {
+        vec30[i].sort();
+        vec30[i].unique();
+    }
+    for (int i = 0; i < Verts().size(); i++) {
+        FOREACH (it, vec30[i]) {
+            int i10 = 0;
+            FOREACH (it2, vec30[*it]) {
+                FOREACH (it3, vec30[i]) {
+                    if (*it3 != *it) {
+                        if (*it3 == *it2) {
+                            i10++;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (i10 < 2) {
+                vec28.push_back(i);
+                break;
+            }
+        }
+    }
+    DataArray *array = da->Array(2);
+    for (int i = 0; i < array->Size(); i++) {
+        RndMesh *curMesh = array->Obj<RndMesh>(i);
+        MILO_LOG("testing %s\n", curMesh->Name());
+        FOREACH (it, vec28) {
+            if (Verts(*it).pos == curMesh->Verts(*it).pos)
+                continue;
+            else
+                MILO_LOG("   %d doesn't match position\n", *it);
+        }
+    }
+    if (mGeomOwner != this && (mVerts.size() != 0 || mFaces.size() != 0)) {
+        MILO_NOTIFY(
+            "%s has geomowner %s but still has its own verts and faces, which wastes RAM",
+            PathName(this),
+            mGeomOwner ? mGeomOwner->Name() : "NULL"
+        );
+    }
+    return 0;
+}
+
+#pragma endregion

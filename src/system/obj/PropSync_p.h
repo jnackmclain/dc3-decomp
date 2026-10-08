@@ -59,7 +59,7 @@ PropSync(DataNodeObjTrack &objTrack, DataNode &node, DataArray *prop, int i, Pro
 }
 
 inline bool PropSync(int &iref, DataNode &node, DataArray *prop, int i, PropOp op) {
-    MILO_ASSERT(i == prop->Size() && op <= kPropInsert, 0x2C);
+    MILO_ASSERT(i == prop->Size() && op <= kPropInsert, 0x44);
     if (op == kPropGet)
         node = iref;
     else
@@ -86,7 +86,7 @@ inline bool PropSync(bool &b, DataNode &node, DataArray *prop, int i, PropOp op)
 }
 
 inline bool PropSync(Symbol &sym, DataNode &node, DataArray *prop, int i, PropOp op) {
-    MILO_ASSERT(i == prop->Size() && op <= kPropInsert, 0x4A);
+    MILO_ASSERT(i == prop->Size() && op <= kPropInsert, 0x58);
     if (op == kPropGet)
         node = sym;
     else
@@ -246,6 +246,17 @@ bool PropSync(T *&obj, DataNode &node, DataArray *prop, int i, PropOp op) {
 }
 
 template <class T>
+bool PropSync(ObjDirPtr<T> &ptr, DataNode &node, DataArray *prop, int i, PropOp op) {
+    if (op == kPropGet) {
+        node = ptr.GetFile();
+    } else {
+        FilePath fp(node.Str());
+        ptr.LoadFile(fp, false, true, kLoadFront, false);
+    }
+    return true;
+}
+
+template <class T>
 bool PropSync(ObjPtr<T> &ptr, DataNode &node, DataArray *prop, int i, PropOp op) {
     if (op == kPropUnknown0x40)
         return false;
@@ -302,11 +313,12 @@ bool PropSync(
             break;
         }
         case kPropRemove: {
-            ptr.erase(it);
+            // this var isn't even used but it's needed to fix a stack mismatch
+            auto lmao = ptr.erase(it);
             return true;
         }
         case kPropInsert: {
-            T *objToInsert = 0;
+            T *objToInsert = nullptr;
             if (PropSync(objToInsert, node, prop, i, op)) {
                 ptr.insert(it, objToInsert);
                 return true;
@@ -320,8 +332,62 @@ bool PropSync(
     }
 }
 
+// hack lol
+// if you can find a way to call the regular PropSync<T>(T*&)
+// that'll be inlined in the ObjPtrVec PropSync, i'm all ears
 template <class T>
-bool PropSync(ObjPtrVec<T, ObjectDir> &, DataNode &, DataArray *, int, PropOp);
+__forceinline bool
+PropSyncInline(T *&obj, DataNode &node, DataArray *prop, int i, PropOp op) {
+    if (op == kPropUnknown0x40)
+        return false;
+    else {
+        MILO_ASSERT(i == prop->Size() && op <= kPropInsert, 0x66);
+        if (op == kPropGet)
+            node = obj;
+        else
+            obj = node.Obj<T>();
+        return true;
+    }
+}
+
+template <class T>
+bool PropSync(
+    ObjPtrVec<T, ObjectDir> &objPtrVec, DataNode &node, DataArray *prop, int i, PropOp op
+) {
+    if (op == kPropUnknown0x40)
+        return false;
+    else if (i == prop->Size()) {
+        MILO_ASSERT(op == kPropSize || op == kPropInsert, 0x1D9);
+        node = (int)objPtrVec.size();
+        return true;
+    } else {
+        typename ObjPtrVec<T, ObjectDir>::iterator it =
+            objPtrVec.begin() + prop->Int(i++);
+        if (i < prop->Size() || op & (kPropGet | kPropSet | kPropSize)) {
+            if (op == kPropGet) {
+                T *cur = *it;
+                node = cur;
+                return true;
+            } else if (op == kPropSet) {
+                T *objToSet = nullptr;
+                if (PropSyncInline(objToSet, node, prop, i, op)) {
+                    objPtrVec.Set(it, objToSet);
+                    return true;
+                }
+            }
+        } else if (op == kPropRemove) {
+            objPtrVec.erase(it);
+            return true;
+        } else if (op == kPropInsert) {
+            T *objToInsert = nullptr;
+            if (PropSyncInline(objToInsert, node, prop, i, op)) {
+                objPtrVec.insert(it, objToInsert);
+                return true;
+            }
+        }
+        return false;
+    }
+}
 
 template <class T>
 bool PropSync(ObjVector<T> &objVec, DataNode &node, DataArray *prop, int i, PropOp op) {

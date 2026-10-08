@@ -11,15 +11,16 @@
 
 class ClipPlayer {
 public:
-    ClipPlayer()
+    ClipPlayer(int i)
         : mClipKeys(nullptr), mClipCrossoverKeys(nullptr), mMasterClipKeys(nullptr),
-          unk14(0), unk20(-kHugeFloat), unk24(kHugeFloat), mInClip(nullptr),
+          unk14(i), unk20(-kHugeFloat), unk24(kHugeFloat), mInClip(nullptr),
           mOutClip(nullptr), unk48(0), unk50(0) {}
 
     void PlayAnims(HamCharacter *, float, float, int);
     bool Init(int);
     bool Init(Difficulty);
     bool CanUseRestStep();
+    void SetUnk14(int i) { unk14 = i; }
 
     DataNode AnnotatePractice();
     DataNode AnnotateClip(float);
@@ -34,9 +35,11 @@ protected:
     bool PushExpertClip(int, HamDriver::LayerArray *);
     CharClip *GetTransitionBefore(Key<Symbol> *);
     CharClip *GetRoutineTransition(const char *, Key<Symbol> *);
+    CharClip *GetPrevRoutineTransition(int);
     void GetRoutineCrossoverClips(float, const char *, CharClip **, CharClip **);
     bool PushRoutineBuilderClip(int, HamDriver::LayerArray *);
     void PushClip(int, HamDriver::LayerArray *);
+    bool GetClipRange(const char *, const char *, float, float &, float &, float &);
 
     Keys<Symbol, Symbol> *mClipKeys; // 0x0
     Keys<Symbol, Symbol> *mClipCrossoverKeys; // 0x4

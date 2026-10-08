@@ -186,6 +186,8 @@ public:
     BinStreamRev(BinStream &bs, int revs)
         : rev(getHmxRev(revs)), altRev(getAltRev(revs)), stream(bs) {}
 
+    BinStreamRev(BinStream &bs, int main, int alt) : rev(main), altRev(alt), stream(bs) {}
+
     BinStreamRev &operator>>(bool &b) {
         unsigned char uc;
         *this >> uc;
@@ -209,8 +211,7 @@ public:
 template <class E> // E is an enum type
 class BinStreamEnum {
 public:
-    BinStreamEnum(E e) : mEnum(e) {}
-    E &mEnum;
+    E mEnum;
 };
 
 template <class E>
@@ -323,7 +324,7 @@ BinStream &operator<<(BinStream &bs, const std::map<T1, T2> &map) {
 
 template <class T1, class T2>
 BinStream &operator>>(BinStream &bs, std::map<T1, T2> &map) {
-    int size;
+    unsigned int size;
     bs >> size;
     for (; size != 0; size--) {
         T1 key;

@@ -2,8 +2,13 @@
 #include "obj/Object.h"
 #include "os/Debug.h"
 #include "ui/UIListWidget.h"
+#include "ui/UIList.h"
 
 UIListHighlight::UIListHighlight() : mMesh(this) {}
+
+BEGIN_HANDLERS(UIListHighlight)
+    HANDLE_SUPERCLASS(UIListWidget)
+END_HANDLERS
 
 BEGIN_PROPSYNCS(UIListHighlight)
     SYNC_PROP(mesh, mMesh)
@@ -23,11 +28,13 @@ BEGIN_COPYS(UIListHighlight)
     COPY_MEMBER_FROM(h, mMesh)
 END_COPYS
 
+INIT_REVS(0, 0)
+
 BEGIN_LOADS(UIListHighlight)
     LOAD_REVS(bs)
     ASSERT_REVS(0, 0)
     LOAD_SUPERCLASS(UIListWidget)
-    bs >> mMesh;
+    d >> mMesh;
 END_LOADS
 
 void UIListHighlight::Draw(
@@ -37,8 +44,15 @@ void UIListHighlight::Draw(
     UIComponent::State compstate,
     Box *box,
     DrawCommand cmd
-) {}
-
-BEGIN_HANDLERS(UIListHighlight)
-    HANDLE_SUPERCLASS(UIListWidget)
-END_HANDLERS
+) {
+    if (mMesh && cmd != kDrawFirst) {
+        Transform tf70 = mMesh->WorldXfm();
+        Transform tfb0 = tf70;
+        if (ParentList()) {
+            ParentList()->AdjustTransSelected(tfb0);
+        }
+        CalcXfm(tf, drawstate.mHighlightPos, tfb0);
+        DrawMesh(mMesh, drawstate.mHighlightElementState, compstate, tfb0, box);
+        mMesh->SetWorldXfm(tf70);
+    }
+}

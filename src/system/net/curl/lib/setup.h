@@ -41,12 +41,20 @@
 
 #else /* HAVE_CONFIG_H */
 
+#ifdef _XBOX360
+#include "xdk/xapilibi/winnt.h"
+#include "xdk/xapilibi/minwindef.h"
+#include "config-xbox360.h"
+#endif
+
 #ifdef _WIN32_WCE
 #include "config-win32ce.h"
 #else
 #ifdef WIN32
-#include "config-win32.h"
-// #include "xdk/win_types.h"
+// #define _XBOX360
+// #include "config-win32.h"
+// #include "xdk/xapilibi/winnt.h"
+// #include "config-xbox360.h"
 #endif
 #endif
 
@@ -203,10 +211,6 @@ Error Compilation_aborted_SIZEOF_CURL_OFF_T_shall_not_be_defined
  * OS/400 setup file includes some system headers.
  */
 
-#ifdef __OS400__
-#include "setup-os400.h"
-#endif
-
 /*
  * Include header files for windows builds before redefining anything.
  * Use this preprocessor block only to include or exclude windows.h,
@@ -218,23 +222,23 @@ Error Compilation_aborted_SIZEOF_CURL_OFF_T_shall_not_be_defined
  * neither HAVE_WS2TCPIP_H when __CYGWIN__ is defined.
  */
 
-#ifdef HAVE_WINDOWS_H
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-// #include <windows.h>
-#ifdef HAVE_WINSOCK2_H
-#include <xdk/xapilibi/winsockx.h>
-#ifdef HAVE_WS2TCPIP_H
+// #ifdef HAVE_WINDOWS_H
+// #ifndef WIN32_LEAN_AND_MEAN
+// #define WIN32_LEAN_AND_MEAN
+// #endif
+//// #include <windows.h>
+// #ifdef HAVE_WINSOCK2_H
+// #include <winsock2.h>
+// #ifdef HAVE_WS2TCPIP_H
 // #include <ws2tcpip.h>
-#endif
-#else
-#ifdef HAVE_WINSOCK_H
-#include <winsock.h>
-#endif
-#endif
-#endif
-
+// #endif
+// #else
+// #ifdef HAVE_WINSOCK_H
+#include <xdk/xnet/winsockx.h>
+// #endif
+// #endif
+// #endif
+#define NI_MAXSERV 32
 /*
  * Define USE_WINSOCK to 2 if we have and use WINSOCK2 API, else
  * define USE_WINSOCK to 1 if we have and use WINSOCK  API, else
@@ -282,7 +286,6 @@ Error Compilation_aborted_SIZEOF_CURL_OFF_T_shall_not_be_defined
 #endif
 
 #include <stdio.h>
-#include <stdint.h>
 #ifdef HAVE_ASSERT_H
 #include <assert.h>
 #endif
@@ -322,9 +325,9 @@ Error Compilation_aborted_SIZEOF_CURL_OFF_T_shall_not_be_defined
 #include <sys/stat.h>
 #undef lseek
 #define lseek(fdes, offset, whence) _lseeki64(fdes, offset, whence)
-#define fstat(fdes, stp) _fstati64(fdes, stp)
-#define stat(fname, stp) _stati64(fname, stp)
-#define struct_stat struct _stati64
+#define fstat(fdes, stp) _fstat64(fdes, stp)
+#define stat(fname, stp) _stat64(fname, stp)
+#define struct_stat struct _stat64
 #define LSEEK_ERROR (__int64)-1
 #endif
 
@@ -447,7 +450,7 @@ int fileno(FILE *stream);
  */
 
 #if defined(_MSC_VER) && !defined(__POCC__)
-#if !defined(HAVE_WS2TCPIP_H) || ((_MSC_VER < 1300) && !defined(INET6_ADDRSTRLEN))
+#if defined(HAVE_WS2TCPIP_H) || ((_MSC_VER < 1300) && !defined(INET6_ADDRSTRLEN))
 #undef HAVE_GETADDRINFO_THREADSAFE
 #undef HAVE_FREEADDRINFO
 #undef HAVE_GETADDRINFO
@@ -531,8 +534,9 @@ int fileno(FILE *stream);
 #if defined(_MSC_VER) && !defined(__POCC__)
 #if !defined(HAVE_WINDOWS_H) || ((_MSC_VER < 1300) && !defined(_FILETIME_))
 #if !defined(ALLOW_MSVC6_WITHOUT_PSDK)
-#error MSVC 6.0 requires "February 2003 Platform SDK" a.k.a. \
-             "Windows Server 2003 PSDK"
+/*
+#error MSVC 6.0 requires "February 2003 Platform SDK" a.k.a. "Windows Server 2003 PSDK"
+*/
 #else
 #define CURL_DISABLE_LDAP 1
 #endif
@@ -555,7 +559,7 @@ int fileno(FILE *stream);
 
 #ifndef SIZEOF_TIME_T
 /* assume default size of time_t to be 32 bit */
-#define SIZEOF_TIME_T 4
+#define SIZEOF_TIME_T 8
 #endif
 
 #define LIBIDN_REQUIRED_VERSION "0.4.1"

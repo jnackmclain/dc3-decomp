@@ -1,4 +1,5 @@
 #pragma once
+#include "StreamReceiver.h"
 #include "os/File.h"
 #include "synth/ADSR.h"
 #include "synth/Pollable.h"
@@ -45,7 +46,7 @@ public:
     virtual bool FillDone() const { return true; }
     virtual void EnableReads(bool);
     virtual float GetTime();
-    virtual float GetJumpBackTotalTime();
+    virtual float GetJumpBackTotalTime(float) const;
     virtual float GetInSongTime();
     virtual std::vector<struct JumpInstance> *GetJumpInstances() {
         return &mJumpInstances;
@@ -61,7 +62,6 @@ public:
     virtual void SetFXCore(int, FXCore) {}
     virtual FXCore GetFXCore(int) const { return kFXCoreNone; }
     virtual void SetFXSend(int, FxSend *);
-    virtual void SetADSR(int, const ADSR &) {}
     virtual void SetSpeed(float);
     virtual float GetSpeed() const { return mSpeed; }
     virtual void LoadMarkerList(const char *);
@@ -86,6 +86,7 @@ public:
     virtual void UpdateTime();
     virtual void UpdateTimeByFiltering();
     virtual float GetRawTime();
+    virtual void SetADSR(int, const ADSR &) {}
     virtual void SetADSR(int, const ADSRImpl &);
     virtual void SetJumpSamples(int, int, const char *);
     virtual int GetSampleRate() { return mSampleRate; }
@@ -97,6 +98,8 @@ public:
     void InitInfo(int, int, bool, int);
     float GetBufferAheadTime() const;
     int ConsumeData(void **, int, int);
+    void SetBufSecs(float secs) { mBufSecs = secs; }
+    int NumInfoChannels() const { return mInfoChannels; }
 
     static const float kStreamEndMs;
 
@@ -113,6 +116,7 @@ private:
     int MsToSamp(float) const;
     float SampToMs(int) const;
     bool StuffChannels();
+    void DoJump();
 
     static bool sReportLargeTimerErrors;
 

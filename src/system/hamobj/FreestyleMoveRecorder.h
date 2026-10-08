@@ -2,17 +2,24 @@
 #include "FreestyleMove.h"
 #include "gesture/BaseSkeleton.h"
 #include "gesture/Skeleton.h"
+#include "gesture/SkeletonViz.h"
+#include "obj/Data.h"
+#include "os/Debug.h"
 #include "rndobj/Tex.h"
+#include "utl/MemMgr.h"
 #include "utl/Str.h"
+#include "utl/Symbol.h"
+
+#define MAX_FREESTYLE_MOVES 4
 
 // size 0x110
 class FreestyleMoveRecorder : public SkeletonCallback {
 public:
     struct JointAngle {
-        int unk0;
+        SkeletonJoint mJoint;
     };
     struct JointPos {
-        int unk0;
+        int unk0; // SkeletonJoint?
         int unk4;
     };
     FreestyleMoveRecorder();
@@ -24,15 +31,60 @@ public:
 
     void Poll();
     void Free();
+    void StartRecording();
+    void StartRecordingDancerTake();
+    void StopRecording();
+    void ClearRecording();
+    void StartPlayback(bool);
+    void StopPlayback();
+    void ClearDancerTake();
+    BaseSkeleton *GetLiveSkeleton();
+    float
+    CompareSkeletonPositions(const BaseSkeleton *, const BaseSkeleton *, float) const;
+    void AssignStaticInstance();
+    void DrawDebug();
+    void PlaybackComplete();
+    void ClearFrameScores();
+    void ReadFreestyleMoveClip(String, int &, FreestyleMoveFrame *);
+    float GetScore(const BaseSkeleton *, int, float, bool);
+    float GetScore(int, int, float, bool);
 
+    void SetUnk40(int i) { unk40 = i; }
     void SetVal44(int i) { unk44 = i; } // change once context found
+    void SetUnk3C(Symbol s) { unk3c = s; }
+    int GetUnkB8() const { return unkb8; }
+    RndTex *GetTex() const { return unkbc; }
+    int GetUnkC4() const { return unkc4; }
+
+    void SetFreestyleMove(int index) {
+        MILO_ASSERT(index >= 0 && index < MAX_FREESTYLE_MOVES, 0x50);
+        unkb8 = index;
+    }
+
+    MEM_OVERLOAD(FreestyleMoveRecorder, 0x2E);
+    static FreestyleMoveRecorder *sInstance;
+    static SkeletonViz *sViz1;
+    static SkeletonViz *sViz2;
 
 private:
+    void UpdateRecordingAttempt(const BaseSkeleton *, float);
+    void RecordMoveAttempt(String);
+    void WriteRecordedMoveAttempt();
+    void WriteFreestyleMoveClip(String, int, FreestyleMoveFrame *);
+    void ClearFreestyleMoveClip();
+    void UpdateFakeSkeleton();
+
+    static DataNode OnRecordAttempt(DataArray *);
+    static DataNode OnWriteCreated(DataArray *);
+    static DataNode OnReadCreated(DataArray *);
+    static DataNode OnReadAttempt(DataArray *);
+    static DataNode OnClearAttempt(DataArray *);
+
     float unk4;
-    int unk8;
-    int unkc;
+    FreestyleMoveFrame *unk8; // 0x8 - frames
+    int unkc; // 0xc - frame count for unk8
     String unk10;
-    int unk18;
+    FreestyleMoveFrame *unk18;
     int unk1c;
     int unk20;
     int unk24;
@@ -53,6 +105,6 @@ private:
     int unkc8;
     std::vector<JointAngle> unkcc;
     std::vector<SkeletonJoint> unkd8;
-    FreeStyleFrameScores unke4[2];
+    FreestyleFrameScores unke4[2];
     std::vector<JointPos> unk104;
 };

@@ -4,6 +4,17 @@
 #include "rndobj/PostProc.h"
 #include "rndobj/Tex.h"
 
+enum BloomBlurStyle {
+    kBloomBlurStyle0,
+    kBloomBlurStyle1,
+    kBloomBlurStyle2,
+};
+
+enum BloomBlurDirection {
+    kBloomBlurDirection0,
+    kBloomBlurDirection1,
+};
+
 class NgPostProc : public RndPostProc {
 public:
     class BloomTextureSet {
@@ -13,6 +24,7 @@ public:
 
         void AllocateTextures(unsigned int, unsigned int);
         void FreeTextures();
+        RndTex *Tex(int idx) { return mBloomTexture[idx]; }
 
     private:
         RndTex *mBloomTexture[2]; // 0x4
@@ -29,10 +41,20 @@ public:
         }
 
         void AllocateTextures(unsigned int w, unsigned int h) {
-            for (int i = N; i != 0; i--) {
+            for (int i = 0; i < DIM(mTextures); i++) {
+                w /= 4;
+                h /= 4;
                 mTextures[i].AllocateTextures(w, h);
             }
         }
+
+        void FreeTextures() {
+            for (int i = 0; i < DIM(mTextures); i++) {
+                mTextures[i].FreeTextures();
+            }
+        }
+
+        RndTex *Tex(int i, int j) { return mTextures[i].Tex(j); }
 
     private:
         BloomTextureSet mTextures[N];
@@ -45,8 +67,6 @@ public:
     virtual void Select();
     virtual void QueueMotionBlurObject(class RndDrawable *);
     virtual void SetBloomColor();
-    virtual void OnSelect();
-    virtual void OnUnselect();
     virtual void EndWorld();
     virtual void DoPost();
 
@@ -56,6 +76,9 @@ public:
     static void Terminate();
 
 protected:
+    virtual void OnSelect();
+    virtual void OnUnselect();
+
     static Hmx::Color s_prevBloomColor;
     static float s_prevBloomIntensity;
     static NgPostProc *s_BloomSetter;
@@ -63,10 +86,22 @@ protected:
 
     static void ReleaseTex();
 
-    float unk22c; // 0x22c
-    float unk230; // 0x230
-    float unk234; // 0x234
-    float unk238; // 0x238
+    void CheckGradientMap();
+    void CheckVignette();
+    void CheckMotionBlur();
+    void CheckBlendPrevious();
+    void DoVelocity();
+    void CheckNoise();
+    void CheckHueConverge();
+    void CheckHallOfTime();
+    void DoBloom();
+    void ModulateColorXfm();
+    void CheckRefract();
+    void CheckChromaticAberration();
+    void CheckPosterizeAndKaleidoscope();
+
+    Vector2 unk22c; // 0x22c
+    Vector2 unk234; // 0x234
     ObjPtrList<RndDrawable> unk23c; // 0x23c
     bool unk250; // 0x250
 };

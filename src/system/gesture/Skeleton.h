@@ -12,6 +12,7 @@ struct TrackedJoint {
 
 struct SkeletonFrame;
 class ArchiveSkeleton;
+class CameraInput;
 
 enum SkeletonTrackingState {
     /** "Not Tracked" */
@@ -27,12 +28,12 @@ class Skeleton : public BaseSkeleton {
 public:
     Skeleton();
     virtual void JointPos(SkeletonCoordSys, SkeletonJoint, Vector3 &) const; // 0x4
-    virtual bool
-    Displacement(const SkeletonHistory *, SkeletonCoordSys, SkeletonJoint, int, Vector3 &, int &)
-        const; // 0x8
-    virtual bool
-    Displacements(const SkeletonHistory *, SkeletonCoordSys, int, Vector3 *, int &)
-        const; // 0xc
+    virtual bool Displacement(
+        const SkeletonHistory *, SkeletonCoordSys, SkeletonJoint, int, Vector3 &, int &
+    ) const; // 0x8
+    virtual bool Displacements(
+        const SkeletonHistory *, SkeletonCoordSys, int, Vector3 *, int &
+    ) const; // 0xc
     virtual JointConfidence JointConf(SkeletonJoint) const; // 0x10
     virtual bool IsTracked() const; // 0x14
     virtual int QualityFlags() const; // 0x18
@@ -42,12 +43,8 @@ public:
     virtual void CamBoneLengths(float *) const; // 0x2c
     virtual float BoneLength(SkeletonBone, SkeletonCoordSys) const; // 0x30
 
-    const TrackedJoint *TrackedJoints() const { return mTrackedJoints; }
-    int TrackingID() const { return mTrackingID; }
-    int SkeletonIndex() const { return mSkeletonIdx; }
-    SkeletonTrackingState TrackingState() const { return mTracking; }
     Skeleton &operator=(const Skeleton &);
-    void PostUpdate() {}
+    void PostUpdate();
     bool IsValid() const;
     bool IsSitting() const;
     bool IsSideways() const;
@@ -60,15 +57,20 @@ public:
     int GetEnrollmentIndex() const;
     bool NeedIdentify() const;
     void ScreenPos(SkeletonJoint, Vector2 &) const;
-    bool
-    Velocity(const SkeletonHistory &, SkeletonCoordSys, SkeletonJoint, int, Vector3 &, int &)
-        const;
+    bool Velocity(
+        const SkeletonHistory &, SkeletonCoordSys, SkeletonJoint, int, Vector3 &, int &
+    ) const;
     bool RequestIdentity();
     bool EnrollIdentity(int);
     void Init();
     void Poll(int, const SkeletonFrame &);
+    const TrackedJoint *TrackedJoints() const { return mTrackedJoints; }
+    int TrackingID() const { return mTrackingID; }
+    int SkeletonIndex() const { return mSkeletonIdx; }
+    SkeletonTrackingState TrackingState() const { return mTracking; }
+    const Vector3 &GetUnkab0() const { return unkab0; }
 
-    // static int IdentityCallback(void*, _NUI_IDENTITY_MESSAGE*);
+    static int IdentityCallback(void *, NUI_IDENTITY_MESSAGE *);
 
 protected:
     // size 0x148
@@ -91,7 +93,7 @@ protected:
     Vector3 unkab0;
     int mSkeletonIdx; // 0xac0
     float unkac4;
-    std::vector<CameraDisplacement> mCamDisplacements; // 0xac8
+    mutable std::vector<CameraDisplacement> mCamDisplacements; // 0xac8
 };
 
 class SkeletonCallback {
@@ -116,10 +118,11 @@ struct SkeletonData {
 };
 
 struct SkeletonUpdateData {
-    Skeleton *(&unk0)[6]; // 0x0
-    Skeleton *(&unk4)[6]; // 0x4
+    Skeleton **unk0; // 0x0
+    Skeleton **unk4; // 0x4
     SkeletonFrame *unk8; // 0x8
     SkeletonHistory *unkc; // 0xc
+    CameraInput *unk10; // 0x10
 };
 
 // size 0x11c8
@@ -133,6 +136,6 @@ struct SkeletonFrame {
     int unk0; // 0x0 - frame number?
     int mElapsedMs; // 0x4
     Vector3 unk8; // 0x8 - camera angle?
-    Vector4 unk18; // 0x18 - maybe Vector4, maybe XMVECTOR, idk
+    Vector4 unk18; // 0x18
     SkeletonData mSkeletonDatas[6]; // 0x28
 };

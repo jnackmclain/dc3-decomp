@@ -58,50 +58,49 @@ void operator>>(BinStream &bs, RndMeshDeform::BoneDesc &desc) {
     bs >> desc.unk14 >> desc.unk54;
 }
 
+INIT_REVS(1, 0)
+
 BEGIN_LOADS(RndMeshDeform)
     LOAD_REVS(bs)
     ASSERT_REVS(1, 0)
-    Hmx::Object::Load(bs);
-    bs >> mMesh;
+    LOAD_SUPERCLASS(Hmx::Object)
+    d >> mMesh;
     int num = 0;
     if (d.rev < 1) {
-        bs >> num;
+        d >> num;
     }
-    int bones;
-    bs >> bones;
+    int numBones;
+    d >> numBones;
     if (d.rev < 1) {
         mVerts.Clear();
-        int i150[64];
-        float f250[64];
+        int bones[RndMeshDeform::VertArray::kMaxWeights];
+        float weights[RndMeshDeform::VertArray::kMaxWeights];
         for (int i = 0; i < num; i++) {
             int weightIdx = 0;
-            for (int j = 0; j < bones; j++) {
-                float f74;
-                bs >> f74;
-                if (f74 != 0) {
+            for (int j = 0; j < numBones; j++) {
+                float curWt;
+                d >> curWt;
+                if (curWt != 0) {
+                    bones[weightIdx] = j;
+                    weights[weightIdx] = curWt;
                     weightIdx++;
-                    i150[j] = j;
-                    f250[j] = f74;
                 }
             }
-            mVerts.AppendWeights(weightIdx, i150, f250);
+            mVerts.AppendWeights(weightIdx, bones, weights);
         }
     }
-    mBones.resize(bones);
-    for (int i = 0; i < bones; i++) {
-        bs >> mBones[i];
+    mBones.resize(numBones);
+    for (int i = 0; i < numBones; i++) {
+        d >> mBones[i];
     }
     if (d.rev > 0) {
-        mVerts.Load(bs);
+        mVerts.Load(d.stream);
     }
-    bs >> mMeshInverse;
-    // how NOT to check against the identity matrix
-    mSkipInverse =
-        (0 == mMeshInverse.v.x && 0 == mMeshInverse.v.y && 0 == mMeshInverse.v.z
-         && 1 == mMeshInverse.m.x.x && 0 == mMeshInverse.m.x.y && 0 == mMeshInverse.m.x.z
-         && 0 == mMeshInverse.m.y.x && 1 == mMeshInverse.m.y.y && 0 == mMeshInverse.m.y.z
-         && 0 == mMeshInverse.m.z.x && 0 == mMeshInverse.m.z.y
-         && 1 == mMeshInverse.m.z.z);
+    d >> mMeshInverse;
+    mSkipInverse = mMeshInverse.v == Vector3(0, 0, 0)
+        && mMeshInverse.m.x == Vector3(1, 0, 0) && mMeshInverse.m.y == Vector3(0, 1, 0)
+        && mMeshInverse.m.z == Vector3(0, 0, 1);
+
 END_LOADS
 
 void RndMeshDeform::PreSave(BinStream &bs) {
@@ -125,12 +124,12 @@ void RndMeshDeform::Print() {
     int i = 0;
     for (auto it = mVerts.begin(); it < mVerts.end(); ++it, ++i) {
         TheDebug << "weights" << i << ": ";
-        unsigned char *cData = (unsigned char *)it.Data();
-        int num = *cData;
-        for (int j = 0; j < num; j++) {
-            TheDebug << "(" << *cData++ << " " << *cData++ * 0.003921568859368563f
-                     << ") ";
+        VertArray::Vert *vert = reinterpret_cast<VertArray::Vert *>(*it);
+        for (int j = 0; j < vert->num; j++) {
+            float wt = vert->weights[j].weight * 0.003921568859368563f;
+            TheDebug << "(" << vert->weights[j].bone << " " << wt << ") ";
         }
+        TheDebug << "\n";
     }
 }
 
@@ -153,11 +152,66 @@ void RndMeshDeform::VertArray::SetSize(int size) {
     if (mSize != size) {
         mSize = size;
         MemFree(mData);
-        mData = MemAlloc(mSize, __FILE__, 0x99, "RndMeshDeform");
+        mData = (unsigned char *)MemAlloc(mSize, __FILE__, 0x99, "RndMeshDeform");
     }
 }
 
 void RndMeshDeform::VertArray::Copy(const RndMeshDeform::VertArray &a) {
     SetSize(a.mSize);
     memcpy(mData, a.mData, mSize);
+}
+
+int RndMeshDeform::VertArray::AppendWeights(
+    int num, int *const bones, float *const weights
+) {
+    MILO_ASSERT(num < VertArray::kMaxWeights, 0x5F);
+    int numVerts = NumVerts();
+    float weightSum = 0;
+    for (int i = 0; i < num; i++) {
+        for (int j = i; j < num; j++) {
+            if (bones[j] == bones[i]) {
+                num--;
+                weights[i] += weights[j];
+                j--;
+                bones[j] = bones[num];
+                weights[j] = weights[num];
+            }
+        }
+        if (weights[i] <= 0) {
+            MILO_NOTIFY(
+                "%s vert %d has negative weight %g on bone, won't export",
+                PathName(mParent),
+                numVerts,
+                weights[i]
+            );
+            weights[i] = 0;
+        }
+        weightSum += weights[i];
+    }
+    if (fabs(weightSum - 1.0f) > 0.05f) {
+        MILO_NOTIFY(
+            "%s vert %d weights sum to %g, not close enough to 1, check the skinning",
+            PathName(mParent),
+            numVerts,
+            weightSum
+        );
+    }
+    float div = 1 / weightSum;
+    unsigned char *mem = (unsigned char *)MemResizeElem(
+        (void *&)mData,
+        mSize,
+        end(),
+        0,
+        num * sizeof(WeightPair) + 1,
+        __FILE__,
+        0x85,
+        "RndMeshDeform"
+    );
+    Vert *vert = (Vert *)mem;
+    vert->num = num;
+    for (int i = 0; i < num; i++) {
+        vert->weights[i].bone = bones[i];
+        vert->weights[i].weight = Clamp(0.0f, 1.0f, weights[i] * div) * 255.0f + 0.5f;
+    }
+    return numVerts;
 }

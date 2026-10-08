@@ -1,5 +1,6 @@
 #pragma once
 #include "HamRegulate.h"
+#include "char/CharClip.h"
 #include "char/CharEyes.h"
 #include "char/CharLipSync.h"
 #include "char/CharServoBone.h"
@@ -14,8 +15,13 @@
 #include "rndobj/Mesh.h"
 #include "utl/MemMgr.h"
 #include "utl/Std.h"
+#include "utl/Symbol.h"
 
 enum HamBackupDancers {
+    kBackupDancersRegular = 0,
+    kBackupDancersDanceBattle = 1,
+    kBackupDancersFinale = 2,
+    kBackupDancersOverride = 3,
     kBackupDancersNumTypes = 4
 };
 
@@ -106,12 +112,20 @@ protected:
     virtual void RemovingObject(Hmx::Object *);
 
     bool GetPropShowing(int);
+    void ApplyBlendedSkeletons(HamDriver *, CharClip *, float);
 
     DataNode OnConfigureFileMerger(DataArray *);
     DataNode OnCamTeleport(DataArray *);
     DataNode OnPostDelete(DataArray *);
     DataNode OnSoundPlay(const DataArray *);
     DataNode OnToggleInterestDebugOverlay(DataArray *);
+
+    bool CrewCardShowing() const { return mCrewCardMesh && mCrewCardMesh->Showing(); }
+    void SetCrewCardShowing(bool showing) {
+        if (mCrewCardMesh) {
+            mCrewCardMesh->SetShowing(showing);
+        }
+    }
 
     static CharClip *sSkeletonClips[kNumSkeletons];
 

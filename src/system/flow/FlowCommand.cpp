@@ -45,6 +45,8 @@ BEGIN_COPYS(FlowCommand)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(3, 0)
+
 BEGIN_LOADS(FlowCommand)
     LOAD_REVS(bs)
     ASSERT_REVS(3, 0)
@@ -53,50 +55,48 @@ BEGIN_LOADS(FlowCommand)
     std::list<DataNode> datanodes;
     if (d.rev > 2) {
         int count;
-        bs >> count;
-        Flow *owner = GetOwnerFlow();
-        ObjectDir *dir = owner->Dir();
+        d >> count;
+        ObjectDir *dir = GetOwnerFlow()->LoadingDir();
         for (int i = 0; i < count; i += 2) {
             DataNode n;
-            n.Load(bs, dir);
+            n.Load(d.stream, dir);
             symbols.push_back(n.Sym());
             DataNode n2;
-            n2.Load(bs, dir);
+            n2.Load(d.stream, dir);
             datanodes.push_back(n2);
         }
     }
-    FlowNode::Load(bs);
+    LOAD_SUPERCLASS(FlowNode)
     ClearAllTypeProps();
+    auto dit = datanodes.begin();
     auto sit = symbols.begin();
-    for (auto dit = datanodes.begin(); dit != datanodes.end(); ++sit, ++dit) {
+    for (; sit != symbols.end(); ++sit, ++dit) {
         SetProperty(*sit, *dit);
     }
     if (d.rev < 1) {
-        mObject = LoadObjectFromMainOrDir(bs, Dir());
+        mObject = LoadObjectFromMainOrDir(d.stream, Dir());
     } else {
-        bs >> mObject;
+        d >> mObject;
     }
-    bs >> mHandler;
+    d >> mHandler;
     if (d.rev < 2) {
         DataNode n;
-        Flow *owner = GetOwnerFlow();
-        ObjectDir *dir = owner->Dir();
-        n.Load(bs, dir);
+        ObjectDir *dir = GetOwnerFlow()->LoadingDir();
+        n.Load(d.stream, dir);
         if (n.Type() == kDataArray) {
             for (int i = 0; i < n.Array()->Size(); i++) {
                 SetProperty(n.Array()->Array(i)->Sym(0), n.Array()->Array(i)->Node(1));
             }
         }
     } else if (d.rev < 3) {
-        int count;
-        bs >> count;
-        Flow *owner = GetOwnerFlow();
-        ObjectDir *dir = owner->Dir();
+        int count = 0;
+        d >> count;
+        ObjectDir *dir = GetOwnerFlow()->LoadingDir();
         for (int i = 0; i < count; i += 2) {
             DataNode n1;
-            n1.Load(bs, dir);
+            n1.Load(d.stream, dir);
             DataNode n2;
-            n2.Load(bs, dir);
+            n2.Load(d.stream, dir);
             SetProperty(n1.Sym(), n2.Evaluate());
         }
     }
@@ -116,14 +116,14 @@ END_LOADS
 
 bool FlowCommand::Activate() {
     FLOW_LOG("Activate\n");
-    unk58 = false;
+    mRequestingStop = false;
     PushDrivenProperties();
     if (mObject && !mHandler.Null()) {
         int size = mTypeProps ? mTypeProps->Size() : 0;
         Message msg(size);
         msg.SetType(mHandler);
-        for (int i = 0; i < size; i += 2) {
-            msg[i] = mTypeProps->Map()->Evaluate(i + 1);
+        for (int i = 0; i < size; i++) {
+            msg[i] = mTypeProps->Map()->Evaluate(i * 2 + 1);
         }
         mObject->Handle(msg, false);
     }
@@ -160,10 +160,10 @@ DataNode FlowCommand::GetHandlerDef() {
                 if (ret) {
                     return ret;
                 }
-                for (int i = 1; i < cmds->Size(); i++) {
-                    if (cmds->Type(i) == kDataArray) {
-                        if (cmds->Array(i)->Sym(0) == mHandler) {
-                            return cmds->Array(i);
+                for (int j = 1; j < cmds->Size(); j++) {
+                    if (cmds->Type(j) == kDataArray) {
+                        if (cmds->Array(j)->Sym(0) == mHandler) {
+                            return cmds->Array(j);
                         }
                     }
                 }

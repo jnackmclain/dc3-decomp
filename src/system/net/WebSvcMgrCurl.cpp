@@ -1,11 +1,18 @@
 #include "net/WebSvcMgrCurl.h"
 #include "WebSvcReq.h"
 #include "curl/curl.h"
+#include "curl/easy.h"
 #include "curl/multi.h"
+#include "macros.h"
 #include "net/HttpReq.h"
 #include "net/HttpReqCurl.h"
 #include "net/WebSvcMgr.h"
 #include "os/Debug.h"
+#include "stl/_map.h"
+#include "stl/_pair.h"
+#include "stl/_vector.h"
+#include "utl/Std.h"
+#include "utl/Str.h"
 
 WebSvcMgrCurl gWebSvcMgr;
 WebSvcMgr &TheWebSvcMgr = gWebSvcMgr;
@@ -23,6 +30,7 @@ void WebSvcMgrCurl::Init() {
 }
 
 void WebSvcMgrCurl::Poll() {
+    int msgs_in_queue;
     WebSvcMgr::Poll();
     MILO_ASSERT(mCurlMultiHandle, 0xFE);
     int running_handles;
@@ -31,7 +39,7 @@ void WebSvcMgrCurl::Poll() {
         if (sRunningHandles != running_handles) {
             sRunningHandles = running_handles;
         }
-        int msgs_in_queue = 0;
+        msgs_in_queue = 0;
         int i5 = 100;
         CURLMsg *msg;
         while (msg = curl_multi_info_read(mCurlMultiHandle, &msgs_in_queue), msg) {
@@ -139,4 +147,48 @@ bool WebSvcMgrCurl::InitRequest(
     curl_req->SetCookies(req->GetCookies());
     req->SetHttpReq(curl_req);
     return true;
+}
+
+void WebSvcMgrCurl::FindAndFinish(void *handle, bool success, unsigned int http_status) {
+    auto it = mRequests.begin();
+    WebSvcRequest *request;
+    for (; it != mRequests.end(); ++it) {
+        request = *it;
+        if (request->GetRequest() == handle) {
+            goto func;
+        }
+    }
+
+    MILO_NOTIFY("WSMC::FindAndFinish: Handle not found!");
+    return;
+
+func:
+    curl_slist *cookies;
+    CURLcode getInfo = curl_easy_getinfo(handle, CURLINFO_COOKIELIST, &cookies);
+    if (getInfo == 0) {
+        std::map<String, String> map;
+
+        curl_slist *cookie = cookies;
+        while (cookie) {
+            std::vector<String> vec;
+            String str(cookie->data);
+            str.split("\t", vec);
+            if (vec.size() == 7) {
+                map.insert(std::make_pair(vec[5], vec[6]));
+            }
+            cookie = cookie->next;
+        }
+        request->SetCookies(map);
+    }
+
+    // TODO: should be calling curl_slist_free_all to free the cookies..
+    //  but hmx didnt, will have to add once milo hits 100
+
+    curl_multi_remove_handle(mCurlMultiHandle, handle);
+    request->SetStatusCode(http_status);
+    if (success) {
+        request->OnSuccess();
+    } else {
+        request->OnFailure();
+    }
 }

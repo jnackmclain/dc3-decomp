@@ -97,6 +97,9 @@ public:
             || (mConstraint >= kConstraintLookAtTarget && mTarget);
     }
 
+    RndTransformable *GetTarget() const { return mTarget; }
+    bool PreserveScale() const { return mPreserveScale; }
+
     void GetLocalRot(Vector3 &) const;
     void SetWorldXfm(const Transform &);
     void SetWorldPos(const Vector3 &);
@@ -113,6 +116,8 @@ public:
 
 private:
     static Plane sShadowPlane;
+
+    void SyncWorldXfm() { ComputeLocalXfm(mWorldXfm); }
 
     void SetDirty() {
         if (!mDirty)
@@ -151,6 +156,7 @@ protected:
 
     virtual void UpdatedWorldXfm() {}
 
+private: // per RB2
     Transform mLocalXfm; // 0x8
     Transform mWorldXfm; // 0x48
     ObjOwnerPtr<RndTransformable> mParent; // 0x88

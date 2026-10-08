@@ -2,7 +2,9 @@
 #include "os/ThreadCall.h"
 #include "os/Timer.h"
 #include "utl/Str.h"
-#include "xdk/xapilibi/winsockx.h"
+#include "xdk/XNET.h"
+#include "xdk/xnet/winsockx.h"
+#include "xdk/xonline/xonline.h"
 
 class XLSPConnection : public ThreadCallback {
 public:
@@ -14,14 +16,17 @@ public:
     virtual void ThreadDone(int);
 
     State GetState() { return unk4; }
+    float GetTimerSplitMs() { return unk48.SplitMs(); }
     void Poll();
     unsigned int GetServiceIP();
     void Connect(const char *, unsigned int);
     void Disconnect();
 
+    int GetUnk8() const { return unk8; }
+
     static std::map<unsigned long, int> mXLSPRefCountMap;
-    static bool SecureDisconnect(in_addr);
-    static int StartGatewayConnection(in_addr);
+    static bool SecureDisconnect(IN_ADDR);
+    static int StartGatewayConnection(IN_ADDR);
 
 private:
     void SetState(State);
@@ -34,10 +39,10 @@ private:
     String unkc;
     unsigned int unk14;
     HANDLE unk18;
-    void *unk1c;
+    XTITLE_SERVER_INFO *unk1c;
     DWORD unk20;
     int unk24;
     XOVERLAPPED mXOverlapped; // 0x28
-    int unk44;
+    IN_ADDR unk44;
     Timer unk48;
 };

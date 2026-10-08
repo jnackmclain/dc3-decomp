@@ -3,22 +3,38 @@
 #include "obj/Data.h"
 #include "obj/Dir.h"
 #include "obj/Object.h"
+#include "obj/Task.h"
 #include "os/Debug.h"
 #include "rndobj/Dir.h"
 #include "rndobj/Draw.h"
+#include "rndobj/Mat.h"
 #include "rndobj/Overlay.h"
 #include "rndobj/Poll.h"
+#include "rndobj/Rnd.h"
 #include "rndobj/Tex.h"
 #include "rndobj/TexRenderer.h"
 #include "utl/Symbol.h"
 
 StreamRecorder::StreamRecorder()
     : unk4c(this), unk60(this), mBuffers(this), mOutputMat(this), mMaxFrames(0),
-      mOutputWidth(320), mOutputHeight(240), mFramesRecorded(0), unkb4(0), unkb8(-1),
-      mPlaybackSpeed(3), unkc0(-1.0f), unkc4(-1.0f), unkc8(-1.0f), mUseAlpha(true),
-      unkd8(5), unkdc(0) {}
+      mOutputWidth(320), mOutputHeight(240), mFramesRecorded(0), unkb4(0),
+      mDebugFrame(-1), mPlaybackSpeed(3), unkc0(-1.0f), unkc4(-1.0f), unkc8(-1.0f),
+      mUseAlpha(true), unkd8(5), unkdc(0) {}
 
 StreamRecorder::~StreamRecorder() {}
+
+BEGIN_HANDLERS(StreamRecorder)
+    HANDLE_SUPERCLASS(RndDrawable)
+    HANDLE_SUPERCLASS(RndPollable)
+    HANDLE_SUPERCLASS(Hmx::Object)
+    HANDLE(start_recording, OnStartRecording)
+    HANDLE(stop_recording, OnStopRecording)
+    HANDLE(play_recording, OnPlayRecording)
+    HANDLE(stop_playback, OnStopPlayback)
+    HANDLE(pause_playback, OnPausePlayback)
+    HANDLE(unpause_playback, OnUnpausePlayback)
+    HANDLE(reset, OnReset)
+END_HANDLERS
 
 BEGIN_PROPSYNCS(StreamRecorder)
     SYNC_PROP_SET(input, unk4c.Ptr(), SetPhotoInput(dynamic_cast<RndDir *>(_val.GetObj())))
@@ -27,7 +43,7 @@ BEGIN_PROPSYNCS(StreamRecorder)
     SYNC_PROP(playback_speed, mPlaybackSpeed)
     SYNC_PROP_MODIFY(max_frames, mMaxFrames, Reset())
     SYNC_PROP_SET(frames_recorded, mFramesRecorded, )
-    SYNC_PROP_SET(debug_frame, unkb8, unkb8 = _val.Int()) // fix later
+    SYNC_PROP_SET(debug_frame, mDebugFrame, SetDebugFrame(_val.Int()))
     SYNC_PROP(output_width, mOutputWidth)
     SYNC_PROP(output_height, mOutputHeight)
     SYNC_SUPERCLASS(RndDrawable)
@@ -63,17 +79,43 @@ BEGIN_COPYS(StreamRecorder)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(5, 0)
+
 BEGIN_LOADS(StreamRecorder)
     LOAD_REVS(bs)
     ASSERT_REVS(5, 0)
     LOAD_SUPERCLASS(Hmx::Object)
     LOAD_SUPERCLASS(RndDrawable)
-    if (2 < d.rev)
+    if (d.rev > 2) {
         LOAD_SUPERCLASS(RndPollable)
-
+    }
+    if (d.rev < 4) {
+        ObjPtr<Hmx::Object> ptr(this);
+        d >> ptr;
+    }
+    d >> mOutputMat;
+    d >> mMaxFrames;
+    if (d.rev < 2) {
+        int x;
+        d >> x;
+    }
+    d >> mUseAlpha;
+    // BinStreamEnum load here for mPlaybackSpeed
+    if (d.rev > 4) {
+        d >> mOutputWidth;
+        d >> mOutputHeight;
+    }
 END_LOADS
 
 void StreamRecorder::Exit() { DeleteBuffers(); }
+
+void StreamRecorder::SetDebugFrame(int i1) {
+    int i7 = Min(mFramesRecorded - 1, mMaxFrames - 1);
+    if (i1 <= i7) {
+        i7 = Max(i1, -1);
+    }
+    mDebugFrame = i7;
+}
 
 void StreamRecorder::SetPhotoInput(RndDir *dir) {
     unk4c = dir;
@@ -95,29 +137,132 @@ void StreamRecorder::StopRecordingImmediate() {
 void StreamRecorder::StoppedRecordingScript() {
     static Symbol stream_recorder_stopped_recording("stream_recorder_stopped_recording");
     static DataArrayPtr p = new DataArray(1);
-    p.Node(0) = stream_recorder_stopped_recording;
+    p->Node(0) = stream_recorder_stopped_recording;
     p->Execute(false);
+}
+
+bool StreamRecorder::SetFrame(int index) {
+    int i4 = Min(mFramesRecorded - 1, mMaxFrames - 1);
+    if (index <= i4 && mOutputMat) {
+        MILO_ASSERT(index < mBuffers.size(), 0x46);
+        RndTex *cur = mBuffers[index];
+        if (cur != mOutputMat->GetDiffuseTex()) {
+            mOutputMat->SetDiffuseTex(cur);
+        }
+        return true;
+    } else {
+        return false;
+    }
+}
+
+void StreamRecorder::DeleteBuffers() {
+    for (int i = 0; i < mBuffers.size(); i++) {
+        delete mBuffers[i];
+    }
+}
+
+void StreamRecorder::CompressTextures() {
+    while (!unkcc.empty()) {
+        int index = unkcc.front();
+        unkcc.pop_front();
+        MILO_ASSERT(index >= 0 && index < mBuffers.size(), 0x32);
+        RndTex::AlphaCompress compress =
+            mUseAlpha ? (RndTex::AlphaCompress)1 : (RndTex::AlphaCompress)0;
+        TheRnd.CompressTexture(mBuffers[index], compress, this);
+    }
+}
+
+void StreamRecorder::Reset() {
+    DeleteBuffers();
+    mBuffers.reserve(mMaxFrames);
+    for (int i = 0; i < mMaxFrames; i++) {
+        RndTex *tex = Hmx::Object::New<RndTex>();
+        tex->SetMipMapK(666);
+        mBuffers.push_back(tex);
+    }
+    StopRecordingImmediate();
+    unkdc = 0;
+    mFramesRecorded = 0;
+    unkb4 = 0;
+    unkc4 = -1;
+    unkc8 = -1;
+    unkcc.clear();
+}
+
+void StreamRecorder::DrawShowing() {
+    if ((0 <= unkc0 && unk4c && unk60) && unk60->GetOutputTexture()) {
+        int compressIdx = (unkc0 * -20.0f);
+        compressIdx = -compressIdx - unkd8;
+        if (compressIdx >= 0 && compressIdx >= unkb4) {
+            if (compressIdx < mMaxFrames) {
+                MILO_ASSERT(compressIdx < mBuffers.size(), 0xbc);
+                RndTex *tex = mBuffers[compressIdx];
+                tex->SetBitmap(
+                    mOutputWidth, mOutputHeight, 0x10, RndTex::Type::kRenderedNoZ, false, 0
+                );
+                unk60->SetOutputTexture(tex);
+                unk4c->DrawShowing();
+                unkcc.push_back(compressIdx);
+                unkb4++;
+                if (unkdc <= 0) {
+                    return;
+                }
+                unkdc--;
+                if (unkdc != 0) {
+                    return;
+                }
+            }
+
+            StopRecordingImmediate();
+            StoppedRecordingScript();
+        }
+    }
+}
+
+void StreamRecorder::Poll() {
+    CompressTextures();
+    if (mDebugFrame >= 0) {
+        SetFrame(mDebugFrame);
+    } else {
+        if (unkc0 >= 0 && unk4c) {
+            unk4c->Poll();
+            unkc0 += TheTaskMgr.DeltaSeconds();
+        }
+        if (unkc0 < 0 && unkc4 >= 0) {
+            int speed = mPlaybackSpeed - 3;
+            int frameIdx = (unkc4 * 20.0f);
+            if (speed < 0) {
+                frameIdx /= (1 - speed);
+            } else if (speed > 0) {
+                frameIdx *= (speed + 1);
+            }
+            unkc4 += TheTaskMgr.DeltaSeconds();
+            if (!SetFrame(frameIdx)) {
+                unkc4 = -1.0f;
+            }
+        }
+    }
 }
 
 DataNode StreamRecorder::OnReset(DataArray *d) {
     Reset();
-    return DataNode(0);
+    return 0;
 }
 
 DataNode StreamRecorder::OnStopRecording(DataArray *d) {
     unkdc = unkd8;
-    return DataNode(1);
+    return 1;
 }
 
 DataNode StreamRecorder::OnStopPlayback(DataArray *) {
     unkc4 = -1.0f;
-    return DataNode(1);
+    return 1;
 }
 
 DataNode StreamRecorder::OnPausePlayback(DataArray *) {
     unkc8 = unkc4;
     unkc4 = -1.0f;
-    return DataNode(0);
+    return 0;
 }
 
 DataNode StreamRecorder::OnUnpausePlayback(DataArray *) {
@@ -125,18 +270,18 @@ DataNode StreamRecorder::OnUnpausePlayback(DataArray *) {
         unkc4 = unkc8;
         unkc8 = -1.0f;
     }
-    return DataNode(0);
+    return 0;
 }
 
 DataNode StreamRecorder::OnPlayRecording(DataArray *) {
     if (unkc0 >= 0) {
-        MILO_NOTIFY("Can\'t play back recording until recording has been finished.");
-        return DataNode(0);
+        MILO_NOTIFY("Can't play back recording until recording has been finished.");
+        return 0;
 
     } else {
         unkc4 = 0;
         unkcc.clear();
-        return DataNode(1);
+        return 1;
     }
 }
 
@@ -156,18 +301,5 @@ DataNode StreamRecorder::OnStartRecording(DataArray *) {
         if (rDrawable)
             rDrawable->SetShowing(false);
     }
-    return DataNode(1);
+    return 1;
 }
-
-BEGIN_HANDLERS(StreamRecorder)
-    HANDLE_SUPERCLASS(RndDrawable)
-    HANDLE_SUPERCLASS(RndPollable)
-    HANDLE_SUPERCLASS(Hmx::Object)
-    HANDLE(start_recording, OnStartRecording)
-    HANDLE(stop_recording, OnStopRecording)
-    HANDLE(play_recording, OnPlayRecording)
-    HANDLE(stop_playback, OnStopPlayback)
-    HANDLE(pause_playback, OnPausePlayback)
-    HANDLE(unpause_playback, OnUnpausePlayback)
-    HANDLE(reset, OnReset)
-END_HANDLERS

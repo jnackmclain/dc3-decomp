@@ -24,8 +24,6 @@ class UIPanel;
 
 class ModalKeyListener : public Hmx::Object {
 public:
-    // ModalKeyListener() {}
-    // virtual ~ModalKeyListener() {}
     virtual DataNode Handle(DataArray *, bool);
 
     DataNode OnMsg(const KeyboardKeyMsg &);
@@ -41,16 +39,16 @@ public:
     };
     enum DefaultTextureType {
         kDefaultTex_Black = 0,
-        kDefaultTex_White = 1,
-        kDefaultTex_WhiteTransparent = 2,
-        kDefaultTex_FlatNormal = 3,
-        kDefaultTex_Gradient = 4,
-        kDefaultTex_Hue = 5,
-        kDefaultTex_Error = 6,
-        kUnk7 = 7,
+        kDefaultTex_BlackTransparent = 1,
+        kDefaultTex_White = 2,
+        kDefaultTex_WhiteTransparent = 3,
+        kDefaultTex_FlatNormal = 4,
+        kDefaultTex_Gradient = 5,
+        kDefaultTex_Hue = 6,
+        kDefaultTex_Error = 7,
         kDefaultTex_Max = 8
     };
-    enum DrawMode {
+    enum Mode {
         kDrawNormal = 0,
         kDrawShadowDepth = 1,
         kDrawExtrude = 2,
@@ -60,26 +58,33 @@ public:
     };
 
     struct PointTest {
-        int unk0, unk4, unk8;
-        RndFlare *unkc;
-    };
+        PointTest() : unk0(0), unk4(0), unk8(0), unkc(0) {}
 
-    struct CompressTextureCallback;
-
-    struct CompressTexDesc {
-        CompressTexDesc(RndTex *tex, RndTex::AlphaCompress a, CompressTextureCallback *cb)
-            : tex(nullptr, tex), alpha(a), callback(cb) {}
-
-        MEM_OVERLOAD(CompressTexDesc, 0x1E4)
-
-        ObjPtr<RndTex> tex;
-        RndTex::AlphaCompress alpha;
-        CompressTextureCallback *callback;
+        int unk0; // 0x0 - width
+        int unk4; // 0x4 - height
+        unsigned int unk8; // 0x8 - z projection?
+        RndFlare *unkc; // 0xc - flare
     };
 
     struct CompressTextureCallback {
         virtual ~CompressTextureCallback() {}
         virtual void TextureCompressed(int) = 0;
+    };
+
+    struct CompressTexDesc {
+        CompressTexDesc(RndTex *tex, RndTex::AlphaCompress a, CompressTextureCallback *cb)
+            : tex(nullptr, tex), alpha(a), callback(cb) {}
+        ~CompressTexDesc() {
+            if (callback) {
+                callback->TextureCompressed((int)this);
+            }
+        }
+
+        MEM_OVERLOAD(CompressTexDesc, 0x1E4)
+
+        ObjPtr<RndTex> tex; // 0x0
+        RndTex::AlphaCompress alpha; // 0x14
+        CompressTextureCallback *callback; // 0x18
     };
 
     Rnd();
@@ -91,14 +96,20 @@ public:
     virtual void SetClearColor(const Hmx::Color &c) { mClearColor = c; }
     virtual void Clear(unsigned int, const Hmx::Color &) = 0;
     virtual void ForceColorClear() {}
-    virtual void ScreenDump(const char *);
-    virtual void ScreenDumpUnique(const char *);
+    virtual void ScreenDump(const char *file);
+    virtual void ScreenDumpUnique(const char *file);
+    virtual void DrawRect(
+        const Hmx::Rect &r,
+        const Hmx::Color &c,
+        RndMat *mat,
+        const Hmx::Color *right,
+        const Hmx::Color *bottom
+    ) {}
+    virtual Vector2 &DrawString(
+        const char *s, const Vector2 &place, const Hmx::Color &c, bool draw
+    ); // 0x80
     virtual void
-    DrawRect(const Hmx::Rect &, const Hmx::Color &, RndMat *, const Hmx::Color *, const Hmx::Color *) {
-    }
-    virtual Vector2 &
-    DrawString(const char *, const Vector2 &, const Hmx::Color &, bool); // 0x80
-    virtual void DrawLine(const Vector3 &, const Vector3 &, const Hmx::Color &, bool) {
+    DrawLine(const Vector3 &start, const Vector3 &end, const Hmx::Color &c, bool no_z) {
     } // 0x84
     virtual void BeginDrawing();
     virtual void EndDrawing();
@@ -116,7 +127,7 @@ public:
     virtual void SetShadowMap(RndTex *, RndCam *, const Hmx::Color *) {}
     virtual void SetGSTiming(bool b) { mGsTiming = b; }
     virtual void CaptureNextGpuFrame() {}
-    virtual void RemovePointTest(RndFlare *);
+    virtual void RemovePointTest(RndFlare *flare);
     virtual bool HasDeviceReset() const { return false; }
     virtual void SetAspect(Aspect a) { mAspect = a; }
     virtual float YRatio();
@@ -130,22 +141,33 @@ public:
         return false;
     }
 
+    bool ShrinkToSafeArea() const { return mShrinkToSafe; }
     bool TimersShowing() { return mTimersOverlay->Showing(); }
     int Width() const { return mWidth; }
     int Height() const { return mHeight; }
     int Bpp() const { return mScreenBpp; }
     bool WorldEnded() const { return mWorldEnded; }
-    bool GetUnk1b4() { return unk1b4; } // When named, can replace
+    bool Splashing() const { return mSplashing; }
+    void SetSplashing(bool splashing) { mSplashing = splashing; }
     Aspect GetAspect() const { return mAspect; }
-    DrawMode GetDrawMode() { return mDrawMode; }
-    void SetDrawMode(DrawMode d) { mDrawMode = d; }
+    Mode DrawMode() { return mDrawMode; }
+    void SetDrawMode(Mode d) { mDrawMode = d; }
     RndCam *GetDefaultCam() const { return mDefaultCam; }
+    RndCam *GetWorldCamCopy() const { return mWorldCamCopy; }
     ProcessCmd ProcCmds() const { return mProcCmds; }
     bool DisablePP() const { return mDisablePostProc; }
     DataArray *Font() const { return mFont; }
     RndEnviron *DefaultEnv() const { return mDefaultEnv; }
     RndMat *DefaultMat() const { return mDefaultMat; }
-    bool Unk140() const { return unk140; }
+    bool ShowShaderCost() const { return mShowShaderCost; }
+    bool VerboseTimers() const { return mVerboseTimers; }
+    RndMat *OverlayMat() const { return mOverlayMat; }
+    const Hmx::Color &GetClearColor() const { return mClearColor; }
+    bool InGame() const { return mInGame; }
+    bool Drawing() const { return mDrawing; }
+    RndTex *GetDefaultTex(int idx) { return mDefaultTex[idx]; }
+    RndCubeTex *GetCubeTexWhite() const { return mCubeTex_White; }
+    int GetDrawCount() const { return mDrawCount; }
     void ShowConsole(bool);
     bool ConsoleShowing();
     void EndWorld();
@@ -155,21 +177,27 @@ public:
     void ResetProcCounter();
     bool GetEvenOddDisabled() const;
     void SetEvenOddDisabled(bool);
-    void
-    DrawRectScreen(const Hmx::Rect &, const Hmx::Color &, RndMat *, const Hmx::Color *, const Hmx::Color *);
+    void DrawRectScreen(
+        const Hmx::Rect &,
+        const Hmx::Color &,
+        RndMat *,
+        const Hmx::Color *,
+        const Hmx::Color *
+    );
     const Vector2 &
-    DrawStringScreen(const char *c, const Vector2 &v, const Hmx::Color &color, bool b4);
+    DrawStringScreen(const char *s, const Vector2 &v, const Hmx::Color &color, bool draw);
     RndPostProc *GetPostProcOverride();
     RndPostProc *GetSelectedPostProc();
     void CopyWorldCam(RndCam *);
-    void RegisterPostProcessor(PostProcessor *);
-    void UnregisterPostProcessor(PostProcessor *);
-    void SetPostProcOverride(RndPostProc *);
-    void SetPostProcBlacklightOverride(RndPostProc *);
+    void RegisterPostProcessor(PostProcessor *pp);
+    void UnregisterPostProcessor(PostProcessor *pp);
+    void SetPostProcOverride(RndPostProc *pp);
+    void SetPostProcBlacklightOverride(RndPostProc *pp);
     void PreClearDrawAddOrRemove(RndDrawable *, bool, bool);
     RndTex *GetNullTexture();
     int CompressTexture(RndTex *, RndTex::AlphaCompress, CompressTextureCallback *);
-    void Modal(Debug::ModalType &, FixedString &, bool);
+    void Modal(Debug::ModalType &modalType, FixedString &msg, bool wait);
+    void TestPoint(const Vector3 &, RndFlare *flare);
     void PushClipPlanes(ObjPtrVec<RndTransformable> &planes) {
         if (planes.size() > 0) {
             PushClipPlanesInternal(planes);
@@ -198,7 +226,7 @@ protected:
 
     void UpdateRate();
     void UpdateHeap();
-    float DrawTimers(float);
+    float DrawTimers(float topY);
     void CreateDefaults();
     void SetupFont();
     void CreateCubeTextures();
@@ -248,11 +276,11 @@ protected:
     RndEnviron *mDefaultEnv; // 0xe8
     RndLight *mDefaultLit; // 0xec
     RndTex *mDefaultTex[kDefaultTex_Max]; // 0xf0 - 0x10c, inclusive
-    RndCubeTex *unk110;
-    RndCubeTex *unk114;
-    float unk118;
-    int unk11c;
-    int unk120;
+    RndCubeTex *mCubeTex_Black; // 0x110
+    RndCubeTex *mCubeTex_White; // 0x114
+    float mRateTotal; // 0x118
+    int mRate; // 0x11c
+    int mRateCount; // 0x120
     unsigned int mFrameID; // 0x124
     const char *mRateGate; // 0x128
     DataArray *mFont; // 0x12c
@@ -262,9 +290,9 @@ protected:
     bool mDrawing; // 0x136
     bool mWorldEnded; // 0x137
     Aspect mAspect; // 0x138
-    DrawMode mDrawMode; // 0x13c
-    bool unk140; // 0x140 - mResourceCached
-    bool unk141; // 0x141 - mShowShaderCost
+    Mode mDrawMode; // 0x13c
+    bool mShowShaderCost; // 0x140
+    bool mShowOverdraw; // 0x141
     bool mShrinkToSafe; // 0x142
     bool mInGame; // 0x143
     bool mVerboseTimers; // 0x144
@@ -272,19 +300,19 @@ protected:
     bool unk146;
     bool unk147;
     bool unk148;
-    int unk14c; // 0x14c - funcptr
-    int unk150; // 0x150 - another funcptr
+    void (*mWorldEndCallback)(); // 0x14c
+    void (*mDrawPreClearCallback)(); // 0x150
     std::list<PointTest> mPointTests; // 0x154
     std::list<PostProcessor *> mPostProcessors; // 0x15c
     ObjPtr<RndPostProc> mPostProcOverride; // 0x164
     ObjPtr<RndPostProc> mPostProcBlackLightOverride; // 0x178
-    ObjPtrList<RndDrawable> unk18c; // 0x18c
-    ObjPtrList<RndDrawable> mDraws; // 0x1a0
-    bool unk1b4; // 0x1b4
+    ObjPtrList<RndDrawable> mPreClearList; // 0x18c
+    ObjPtrList<RndDrawable> mSplashPreClearList; // 0x1a0
+    bool mSplashing; // 0x1b4
     ProcCounter mProcCounter; // 0x1b8
     ProcessCmd mProcCmds; // 0x1d0
     ProcessCmd mLastProcCmds; // 0x1d4
-    std::list<CompressTexDesc *> unk1d8; // 0x1d8
+    std::list<CompressTexDesc *> mCompressTexDescs; // 0x1d8
 };
 
 extern Rnd &TheRnd;

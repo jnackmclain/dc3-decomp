@@ -1,6 +1,6 @@
 #pragma once
 #include "minwinbase.h"
-#include "winsockx.h"
+#include "guiddef.h"
 #include "../win_types.h"
 
 #ifdef __cplusplus
@@ -148,6 +148,8 @@ typedef struct _XCONTENT_CROSS_TITLE_DATA { /* Size=0x138 */
     /* 0x0134 */ DWORD dwTitleId;
 } XCONTENT_CROSS_TITLE_DATA;
 
+#define XUSER_INFO_FLAG_GUEST 2
+
 typedef struct _XUSER_SIGNIN_INFO { /* Size=0x28 */
     XUID xuid; // 0x0
     DWORD dwInfoFlags; // 0x8
@@ -202,33 +204,104 @@ typedef struct _XUSER_PROPERTY { /* Size=0x18 */
     /* 0x0008 */ XUSER_DATA value;
 } XUSER_PROPERTY;
 
-typedef struct _XSESSION_VIEW_PROPERTIES { /* Size=0xc */
-    /* 0x0000 */ DWORD dwViewId;
-    /* 0x0004 */ DWORD dwNumProperties;
-    /* 0x0008 */ _XUSER_PROPERTY *pProperties;
-} XSESSION_VIEW_PROPERTIES;
+typedef enum _XSHOWMARKETPLACEUI_ENTRYPOINTS {
+    XSHOWMARKETPLACEUI_ENTRYPOINT_CONTENTLIST = 0x0000,
+    XSHOWMARKETPLACEUI_ENTRYPOINT_CONTENTITEM = 0x0001,
+    XSHOWMARKETPLACEUI_ENTRYPOINT_MEMBERSHIPLIST = 0x0002,
+    XSHOWMARKETPLACEUI_ENTRYPOINT_MEMBERSHIPITEM = 0x0003,
+    XSHOWMARKETPLACEUI_ENTRYPOINT_CONTENTLIST_BACKGROUND = 0x0004,
+    XSHOWMARKETPLACEUI_ENTRYPOINT_CONTENTITEM_BACKGROUND = 0x0005,
+    XSHOWMARKETPLACEUI_ENTRYPOINT_MAX = 0x0006,
+} XSHOWMARKETPLACEUI_ENTRYPOINTS;
 
-struct XNKEY { /* Size=0x10 */
-    /* 0x0000 */ BYTE ab[16];
+typedef enum _XSHOWMARKETPLACEUI_PRIVATE_ENTRYPOINTS {
+    XSHOWMARKETPLACEUI_PRIVATE_ENTRYPOINT_ADDPOINTS = 0x0006,
+    XSHOWMARKETPLACEUI_PRIVATE_ENTRYPOINT_PREPAIDCODE = 0x0007,
+    XSHOWMARKETPLACEUI_PRIVATE_ENTRYPOINT_FNC = 0x0008,
+    XSHOWMARKETPLACEUI_PRIVATE_ENTRYPOINT_GAMERTAGPURCHASE = 0x0009,
+    XSHOWMARKETPLACEUI_PRIVATE_ENTRYPOINT_SIGNUP_CREDITCARD = 0x000a,
+    XSHOWMARKETPLACEUI_PRIVATE_ENTRYPOINT_SIGNUP_PARENTCREDITCARD = 0x000b,
+    XSHOWMARKETPLACEUI_PRIVATE_ENTRYPOINT_VIEWQUEUE = 0x000c,
+    XSHOWMARKETPLACEUI_PRIVATE_ENTRYPOINT_VIEWDOWNLOADDETAILS = 0x000d,
+    XSHOWMARKETPLACEUI_PRIVATE_ENTRYPOINT_MEDIAITEM = 0x000e,
+    XSHOWMARKETPLACEUI_PRIVATE_ENTRYPOINT_GOLD_UPSELL = 0x000f,
+    XSHOWMARKETPLACEUI_PRIVATE_ENTRYPOINT_TERMSOFUSE = 0x0010,
+    XSHOWMARKETPLACEUI_PRIVATE_ENTRYPOINT_DIRECT_ACQUIRE = 0x0011,
+    XSHOWMARKETPLACEUI_PRIVATE_ENTRYPOINT_PURCHASEPOINTS = 0x0012,
+    XSHOWMARKETPLACEUI_PRIVATE_ENTRYPOINT_PAYMENT_OPTIONS = 0x0013,
+    XSHOWMARKETPLACEUI_PRIVATE_ENTRYPOINT_BUNDLE_ITEM_DOWNLOAD = 0x0014,
+    XSHOWMARKETPLACEUI_PRIVATE_ENTRYPOINT_MAX = 0x0015,
+} XSHOWMARKETPLACEUI_PRIVATE_ENTRYPOINTS;
+
+typedef struct _MP_BILLING_ACCOUNT_INFO MP_BILLING_ACCOUNT_INFO;
+
+enum GOLD_UPGRADE_REASON {
+    GOLD_UPGRADE_REASON_PARTY = 0x0000,
+    GOLD_UPGRADE_REASON_OSCAR = 0x0001,
+    GOLD_UPGRADE_REASON_VIDEOCHAT = 0x0002,
+    GOLD_UPGRADE_REASON_MULTIPLAYER = 0x0003,
+    GOLD_UPGRADE_REASON_ADD_PHOTO = 0x0004,
+    GOLD_UPGRADE_REASON_PRIMETIME = 0x0005,
+    GOLD_UPGRADE_REASON_TITLE_INVOKED = 0x0006,
+    GOLD_UPGRADE_REASON_GOLD_TRIAL_EXPIRED = 0x0007,
+    GOLD_UPGRADE_REASON_GOLD_SUBSCRIPTION_EXPIRED = 0x0008,
+    GOLD_UPGRADE_REASON_MARKETPLACE = 0x0009,
+    GOLD_UPGRADE_REASON_EPIX_MARKETING = 0x000a,
+    GOLD_UPGRADE_REASON_OTHER = 0x000b,
+    GOLD_UPGRADE_REASON_GOLD_SUBSCRIPTION_EXPIRING = 0x000c,
 };
 
-struct XNADDR { /* Size=0x24 */
-    /* 0x0000 */ in_addr ina;
-    /* 0x0004 */ in_addr inaOnline;
-    /* 0x0008 */ WORD wPortOnline;
-    /* 0x000a */ BYTE abEnet[6];
-    /* 0x0010 */ BYTE abOnline[20];
-};
+typedef struct _XSHOWMARKETPLACEUI_PARAMS { /* Size=0xb8 */
+    /* 0x0000 */ DWORD dwTrackingID;
+    /* 0x0004 */ DWORD dwUserIndex;
+    /* 0x0008 */ ULONGLONG UserXuid;
+    /* 0x0010 */ DWORD dwEntryPoint;
+    /* 0x0018 */ QWORD qwOfferID;
+    /* 0x0020 */ DWORD dwOfferType;
+    /* 0x0024 */ DWORD dwContentCategories;
+    /* 0x0028 */ unsigned char bRequestFlags;
+    /* 0x0030 */ QWORD qwSourceId;
+    /* 0x0038 */ DWORD dwTitleId;
+    /* 0x003c */ GOLD_UPGRADE_REASON eUpgradeReason;
+    /* 0x0040 */ unsigned char bOnlineCountry;
+    /* 0x0044 */ _MP_BILLING_ACCOUNT_INFO *pBillingInfo;
+    /* 0x0048 */ _XOVERLAPPED *pOverlapped;
+    /* 0x004c */ LONG fNuiEnabled;
+    /* 0x0050 */ GUID mediaId;
+    /* 0x0060 */ DWORD dwMediaType;
+    /* 0x0064 */ GUID bundleOfferId;
+    /* 0x0078 */ ULONGLONG aullOfferIDs[6];
+    /* 0x00a8 */ DWORD dwOfferIdCount;
+    /* 0x00ac */ LONG *phrResult;
+    /* 0x00b0 */ void *pVoid;
+} XSHOWMARKETPLACEUI_PARAMS;
 
-struct XNKID { /* Size=0x8 */
-    /* 0x0000 */ BYTE ab[8];
-};
+typedef struct _XSHOWDEVICESELECTORUI_PARAMS { /* Size=0x28 */
+    /* 0x0000 */ DWORD dwTrackingID;
+    /* 0x0004 */ DWORD dwUserIndex;
+    /* 0x0008 */ DWORD dwContentType;
+    /* 0x000c */ DWORD dwContentFlags;
+    /* 0x0010 */ _ULARGE_INTEGER uliBytesRequested;
+    /* 0x0018 */ DWORD *pDeviceID;
+    /* 0x001c */ _XOVERLAPPED *pOverlapped;
+    /* 0x0020 */ BOOL fNuiEnabled;
+} XSHOWDEVICESELECTORUI_PARAMS;
 
-typedef struct _XSESSION_INFO { /* Size=0x3c */
-    /* 0x0000 */ XNKID sessionID;
-    /* 0x0008 */ XNADDR hostAddress;
-    /* 0x002c */ XNKEY keyExchangeKey;
-} XSESSION_INFO;
+#pragma reverse_bitfield(on)
+typedef struct _XALLOC_ATTRIBUTES { /* Size=0x4 */
+    /* 0x0000 */ DWORD dwObjectType : 13; /* BitPos=0 */
+    /* 0x0000 */ DWORD dwHeapTracksAttributes : 1; /* BitPos=13 */
+    /* 0x0000 */ DWORD dwMustSucceed : 1; /* BitPos=14 */
+    /* 0x0000 */ DWORD dwFixedSize : 1; /* BitPos=15 */
+    /* 0x0000 */ DWORD dwAllocatorId : 8; /* BitPos=16 */
+    /* 0x0000 */ DWORD dwAlignment : 4; /* BitPos=24 */
+    /* 0x0000 */ DWORD dwMemoryProtect : 2; /* BitPos=28 */
+    /* 0x0000 */ DWORD dwZeroInitialize : 1; /* BitPos=30 */
+    /* 0x0000 */ DWORD dwMemoryType : 1; /* BitPos=31 */
+} XALLOC_ATTRIBUTES;
+#pragma reverse_bitfield(off)
+
+#define XALLOC_MEMPROTECT_READWRITE 0x20000000
 
 #ifdef __cplusplus
 }

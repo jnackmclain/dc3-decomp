@@ -8,7 +8,8 @@
 
 DECLARE_MESSAGE(EventDialogStartMsg, "event_dialog_start")
 EventDialogStartMsg(DataArray *a1, DataArray *a2) : Message(Type(), a1, a2) {}
-
+DataArray *EventType() const { return mData->Array(2); }
+DataArray *EventAction() const { return mData->Array(3); }
 END_MESSAGE
 
 DECLARE_MESSAGE(EventDialogDismissMsg, "event_dialog_dismiss")
@@ -21,6 +22,8 @@ public:
     OBJ_CLASSNAME(EventDialogPanel)
     OBJ_SET_TYPE(EventDialogPanel)
     virtual DataNode Handle(DataArray *, bool);
+
+    NEW_OBJ(EventDialogPanel)
 
     EventDialogPanel();
 

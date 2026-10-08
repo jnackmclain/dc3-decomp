@@ -11,6 +11,8 @@ enum FXCore {
 
 struct Marker {
     Marker(const String &str = String()) : name(str), position(0), posMS(0) {}
+    Marker(const String &name, int position, float posMS)
+        : name(name), position(position), posMS(posMS) {}
     String name; // 0x0
     int position; // 0x8
     float posMS; // 0xc
@@ -39,7 +41,7 @@ public:
     virtual bool FillDone() const = 0;
     virtual void EnableReads(bool) = 0;
     virtual float GetTime() = 0;
-    virtual float GetJumpBackTotalTime() = 0;
+    virtual float GetJumpBackTotalTime(float) const = 0;
     virtual float GetInSongTime() = 0;
     virtual std::vector<struct JumpInstance> *GetJumpInstances() = 0;
     virtual float GetFilePos() const = 0;

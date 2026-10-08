@@ -12,6 +12,8 @@ char *strncat(char *dest, const char *src, size_t count);
 char *strdup(const char *src);
 char *strndup(const char *src, size_t size);
 
+int strcpy_s(char *dest, size_t dest_size, const char *src);
+
 size_t strxfrm(char *dest, const char *src, size_t count);
 
 size_t strlen(const char *str);
@@ -22,6 +24,7 @@ int stricmp(const char *string1, const char *string2);
 int strnicmp(const char *string1, const char *string2, int n);
 char *strchr(const char *str, int ch);
 char *strrchr(const char *str, int ch);
+char *_strdup(const char *src);
 int strcoll(const char *lhs, const char *rhs);
 
 size_t strspn(const char *dest, const char *src);
@@ -31,6 +34,8 @@ char *strpbrk(const char *dest, const char *breakset);
 char *strstr(const char *str, const char *substr);
 char *strtok(char *str, const char *delim);
 
+char *strlwr(char *str); // this doesn't exist in newer versions of cstdlib
+
 char *strerror(int errnum);
 
 void *memchr(const void *ptr, int ch, size_t count);
@@ -38,6 +43,10 @@ int memcmp(const void *lhs, const void *rhs, size_t count);
 void *memcpy(void *dest, const void *src, size_t count);
 void *memmove(void *dest, const void *src, size_t count);
 void *memset(void *dest, int data, size_t count);
+
+char *_strset(char *str, int c);
+
+void _blkmov(void *d, const void *s, size_t c);
 
 #ifdef __cplusplus
 }

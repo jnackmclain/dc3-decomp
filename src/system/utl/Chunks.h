@@ -11,13 +11,11 @@ public:
     ChunkHeader(BinStream &bs) : mID(), mLength(0), mIsList(0) { Read(bs); }
     ChunkHeader(ChunkID id, int len, bool list) : mID(id), mLength(len), mIsList(list) {}
     void Read(BinStream &);
-    const ChunkID &ID() const { return mID; }
+    ChunkID ID() { return mID; }
     int Length() { return mLength; }
     bool IsList() { return mIsList; }
-
-    // prolly not the function name, it's inlined in debug
-    unsigned int GetNewLength() {
-        unsigned int sublen = mIsList ? 12 : 8;
+    int TotalLength() const {
+        int sublen = mIsList ? 12 : 8;
         return mLength + sublen;
     }
 

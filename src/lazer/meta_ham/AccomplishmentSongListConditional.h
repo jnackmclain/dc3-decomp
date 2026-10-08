@@ -3,7 +3,6 @@
 #include "HamProfile.h"
 #include "meta_ham/Accomplishment.h"
 #include "obj/Data.h"
-#include "stl/_vector.h"
 #include "utl/Symbol.h"
 
 class AccomplishmentSongListConditional : public AccomplishmentSongConditional {
@@ -23,6 +22,6 @@ protected:
 private:
     void Configure(DataArray *);
 
-    std::vector<Symbol> unk70;
+    std::vector<Symbol> unk70; // 0x70 - song list
     int mSongCount; // 0x7c
 };

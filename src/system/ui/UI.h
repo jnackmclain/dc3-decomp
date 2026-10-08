@@ -32,7 +32,7 @@ public:
     virtual void Draw();
     virtual void GotoScreen(const char *, bool, bool);
     virtual void GotoScreen(UIScreen *, bool, bool);
-    virtual void PushScreen(UIScreen *);
+    virtual void PushScreen(UIScreen *); // 0x70
     virtual void PopScreen(UIScreen *);
     virtual void ResetScreen(UIScreen *);
     virtual bool InComponentSelect();
@@ -43,7 +43,9 @@ public:
     UIScreen *TransitionScreen() { return mTransitionScreen; }
     bool InTransition() { return mTransitionState != kTransitionNone; }
     TransitionState GetTransitionState() const { return mTransitionState; }
+    bool BlacklightScreenEnabled() const { return !mDisableScreenBlacklight; }
     RndCam *GetCam() { return mCam; }
+    RndEnviron *GetEnv() { return mEnv; }
     bool WentBack() { return mWentBack; }
     void SetScreenBlacklghtDisabled(bool);
     UIPanel *FocusPanel();
@@ -55,6 +57,7 @@ public:
     void UseJoypad(bool, bool);
     bool OverloadHorizontalNav(JoypadAction, JoypadButton, bool) const;
     bool IsGameScreenActive();
+    bool DefaultAllowEditText() const;
 
 private:
     void ToggleLoadTimes();
@@ -77,20 +80,18 @@ protected:
     JoypadClient *mJoyClient; // 0x44
     UIScreen *mCurrentScreen; // 0x48
     UIScreen *mTransitionScreen; // 0x4c
-    int unk50;
+    Hmx::Object *mSink; // 0x50
     RndCam *mCam; // 0x54
     RndEnviron *mEnv; // 0x58
-    int unk5c;
     Timer mTimer; // 0x60
     bool mOverloadHorizontalNav; // 0x90
     bool mCancelTransitionNotify; // 0x91
     bool mDefaultAllowEditText; // 0x92
     bool mDisableScreenBlacklight; // 0x93
-    int unk94;
     Timer mLoadTimer; // 0x98
     RndOverlay *mOverlay; // 0xc8
     Automator *mAutomator; // 0xcc
-    bool unkd0;
+    bool mShowDevMenu; // 0xd0
 };
 
 extern UIManager *TheUI;
@@ -122,8 +123,12 @@ private:
     Symbol CurScreenName();
 
     DataNode OnCustomMsg(const Message &);
-    DataNode OnMsg(UITransitionCompleteMsg const &);
-    DataNode OnMsg(ButtonDownMsg const &);
+    DataNode OnMsg(const UITransitionCompleteMsg &);
+    DataNode OnMsg(const ButtonDownMsg &);
+    DataNode OnMsg(const class UIComponentFocusChangeMsg &);
+    DataNode OnMsg(const UIComponentSelectMsg &);
+    DataNode OnMsg(const UIComponentScrollMsg &);
+    DataNode OnMsg(const UIScreenChangeMsg &);
     void FillButtonMsg(ButtonDownMsg &, int);
     DataNode OnCheatInvoked(DataArray const *);
 
@@ -144,4 +149,15 @@ private:
 DECLARE_MESSAGE(UIChangedMsg, "ui_changed")
 UIChangedMsg(bool showing) : Message(Type(), showing) {}
 bool Showing() const { return mData->Int(2); }
+END_MESSAGE
+
+#include "ui/PanelDir.h"
+// #define FOCUS_MSG (component_focus ($new_focus $old_focus $panel_dir $nav_type))
+DECLARE_MESSAGE(UIComponentFocusChangeMsg, "component_focus");
+UIComponentFocusChangeMsg(UIComponent *comp1, UIComponent *comp2, PanelDir *dir, Symbol s)
+    : Message(Type(), comp1, comp2, dir, s) {}
+UIComponent *GetNewFocus() const { return mData->Obj<UIComponent>(2); }
+UIComponent *GetOldFocus() const { return mData->Obj<UIComponent>(3); }
+PanelDir *GetDir() const { return mData->Obj<PanelDir>(4); }
+Symbol GetNavType() const { return mData->Sym(5); }
 END_MESSAGE

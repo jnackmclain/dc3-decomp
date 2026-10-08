@@ -6,6 +6,7 @@
 #include "flow/FlowTrigger.h"
 #include "obj/Data.h"
 #include "obj/Dir.h"
+#include "obj/DirLoader.h"
 #include "obj/Object.h"
 #include "rndobj/Poll.h"
 #include "utl/Str.h"
@@ -83,6 +84,11 @@ public:
     FlowLabel *GetLabelForSym(Symbol);
     void ApplyParams(DataArray *, FlowTrigger *);
 
+    ObjectDir *LoadingDir() const {
+        DirLoader *dl = Loader();
+        return dl ? dl->ProxyDir() : Dir();
+    }
+
     void StartOnEnter(bool start) {
         if (start)
             unk170 = 2;
@@ -95,8 +101,14 @@ public:
             unk170 = start ? 2 : 1;
     }
 
+    const ObjVector<DynamicPropertyEntry> &DynamicPropEntries() const {
+        return mDynamicProperties;
+    }
+
 protected:
     Flow();
+
+    bool NoProxyFile() { return ProxyFile().empty(); }
 
     void ToggleRunning(int);
     void OnReflectedPropertyChanged(DataArray *);

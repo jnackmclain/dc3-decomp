@@ -50,11 +50,6 @@ public:
         void Animate(const EnvLightEntry &, float);
         bool operator!=(const EnvLightEntry &) const;
 
-        EnvLightEntry &operator=(const EnvLightEntry &e) {
-            memcpy(this, &e, sizeof(*this));
-            return *this;
-        }
-
         Hmx::Quat unk0;
         /** "Light's position" */
         Vector3 mPosition; // 0x10
@@ -82,11 +77,11 @@ public:
         void Animate(Spotlight *, const SpotlightEntry &, float);
 
         float mIntensity; // 0x0
-        int mColor; // 0x4 - packed
-        unsigned char unk8; // 0x8
+        unsigned int mColor; // 0x4 - packed
+        unsigned char mFlags; // 0x8
         ObjPtr<RndTransformable> mTarget; // 0xc
-        Hmx::Quat unk20; // 0x20
-        Hmx::Matrix3 unk30; // 0x30
+        Hmx::Quat mOrientation; // 0x20
+        Hmx::Matrix3 unk30; // 0x30 - rotation?
     };
 
     struct SpotlightDrawerEntry {
@@ -192,6 +187,8 @@ protected:
     int NextManualFrame(LightPreset::KeyframeCmd) const;
     void FillLightPresetData(RndLight *, LightPreset::EnvLightEntry &);
     void AnimateLightFromPreset(RndLight *, const LightPreset::EnvLightEntry &, float);
+    void AnimateEnvFromPreset(RndEnviron *, const LightPreset::EnvironmentEntry &, float);
+    void AnimateSpotFromPreset(Spotlight *, const LightPreset::SpotlightEntry &, float);
     void ApplyState(LightPreset::Keyframe const &);
     void SetKeyframe(Keyframe &);
     void FillEnvPresetData(RndEnviron *, EnvironmentEntry &);
@@ -200,6 +197,9 @@ protected:
     void FillSpotPresetData(Spotlight *, SpotlightEntry &, int);
     void Animate(float);
     void SyncNewSpotlights();
+    void SyncKeyframeTargets();
+    void
+    AnimateState(const LightPreset::Keyframe &, const LightPreset::Keyframe &, float);
 
     DataNode OnSetKeyframe(DataArray *);
     DataNode OnViewKeyframe(DataArray *);

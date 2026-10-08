@@ -52,15 +52,17 @@ void CharBonesBlender::PollDeps(
     change.push_back(mDest);
 }
 
+INIT_REVS(2, 0)
+
 BEGIN_LOADS(CharBonesBlender)
     LOAD_REVS(bs)
     ASSERT_REVS(2, 0)
     LOAD_SUPERCLASS(Hmx::Object)
     ObjPtr<CharBonesObject> boneObjPtr(this);
-    d >> boneObjPtr;
+    bs >> boneObjPtr;
     Symbol s;
     if (d.rev > 1)
-        d >> s;
+        bs >> s;
     SetClipType(s);
     SetDest(boneObjPtr);
 END_LOADS

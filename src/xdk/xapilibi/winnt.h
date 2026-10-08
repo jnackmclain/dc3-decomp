@@ -15,39 +15,39 @@ typedef struct _CONTEXT { /* Size=0xa40 */
     /* 0x0004 */ DWORD Msr;
     /* 0x0008 */ DWORD Iar;
     /* 0x000c */ DWORD Lr;
-    /* 0x0010 */ ULARGE_INTEGER Ctr;
-    /* 0x0018 */ ULARGE_INTEGER Gpr0;
-    /* 0x0020 */ ULARGE_INTEGER Gpr1;
-    /* 0x0028 */ ULARGE_INTEGER Gpr2;
-    /* 0x0030 */ ULARGE_INTEGER Gpr3;
-    /* 0x0038 */ ULARGE_INTEGER Gpr4;
-    /* 0x0040 */ ULARGE_INTEGER Gpr5;
-    /* 0x0048 */ ULARGE_INTEGER Gpr6;
-    /* 0x0050 */ ULARGE_INTEGER Gpr7;
-    /* 0x0058 */ ULARGE_INTEGER Gpr8;
-    /* 0x0060 */ ULARGE_INTEGER Gpr9;
-    /* 0x0068 */ ULARGE_INTEGER Gpr10;
-    /* 0x0070 */ ULARGE_INTEGER Gpr11;
-    /* 0x0078 */ ULARGE_INTEGER Gpr12;
-    /* 0x0080 */ ULARGE_INTEGER Gpr13;
-    /* 0x0088 */ ULARGE_INTEGER Gpr14;
-    /* 0x0090 */ ULARGE_INTEGER Gpr15;
-    /* 0x0098 */ ULARGE_INTEGER Gpr16;
-    /* 0x00a0 */ ULARGE_INTEGER Gpr17;
-    /* 0x00a8 */ ULARGE_INTEGER Gpr18;
-    /* 0x00b0 */ ULARGE_INTEGER Gpr19;
-    /* 0x00b8 */ ULARGE_INTEGER Gpr20;
-    /* 0x00c0 */ ULARGE_INTEGER Gpr21;
-    /* 0x00c8 */ ULARGE_INTEGER Gpr22;
-    /* 0x00d0 */ ULARGE_INTEGER Gpr23;
-    /* 0x00d8 */ ULARGE_INTEGER Gpr24;
-    /* 0x00e0 */ ULARGE_INTEGER Gpr25;
-    /* 0x00e8 */ ULARGE_INTEGER Gpr26;
-    /* 0x00f0 */ ULARGE_INTEGER Gpr27;
-    /* 0x00f8 */ ULARGE_INTEGER Gpr28;
-    /* 0x0100 */ ULARGE_INTEGER Gpr29;
-    /* 0x0108 */ ULARGE_INTEGER Gpr30;
-    /* 0x0110 */ ULARGE_INTEGER Gpr31;
+    /* 0x0010 */ DWORD64 Ctr;
+    /* 0x0018 */ DWORD64 Gpr0;
+    /* 0x0020 */ DWORD64 Gpr1;
+    /* 0x0028 */ DWORD64 Gpr2;
+    /* 0x0030 */ DWORD64 Gpr3;
+    /* 0x0038 */ DWORD64 Gpr4;
+    /* 0x0040 */ DWORD64 Gpr5;
+    /* 0x0048 */ DWORD64 Gpr6;
+    /* 0x0050 */ DWORD64 Gpr7;
+    /* 0x0058 */ DWORD64 Gpr8;
+    /* 0x0060 */ DWORD64 Gpr9;
+    /* 0x0068 */ DWORD64 Gpr10;
+    /* 0x0070 */ DWORD64 Gpr11;
+    /* 0x0078 */ DWORD64 Gpr12;
+    /* 0x0080 */ DWORD64 Gpr13;
+    /* 0x0088 */ DWORD64 Gpr14;
+    /* 0x0090 */ DWORD64 Gpr15;
+    /* 0x0098 */ DWORD64 Gpr16;
+    /* 0x00a0 */ DWORD64 Gpr17;
+    /* 0x00a8 */ DWORD64 Gpr18;
+    /* 0x00b0 */ DWORD64 Gpr19;
+    /* 0x00b8 */ DWORD64 Gpr20;
+    /* 0x00c0 */ DWORD64 Gpr21;
+    /* 0x00c8 */ DWORD64 Gpr22;
+    /* 0x00d0 */ DWORD64 Gpr23;
+    /* 0x00d8 */ DWORD64 Gpr24;
+    /* 0x00e0 */ DWORD64 Gpr25;
+    /* 0x00e8 */ DWORD64 Gpr26;
+    /* 0x00f0 */ DWORD64 Gpr27;
+    /* 0x00f8 */ DWORD64 Gpr28;
+    /* 0x0100 */ DWORD64 Gpr29;
+    /* 0x0108 */ DWORD64 Gpr30;
+    /* 0x0110 */ DWORD64 Gpr31;
     /* 0x0118 */ DWORD Cr;
     /* 0x011c */ DWORD Xer;
     /* 0x0120 */ double Fpscr;
@@ -234,6 +234,34 @@ typedef struct _EXCEPTION_POINTERS {
 
 typedef LONG TOP_LEVEL_EXCEPTION_FILTER(EXCEPTION_POINTERS *);
 typedef TOP_LEVEL_EXCEPTION_FILTER *LPTOP_LEVEL_EXCEPTION_FILTER;
+
+// clang-format off
+// possible values for an EXCEPTION_RECORD's ExceptionCode
+#define EXCEPTION_GUARD_PAGE                0x80000001
+#define EXCEPTION_DATATYPE_MISALIGNMENT     0x80000002
+#define EXCEPTION_BREAKPOINT                0x80000003
+#define EXCEPTION_SINGLE_STEP               0x80000004
+#define EXCEPTION_ACCESS_VIOLATION          0xC0000005
+#define EXCEPTION_IN_PAGE_ERROR             0xC0000006
+#define EXCEPTION_INVALID_HANDLE            0xC0000008
+#define EXCEPTION_ILLEGAL_INSTRUCTION       0xC000001D
+#define EXCEPTION_NONCONTINUABLE_EXCEPTION  0xC0000025
+#define EXCEPTION_INVALID_DISPOSITION       0xC0000026
+#define EXCEPTION_ARRAY_BOUNDS_EXCEEDED     0xC000008C
+#define EXCEPTION_FLT_DENORMAL_OPERAND      0xC000008D
+#define EXCEPTION_FLT_DIVIDE_BY_ZERO        0xC000008E
+#define EXCEPTION_FLT_INEXACT_RESULT        0xC000008F
+#define EXCEPTION_FLT_INVALID_OPERATION     0xC0000090
+#define EXCEPTION_FLT_OVERFLOW              0xC0000091
+#define EXCEPTION_FLT_STACK_CHECK           0xC0000092
+#define EXCEPTION_FLT_UNDERFLOW             0xC0000093
+#define EXCEPTION_INT_DIVIDE_BY_ZERO        0xC0000094
+#define EXCEPTION_INT_OVERFLOW              0xC0000095
+#define EXCEPTION_PRIV_INSTRUCTION          0xC0000096
+#define EXCEPTION_STACK_OVERFLOW            0xC00000FD
+// clang-format on
+
+#define CONTROL_C_EXIT 0xC000013A
 
 #ifdef __cplusplus
 }

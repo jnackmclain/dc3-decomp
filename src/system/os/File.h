@@ -9,8 +9,11 @@
 #define FILE_SEEK_SET 0
 #define FILE_SEEK_CUR 1
 
+#define kNoThread -1
+
 extern bool gNullFiles;
 extern bool gFakeFileErrors;
+extern void *kNoHandle;
 
 class File {
 public:
@@ -131,7 +134,7 @@ int FileDelete(const char *iFilename);
  */
 int FileMkDir(const char *iDirname);
 
-void FileDiscSpinUp();
+bool FileDiscSpinUp();
 
 /** Normalize the path of a given file.
     (i.e. change '\'s to '/'s and make every letter lowercase.)
@@ -147,6 +150,10 @@ void FileEnumerate(
     bool
 );
 void FileRecursePattern(const char *, void (*)(char const *, char const *), bool);
+
+const char *FileGetPathBuf(const char *iFilepath, char *oBuf);
+const char *FileGetDriveBuf(const char *iFilepath, char *oBuf);
+const char *FileGetBaseBuf(const char *iFilepath, char *oBuf);
 
 class BinStream &operator>>(class BinStream &, FileStat &);
 }

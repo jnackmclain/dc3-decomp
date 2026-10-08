@@ -39,7 +39,7 @@ public:
     virtual bool Exiting() const;
     virtual bool Unloading() const;
     virtual void Poll();
-    virtual void SetPaused(bool);
+    virtual void SetPaused(bool paused) { mPaused = paused; }
     virtual UIComponent *FocusComponent();
     virtual void FocusIn() {}
     virtual void FocusOut() {}
@@ -56,9 +56,11 @@ public:
     void UnsetLoadedDir();
     PanelDir *LoadedDir() { return mDir; }
     void CheckUnload();
-    static bool GetFinalDrawPass() { return sIsFinalDrawPass; }
     State GetState() { return mState; }
     bool ForceExit() const { return mForceExit; }
+
+    static bool GetFinalDrawPass() { return sIsFinalDrawPass; }
+    static void SetFinalDrawPass(bool pass) { sIsFinalDrawPass = pass; }
 
 protected:
     virtual void Unload();

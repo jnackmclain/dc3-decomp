@@ -7,8 +7,6 @@
 #include "ui/UIListMesh.h"
 #include "utl/Symbol.h"
 
-TitleProvider::TitleProvider() {}
-
 TitleProvider::~TitleProvider() {}
 
 Symbol TitleProvider::DataSymbol(int i_iData) const {

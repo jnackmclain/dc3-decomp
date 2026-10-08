@@ -2,12 +2,17 @@
 #include "HamListRibbon.h"
 #include "HamNavProvider.h"
 #include "HamScrollBehavior.h"
+#include "gesture/DirectionGestureFilter.h"
+#include "gesture/GestureMgr.h"
+#include "gesture/HandHeightGestureFilter.h"
 #include "gesture/Skeleton.h"
 #include "hamobj/HamScrollSpeedIndicator.h"
 #include "math/DoubleExponentialSmoother.h"
+#include "obj/Msg.h"
 #include "obj/Object.h"
 #include "os/JoypadMsgs.h"
 #include "rndobj/Anim.h"
+#include "stl/_vector.h"
 #include "ui/ResourceDirPtr.h"
 #include "ui/UIComponent.h"
 #include "ui/UIListDir.h"
@@ -15,6 +20,7 @@
 #include "ui/UIListState.h"
 #include "ui/UIListWidget.h"
 #include "utl/MemMgr.h"
+#include "utl/Symbol.h"
 
 /** "List of navigation actions controlled by a single hand with gestures" */
 class HamNavList : public UIComponent,
@@ -65,9 +71,6 @@ public:
     NEW_OBJ(HamNavList)
     void Refresh();
     void HandleHighlightChanged(int);
-    void PlayScrollSound();
-    void StopScrollSound();
-    void SetScrollSoundFrame(float);
     void SetNavProvider(HamNavProvider *);
     Symbol GetSelectedSym() const;
     void ScrollToIndex(int, int);
@@ -87,9 +90,50 @@ public:
     void ClearBigElements();
     void HideItem(int, bool);
     void SetProviderNavItemLabels(int, DataArray *);
+    void DrawDebug() const;
+    void Disengage();
+    void UpdateGestures(Skeleton const *);
+    float CalculateSwell(int) const;
+
+    void Enable() { mEnabled = true; }
+    void Disable() { mEnabled = false; }
+    bool Enabled() const { return mEnabled; }
+    HamNavProvider *GetHelpbarProvider() { return mNavProvider; }
+    int TrackingID() const { return mSkeletonTrackingID; }
+    void SetTrackingID(int id) { mSkeletonTrackingID = id; }
+    void SetSelected(int i) { mListState.SetSelected(i, -1, true); }
+    bool IsScrollingSettled() { return unk190.GetFirstVal() <= 0.0f; }
+
+    bool InControllerMode() const {
+        return TheGestureMgr && TheGestureMgr->InControllerMode();
+    }
+    bool GesturingWithVoice() const {
+        return TheGestureMgr && TheGestureMgr->GesturingWithVoice();
+    }
+    bool IsScrollable() const { return mListState.ScrollPastMinDisplay(); }
+    bool InVoiceMode() const { return TheGestureMgr && TheGestureMgr->InVoiceMode(); }
+    HamListRibbon::RibbonMode GetRibbonMode() const { return mRibbonMode; }
+    RndAnimatable *GetScrollSoundAnim() const { return mScrollSpeedAnim; }
+
+    void PlayScrollSound() {
+        if (mListRibbonResource) {
+            mListRibbonResource->PlayScrollSound();
+        }
+    }
+    void StopScrollSound() {
+        if (mListRibbonResource) {
+            mListRibbonResource->StopScrollSound();
+        }
+    }
+    void SetScrollSoundFrame(float frame) {
+        if (mListRibbonResource) {
+            mListRibbonResource->SetScrollSoundFrame(frame);
+        }
+    }
 
     static void Init();
     static bool sLastSelectInControllerMode;
+    static bool sForceDisengage;
 
 private:
     void SetRibbonMode(HamListRibbon::RibbonMode);
@@ -97,6 +141,7 @@ private:
     void SetSliding(float);
     void SetSelecting(bool);
     bool SkipPoll() const;
+    bool IsElementBig(int) const;
     void RealRefresh();
     void SetSwelling();
     bool ShouldSkipSelectAnim(DataNode &) const;
@@ -105,9 +150,14 @@ private:
     int GetDisabledCount(int) const;
     int GetHighlightItem(void) const;
     void DetermineHighlightedItem();
+    float GetTargetSwellAmount(int);
+    void
+    LinkRibbonDrawState(std::vector<HamListRibbonDrawState> &, UIListWidgetDrawState &);
 
     static float sSlideSmoothAmount;
     static float sSlideTrendAmount;
+    static const int sListStateMinDisplay;
+    static const int sListStateMaxDisplay;
 
     DataNode OnMsg(const ButtonDownMsg &);
 
@@ -142,11 +192,11 @@ protected:
     /** "Don't automatically play the enter anim when this component enters" */
     bool mSuppressAutomaticEnter; // 0x156
     bool unk157; // 0x157
-    float unk158; // 0x158
+    float mHandHeight; // 0x158
     DoubleExponentialSmoother unk15c; // 0x15c
     DoubleExponentialSmoother unk170; // 0x170
-    int unk184;
-    int unk188;
+    DirectionGestureFilter *unk184;
+    HandHeightGestureFilter *unk188;
     int mSkeletonTrackingID; // 0x18c
     HamScrollBehavior unk190;
     bool mDisableSlideSound; // 0x1e4
@@ -168,3 +218,18 @@ protected:
     std::vector<Symbol> mBigElements; // 0x200
     std::vector<int> unk20c; // 0x20c
 };
+
+DECLARE_MESSAGE(NavSelectMsg, "nav_select")
+NavSelectMsg(Symbol s, int i, HamNavList *list, bool b)
+    : Message(Type(), s, i, list, b) {}
+END_MESSAGE
+
+DECLARE_MESSAGE(NavHighlightSettledMsg, "nav_highlight_settled")
+NavHighlightSettledMsg(Symbol s, int i, HamNavList *list, bool b)
+    : Message(Type(), s, i, list, b) {}
+END_MESSAGE
+
+DECLARE_MESSAGE(NavHighlightMsg, "nav_highlight")
+NavHighlightMsg(Symbol s, int i, HamNavList *list, bool b)
+    : Message(Type(), s, i, list, b) {}
+END_MESSAGE

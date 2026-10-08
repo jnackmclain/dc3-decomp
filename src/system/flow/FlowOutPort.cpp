@@ -42,6 +42,8 @@ BEGIN_COPYS(FlowOutPort)
     UpdatePortMapping();
 END_COPYS
 
+INIT_REVS(2, 0)
+
 BEGIN_LOADS(FlowOutPort)
     LOAD_REVS(bs)
     ASSERT_REVS(2, 0)
@@ -59,7 +61,7 @@ END_LOADS
 
 bool FlowOutPort::Activate() {
     FLOW_LOG("Activate\n");
-    unk58 = false;
+    mRequestingStop = false;
     PushDrivenProperties();
     if (GetOwnerFlow()) {
         FlowLabel *label = GetOwnerFlow()->GetLabelForSym(mLabel.c_str());
@@ -101,7 +103,7 @@ void FlowOutPort::ChildFinished(FlowNode *node) {
 
 void FlowOutPort::RequestStop() {
     FLOW_LOG("RequestStop\n");
-    unk58 = true;
+    mRequestingStop = true;
     if (GetOwnerFlow() && !mStop) {
         FlowLabel *label = GetOwnerFlow()->GetLabelForSym(mLabel.c_str());
         if (label) {
@@ -112,7 +114,7 @@ void FlowOutPort::RequestStop() {
 
 void FlowOutPort::RequestStopCancel() {
     FLOW_LOG("RequestStopCancel\n");
-    unk58 = false;
+    mRequestingStop = false;
     if (GetOwnerFlow() && !mStop) {
         FlowLabel *label = GetOwnerFlow()->GetLabelForSym(mLabel.c_str());
         if (label) {

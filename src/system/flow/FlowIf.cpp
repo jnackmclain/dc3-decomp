@@ -2,6 +2,8 @@
 #include "flow/FlowNode.h"
 #include "flow/Flow.h"
 #include "obj/Data.h"
+#include "obj/Dir.h"
+#include "obj/DirLoader.h"
 #include "obj/Object.h"
 
 FlowIf::FlowIf() : mValue1(0), mValue2(0), mOperator(kEqual) {}
@@ -46,6 +48,8 @@ BEGIN_COPYS(FlowIf)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(3, 0)
+
 BEGIN_LOADS(FlowIf)
     LOAD_REVS(bs)
     ASSERT_REVS(3, 0)
@@ -64,7 +68,7 @@ BEGIN_LOADS(FlowIf)
             if (!owner) {
                 owner = dynamic_cast<Flow *>(this);
             }
-            mValue1 = LoadObjectFromMainOrDir(bs, owner);
+            mValue1 = LoadObjectFromMainOrDir(d.stream, owner->LoadingDir());
         } else {
             DataNode val;
             val.Load(bs);
@@ -77,7 +81,7 @@ BEGIN_LOADS(FlowIf)
             if (!owner) {
                 owner = dynamic_cast<Flow *>(this);
             }
-            mValue2 = LoadObjectFromMainOrDir(bs, owner);
+            mValue2 = LoadObjectFromMainOrDir(d.stream, owner->LoadingDir());
         } else {
             DataNode val;
             val.Load(bs);
@@ -93,7 +97,7 @@ END_LOADS
 
 bool FlowIf::Activate() {
     FLOW_LOG("Activate\n");
-    unk58 = false;
+    mRequestingStop = false;
     if (IsRunning()) {
         MILO_NOTIFY(
             "FlowIf re-entrance error, activated when already running, deactivating and aborting, check your logic"

@@ -52,6 +52,8 @@ BEGIN_COPYS(HamSkeletonConverter)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(2, 0)
+
 BEGIN_LOADS(HamSkeletonConverter)
     LOAD_REVS(bs)
     ASSERT_REVS(2, 0)
@@ -79,11 +81,11 @@ void HamSkeletonConverter::Enter() {
         unk6c0[i] = t;
     }
     Vector3 z = unk6c0[kJointHipLeft]->WorldXfm().m.z;
-    unk730 = z;
+    unk730[0] = z;
     z = unk6c0[kJointHipRight]->WorldXfm().m.z;
-    unk740 = z;
-    unk710 = unk730;
-    unk720 = unk740;
+    unk730[1] = z;
+    unk710[0] = unk730[0];
+    unk710[1] = unk730[1];
 }
 
 void HamSkeletonConverter::Exit() {
@@ -114,7 +116,7 @@ void HamSkeletonConverter::Highlight() {
 
         Vector3 scaled;
         Add(scaledX, curXfm.v, scaled);
-        TheRnd.DrawLine(curXfm.v, scaledX, Hmx::Color(1, 0, 0), false);
+        TheRnd.DrawLine(curXfm.v, scaled, Hmx::Color(1, 0, 0), false);
         Add(scaledY, curXfm.v, scaled);
         TheRnd.DrawLine(curXfm.v, scaled, Hmx::Color(0, 1, 0), false);
         Add(scaledZ, curXfm.v, scaled);
@@ -124,7 +126,7 @@ void HamSkeletonConverter::Highlight() {
 
 void HamSkeletonConverter::PostUpdate(const SkeletonUpdateData *data) {
     if (unk750 && data) {
-        BaseSkeleton *skeleton = nullptr;
+        const BaseSkeleton *skeleton = nullptr;
         for (int i = 0; i < 6; i++) {
             if (data->unk0[i] && data->unk0[i]->IsTracked()) {
                 skeleton = data->unk0[i];
@@ -140,12 +142,10 @@ void HamSkeletonConverter::GetParentWorldXfm(
 ) {
     RndTransformable *meshParent = t->TransParent();
     if (streq(meshParent->Name(), "bone_pelvis.mesh")) {
-        xfm.m = unk6d0.m;
-        xfm.v = unk6d0.v;
+        xfm.Set(unk6d0.m, unk6d0.v);
     } else if (IsSkeletonBone(meshParent->Name())) {
         MILO_ASSERT(streq(meshParent->Name(), CharBoneName(parent)), 0x2B2);
-        xfm.m = unk1c0[parent].m;
-        xfm.v = unk1c0[parent].v;
+        xfm.Set(unk1c0[parent].m, unk1c0[parent].v);
     } else {
         GetParentWorldXfm(meshParent, xfm, parent);
         Multiply(meshParent->LocalXfm(), xfm, xfm);
@@ -189,6 +189,72 @@ void HamSkeletonConverter::SetPosBoneValue(String s, Vector3 v) {
     vPtr->z = v.z;
 }
 
+void HamSkeletonConverter::ScaleBone(
+    SkeletonJoint j1,
+    SkeletonJoint j2,
+    SkeletonCoordSys cs3,
+    const Vector3 &v4,
+    const Vector3 &v5,
+    const Vector3 &v6,
+    Vector3 &v7
+) {
+    float len = Distance(v4, v5);
+    RndTransformable *t1 = unk6c0[j1];
+    RndTransformable *t2 = unk6c0[j2];
+    float tlen = Distance(t1->WorldXfm().v, t2->WorldXfm().v);
+    Vector3 diff;
+    Subtract(v5, v4, diff);
+    Scale(diff, tlen / len, diff);
+    Add(diff, v6, v7);
+}
+
+void HamSkeletonConverter::CalcRotzBone(
+    SkeletonJoint j1, SkeletonJoint j2, SkeletonJoint j3
+) {
+    Vector3 vd0;
+    Subtract(unk80[j2], unk80[j1], vd0);
+    Normalize(vd0, vd0);
+    Vector3 vc0;
+    Subtract(unk80[j3], unk80[j1], vc0);
+    Normalize(vc0, vc0);
+    float dot = -acosf(Dot(vc0, vd0));
+    if (!IsNaN(dot)) {
+        RndTransformable *t = unk6c0[j2];
+        Hmx::Matrix3 mb0 = t->LocalXfm().m;
+        MakeRotMatrixZ(dot, mb0);
+        Multiply(Transform(mb0, t->LocalXfm().v), unk1c0[j1], unk1c0[j2]);
+        SetRotzBoneValue(MirrorBoneName(j2), dot);
+    }
+}
+
+void HamSkeletonConverter::CalcQuatBone(
+    SkeletonJoint j1, SkeletonJoint j2, SkeletonJoint j3
+) {
+    Vector3 v1b0;
+    Subtract(unk80[j3], unk80[j2], v1b0);
+    Normalize(v1b0, v1b0);
+    RndTransformable *t = unk6c0[j2];
+    Transform tf180 = t->LocalXfm();
+    Transform tff0;
+    GetParentWorldXfm(t, tff0, j1);
+    Multiply(tf180, tff0, tf180);
+    Hmx::Quat q1a0;
+    MakeRotQuat(tf180.m.x, v1b0, q1a0);
+    Transform tf130;
+    Multiply(tf180.m.x, q1a0, tf130.m.x);
+    Multiply(tf180.m.y, q1a0, tf130.m.y);
+    Multiply(tf180.m.z, q1a0, tf130.m.z);
+    Normalize(tf130.m, tf130.m);
+    tf130.v = tf180.v;
+    unk1c0[j2].Set(tf130.m, tf180.v);
+    Transform tfb0;
+    Invert(tff0, tfb0);
+    Transform tf70;
+    Multiply(tf130, tfb0, tf70);
+    Hmx::Quat q190(tf70.m);
+    SetQuatBoneValue(CharBoneName(j2), q190);
+}
+
 void HamSkeletonConverter::RotateTowards(
     const Vector3 &v1, const Vector3 &v2, float f, Vector3 &vout
 ) {
@@ -200,20 +266,116 @@ void HamSkeletonConverter::RotateTowards(
         Hmx::Quat q40;
         MakeRotQuat(v1, v2, q40);
         float angle = acos(Dot(v1, v2));
-        if (fabsf(angle) < 1e-9) {
+        if (IsNaN(angle) || fabsf(angle) < 1e-9) {
             vout.x = v1.x;
             vout.y = v1.y;
             vout.z = v1.z;
         } else {
             float fabsed = fabsf(f / angle);
-            if (fabsed < 1.0f) {
-                Interp(q50, q40, fabsed, q40);
-                Multiply(v1, q40, vout);
-            } else {
+            if (fabsed >= 1.0f) {
                 vout.x = v2.x;
                 vout.y = v2.y;
                 vout.z = v2.z;
+            } else {
+                Interp(q50, q40, fabsed, q40);
+                Multiply(v1, q40, vout);
             }
         }
+    }
+}
+
+void HamSkeletonConverter::SetArm(
+    SkeletonJoint j1, SkeletonJoint j2, SkeletonJoint j3, SkeletonJoint j4
+) {
+    Vector3 v1d0;
+    Subtract(unk80[j3], unk80[j2], v1d0);
+    Normalize(v1d0, v1d0);
+
+    Vector3 vsub;
+    Subtract(unk80[j3], unk80[j4], vsub);
+    Vector3 v1c0;
+    Cross(v1d0, vsub, v1c0);
+    Normalize(v1c0, v1c0);
+    Vector3 v1b0;
+    Cross(v1c0, v1d0, v1b0);
+    Normalize(v1b0, v1b0);
+
+    Transform tf110;
+    GetParentWorldXfm(unk6c0[j2], tf110, j1);
+    Vector3 v190;
+    Multiply(unk6c0[j2]->LocalXfm().v, tf110, v190);
+
+    Hmx::Matrix3 m180(v1d0, v1b0, v1c0);
+    Transform tf150(m180, v190);
+    unk1c0[j2].Set(m180, v190);
+
+    Transform tfd0;
+    Invert(tf110, tfd0);
+    Multiply(tf150, tfd0, tf150);
+    NormalizeAboutX(tf150.m);
+    Hmx::Quat q1a0(tf150.m);
+    SetQuatBoneValue(MirrorBoneName(j2), q1a0);
+    CalcRotzBone(j2, j3, j4);
+}
+
+void HamSkeletonConverter::SetLeg(
+    SkeletonJoint j1,
+    SkeletonJoint j2,
+    SkeletonJoint j3,
+    SkeletonJoint j4,
+    SkeletonJoint j5,
+    const BaseSkeleton *skeleton,
+    int i7
+) {
+    Vector3 v210;
+    Subtract(unk80[j3], unk80[j2], v210);
+    Normalize(v210, v210);
+
+    Vector3 v200;
+    Subtract(unk80[j4], unk80[j3], v200);
+    Normalize(v200, v200);
+    float dot = -acosf(Dot(v200, v210));
+    if (!IsNaN(dot)) {
+        Transform tf100;
+        GetParentWorldXfm(unk6c0[j2], tf100, j1);
+
+        Plane p200;
+        p200.Set(unk80[j2], unk80[j3], unk80[j4]);
+        int cmp = dot < 0.2;
+        if (abs(cmp)) {
+            Vector3 vsub;
+            Subtract(unk80[j2], unk80[j3], vsub);
+            p200.Set(vsub, unk6d0.m.z);
+        }
+
+        unk710[i7].Set(p200.a * -1, p200.b * -1, p200.c * -1);
+
+        Vector3 v1c0;
+        Multiply(unk6c0[j2]->LocalXfm().v, tf100, v1c0);
+
+        Subtract(unk80[j3], unk80[j2], v210);
+        Normalize(v210, v210);
+        RotateTowards(unk730[i7], unk710[i7], 1000, unk80[j4]);
+
+        Vector3 v1f0;
+        Vector3 v730i7(unk730[i7].x, unk730[i7].y, unk730[i7].z);
+        Cross(v730i7, v210, v1f0);
+        Normalize(v1f0, v1f0);
+
+        Hmx::Matrix3 m1b0(v210, v1f0, v730i7);
+        Transform tf180(m1b0, v1c0);
+        unk1c0[j2].Set(m1b0, v1c0);
+
+        Transform tfc0;
+        Invert(tf100, tfc0);
+        Multiply(tf180, tfc0, tf180);
+        NormalizeAboutX(tf180.m);
+        Hmx::Quat q1d0(tf180.m);
+        SetQuatBoneValue(MirrorBoneName(j2), q1d0);
+
+        RndTransformable *t = unk6c0[j2];
+        MakeRotMatrixZ(dot, Hmx::Matrix3(t->LocalXfm().m));
+        Multiply(Transform(m1b0, t->LocalXfm().v), unk1c0[j2], unk1c0[j3]);
+        SetRotzBoneValue(MirrorBoneName(j3), dot);
     }
 }

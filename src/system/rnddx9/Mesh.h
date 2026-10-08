@@ -1,20 +1,26 @@
 #pragma once
 #include "math/Mtx.h"
 #include "obj/Object.h"
+#include "rnddx9/Mat.h"
+#include "rnddx9/MultiMesh.h"
 #include "rnddx9/Object.h"
 #include "rndobj/Mesh.h"
 #include "utl/PoolAlloc.h"
 #include "xdk/D3D9.h"
+#include "xdk/d3d9i/d3d9.h"
 
 class DxMesh : public RndMesh, public DxObject {
+    friend class DxMultiMesh;
+
 public:
     struct VertexBufferData {
-        VertexBufferData() : buffer(0), size(0) {}
+        VertexBufferData() : mBuffer(0), mSize(0) {}
         ~VertexBufferData() { Release(); }
         void Release();
+        void SetData(D3DVertexBuffer *, unsigned int);
 
-        D3DVertexBuffer *buffer;
-        unsigned int size;
+        D3DVertexBuffer *mBuffer;
+        unsigned int mSize;
     };
     // Hmx::Object
     virtual ~DxMesh();
@@ -26,9 +32,12 @@ public:
     virtual void DrawFacesInRange(int, int);
     virtual int NumFaces() const { return mNumFaces; }
     virtual int NumVerts() const { return mNumVerts; }
-    virtual void OnSync(int);
 
     D3DVertexBuffer *GetMultimeshFaces();
+    bool OwnerCanDraw() const {
+        DxMesh *owner = static_cast<DxMesh *>(mGeomOwner.Ptr());
+        return owner->CanDraw();
+    }
 
     NEW_OBJ(DxMesh)
 
@@ -37,14 +46,27 @@ public:
 protected:
     DxMesh();
 
+    virtual void OnSync(int);
+
     static D3DVertexDeclaration *sVertexDecl;
     static D3DVertexDeclaration *sMutableVertexDecl;
     static D3DVertexDeclaration *sMutableSkinnedVertexDecl;
 
-    std::vector<Transform> unk190;
+    unsigned int VertSize() const;
+    unsigned int VertFVF() const;
+    bool CanDraw() const;
+    void Fill(Vert *, Vert *);
+    void FillCompressedVerts();
+    void SetTransforms();
+    DxMat *DrawFur(DxMat *);
+    bool CheckFurTransformCache();
+    float FurWeight(RndMat *);
+    void CacheFurTransform(const Transform &, int, float);
+
+    std::vector<Transform> mTransformCache; // 0x190
     int mNumVerts; // 0x19c
     int mNumFaces; // 0x1a0
-    VertexBufferData unk1a4;
-    D3DResource *unk1ac;
-    D3DResource *unk1b0;
+    VertexBufferData mVertexBufferData; // 0x1a4
+    D3DIndexBuffer *unk1ac; // 0x1ac
+    D3DVertexBuffer *unk1b0; // 0x1b0
 };

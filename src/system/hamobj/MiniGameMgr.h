@@ -1,8 +1,10 @@
 #pragma once
+#include "hamobj/HamGameData.h"
 #include "hamobj/MoveGraph.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
-#include "stl/_vector.h"
+#include "utl/Symbol.h"
+#include <vector>
 #include <set>
 
 class MiniGameMgr : public Hmx::Object {
@@ -31,7 +33,7 @@ public:
 protected:
     int mNumMovesNeeded; // 0x2c
     int mBlockingFactor; // 0x30
-    Symbol unk34; // 0x34
+    Symbol mCategory; // 0x34
     std::vector<const MoveVariant *> mValidMoves; // 0x38
     std::vector<const MoveVariant *> mInvalidMoves; // 0x44
     std::vector<const MoveVariant *> mMovePool; // 0x50

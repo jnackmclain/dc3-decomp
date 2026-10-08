@@ -1,20 +1,25 @@
 #include "obj/TextFile.h"
+#include "os/HolmesClient.h"
 #include <cstring>
 
-void TextFile::SetName(const char *c, class ObjectDir *dir) {
-    Hmx::Object::SetName(c, dir);
+void TextFile::SetName(const char *name, class ObjectDir *dir) {
+    Hmx::Object::SetName(name, dir);
     RELEASE(mFile);
-    if (c && *c) {
-        const char *s = strstr(c, "_append");
+    bool holmes = UsingHolmes(1);
+    if (name && *name && holmes) {
+        const char *s = strstr(name, "_append");
         if (s) {
-            char buf[0x100];
-            strcpy(buf, c);
-            char *ptr = &buf[s - c];
-            int tokLen = sizeof("_append") - 1;
-            strncpy(ptr, ptr + tokLen, strlen(s) - (tokLen - 1));
-            mFile = NewFile(buf, 0x304);
+            char buf[256];
+            strcpy(buf, name);
+            int len = strlen(s);
+            strncpy(
+                buf + (s - name),
+                buf + (s - name) + sizeof("_append") - 1,
+                len - (sizeof("_append") - 2)
+            );
+            mFile = NewFile(buf, 0x109);
         } else {
-            mFile = NewFile(c, 0xA04);
+            mFile = NewFile(name, 0x301);
         }
     }
 }

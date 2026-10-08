@@ -99,6 +99,8 @@ public:
     void CheckForServerCrewUnlock();
     void SetGlobalOptionsSaveState(ProfileSaveState);
     void SaveGlobalOptions(FixedSizeSaveableStream &);
+    void LoadGlobalOptions(FixedSizeSaveableStream &);
+    static int GlobalOptionsSaveSize();
     bool HasActiveProfile(bool) const;
     std::vector<HamProfile *> GetNewlySignedIn();
     std::vector<HamProfile *> GetShouldAutosave();
@@ -108,15 +110,30 @@ public:
     bool HasActiveProfileWithInvalidSaveData() const;
     bool HasAnyEraSongBeenPlayed(Symbol) const;
     void Poll();
+    void UploadDeferredFlaunt();
+    void UploadDeferredFitnessGoal();
+    Symbol GetAlternateOutfit(Symbol);
+    int GetGlobalOptionsSize();
 
     bool GetBassBoost() const { return mBassBoost; }
     bool GetDolby() const { return mDolby; }
     Symbol GetVenuePreference() const { return mVenuePreference; }
     bool NoFlashcards() const { return mNoFlashcards; }
     bool GetAllUnlocked() { return mAllUnlocked; }
+    HamProfile *CriticalProfile() const { return mCriticalProfile; }
+    void SetCriticalProfile(HamProfile *profile) { mCriticalProfile = profile; }
+    bool DisableVoice() const { return mDisableVoice; }
+
+    int GetUnk4c() { return unk4c; }
+    void SetUnk4c(int i) { unk4c = i; };
+    void SetGlobalOptionsDirty(bool b) { mGlobalOptionsDirty = b; }
+    bool Mono() const { return mMono; }
+    bool PhotosDisabled() const { return mDisablePhotos; }
+    bool FreestyleDisabled() const { return mDisableFreestyle; }
 
 private:
     void UpdateFriendsList();
+    void TriggerSignoutEvent();
 
     DataNode OnMsg(const SigninChangedMsg &);
 
@@ -130,7 +147,7 @@ protected:
     bool mGlobalOptionsDirty; // 0x44
     bool unk45;
     int mTutorialsSeen; // 0x48
-    int unk4c;
+    int unk4c; // 0x4c - mPreferredWeightUnits? 0 = pounds, 1 = kilograms
     int mMusicVolume; // 0x50
     int mFxVolume; // 0x54
     int mCrowdVolume; // 0x58
@@ -152,8 +169,8 @@ protected:
     bool unk78; // 0x78
     bool mDisableFreestyle; // 0x79
     Symbol mVenuePreference; // 0x7c
-    int unk80;
-    int unk84;
+    DWORD mLocale; // 0x80
+    DWORD mLanguage; // 0x84
     DataArray *mSliderConfig; // 0x88
     DataArray *mVoiceChatSliderConfig; // 0x8c
     std::vector<HamProfile *> unk90;

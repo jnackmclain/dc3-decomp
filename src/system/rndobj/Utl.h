@@ -2,13 +2,22 @@
 #include "obj/Dir.h"
 #include "obj/Object.h"
 #include "rndobj/Draw.h"
+#include "rndobj/Group.h"
 #include "rndobj/Mesh.h"
 #include "rndobj/Poll.h"
 #include "rndobj/Trans.h"
 #include "math/Vec.h"
+#include "math/Mtx.h"
 #include "math/Color.h"
+#include "math/Geo.h"
 #include "rndobj/TransAnim.h"
 #include <vector>
+#include "MultiMesh.h"
+
+struct BuildPoly {
+    Hmx::Polygon mPoly; // 0x0
+    Transform mTransform; // 0xc
+};
 
 void SetLocalScale(RndTransformable *, const Vector3 &);
 
@@ -18,19 +27,23 @@ DataNode GetRenderTexturesNoZ(ObjectDir *);
 DataNode OnTestDrawGroups(DataArray *);
 
 void ResetColors(std::vector<Hmx::Color> &colors, int newNumColors);
-void RndScaleObject(Hmx::Object *, float, float);
-
+void RndScaleObject(Hmx::Object *o, float posScale, float frameScale);
+bool AnimContains(const RndAnimatable *anim1, const RndAnimatable *anim2);
 float ConvertFov(float, float);
 void PreMultiplyAlpha(Hmx::Color &);
+void RandomPointOnMesh(RndMesh *, Vector3 &, Vector3 &);
+void CalcSphere(RndTransAnim *a, Sphere &s);
 
 bool SortDraws(RndDrawable *, RndDrawable *);
 bool SortPolls(const RndPollable *, const RndPollable *);
+bool GroupedUnder(RndGroup *grp, Hmx::Object *o);
 
 void ScrambleXfms(RndMultiMesh *);
 void DistributeXfms(RndMultiMesh *, int, float);
 void MoveXfms(RndMultiMesh *, const Vector3 &);
 void ScaleXfms(RndMultiMesh *, const Vector3 &);
 void SortXfms(RndMultiMesh *, const Vector3 &);
+bool XfmSort(RndMultiMesh::Instance &, RndMultiMesh::Instance &);
 void RandomXfms(RndMultiMesh *);
 
 void CreateAndSetMetaMat(RndMat *);
@@ -43,10 +56,17 @@ void UtilDrawAxes(const Transform &, float, const Hmx::Color &);
 void UtilDrawBox(const Transform &tf, const Box &box, const Hmx::Color &col, bool b4);
 void UtilDrawRect2D(const Vector2 &v1, const Vector2 &v2, const Hmx::Color &color);
 void UtilDrawCylinder(const Transform &, float, float, const Hmx::Color &, int);
+void UtilDrawPlane(const Plane &, const Vector3 &, const Hmx::Color &, int, float, bool);
+void UtilDrawCigar(
+    const Transform &, float const *const, float const *const, const Hmx::Color &, int
+);
+void UtilDrawCircle2D(const Vector2 &, float, const Hmx::Color &, int);
 
-void TransformKeys(RndTransAnim *, const Transform &);
-void SpliceKeys(RndTransAnim *, RndTransAnim *, float, float);
-void LinearizeKeys(RndTransAnim *, float, float, float, float, float);
+void TransformKeys(RndTransAnim *ta, const Transform &xfm);
+void SpliceKeys(RndTransAnim *in, RndTransAnim *exist, float offset, float length);
+void LinearizeKeys(
+    RndTransAnim *anim, float transTol, float rotTol, float scaleTol, float start, float end
+);
 
 void TestTextureSize(ObjectDir *, int, int, int, int, int);
 void TestTexturePaths(ObjectDir *);
@@ -69,7 +89,22 @@ void BurnXfm(RndMesh *, bool);
 void AttachMesh(RndMesh *, RndMesh *);
 void BuildFromBSP(RndMesh *);
 void ConvertBonesToTranses(ObjectDir *, bool);
+void BuildSphereStratified(unsigned int numSamples, std::vector<Vector3> &result);
 
 const char *CacheResource(const char *, const Hmx::Object *);
 
 int GenerationCount(RndTransformable *, RndTransformable *);
+
+void EndianSwapBitmap(RndBitmap &bmap);
+
+void Clip(BuildPoly &, const Plane &, bool);
+
+typedef void (*SplashFunc)(void);
+void SetRndSplasherCallback(
+    SplashFunc pollFunc, SplashFunc suspendFunc, SplashFunc resumeFunc
+);
+
+#define kNumBloomTaps 7U
+
+void SetBloomBlurWeights(bool b1, float texWidth, float texHeight);
+void SetBloomBlurWeightsStreak(bool b1, float f2, float f3, float f4, int pass, float f6);

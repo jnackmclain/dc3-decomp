@@ -4,6 +4,7 @@
 #include "gesture/Skeleton.h"
 #include "math/Color.h"
 #include "math/Mtx.h"
+#include "math/Vec.h"
 #include "obj/Dir.h"
 #include "obj/Object.h"
 #include "rndobj/Cam.h"
@@ -50,10 +51,13 @@ public:
     void
     DrawLine3D(const Vector3 &, const Vector3 &, float, const Hmx::Color &, Hmx::Color *);
     void SetPhysicalCamScreenRect(const Hmx::Rect &);
+    void DrawPoint3D(const Vector3 &, float, const Hmx::Color &, float);
 
 private:
     void LoadResource(bool);
     void UpdateResource();
+    void SetCamera(const SkeletonFrame &, const class Transform &, float);
+    void DrawJoints(const BaseSkeleton &, Vector3 *, Vector3 *, bool);
 
 protected:
     SkeletonViz();

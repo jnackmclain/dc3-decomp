@@ -4,6 +4,8 @@
 
 // courtesy of RB2
 struct LevelData {
+    LevelData(const char *name)
+        : mRMS(0), mPeak(0), mPeakHold(0), mPeakAge(0), mName(name) {}
     float mRMS; // offset 0x0, size 0x4
     float mPeak; // offset 0x4, size 0x4
     float mPeakHold; // offset 0x8, size 0x4
@@ -47,6 +49,14 @@ public:
     /** "Attach microphone to this send, for testing" */
     void TestWithMic();
     void SetStage(int);
+    bool UpdatesEnabled() const { return mEnableUpdates; }
+    SendChannels GetChannels() const { return mChannels; }
+    bool ReverbEnabled() const { return mReverbEnable; }
+    float InputGain() const { return mInputGain; }
+    float DryGain() const { return mDryGain; }
+    float WetGain() const { return mWetGain; }
+    bool Bypass() const { return mBypass; }
+    float ReverbMixDb() const { return mReverbMixDb; }
 
 protected:
     FxSend();

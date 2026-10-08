@@ -1,7 +1,13 @@
 #include "synth/SampleData.h"
+#include "obj/Object.h"
+#include "os/Debug.h"
+#include "os/File.h"
 #include "synth/WavMgr.h"
 #include "utl/BinStream.h"
+#include "utl/CRC.h"
 #include "utl/ChunkStream.h"
+#include "utl/FilePath.h"
+#include "utl/WaveFile.h"
 
 SampleDataAllocFunc SampleData::sAlloc = nullptr;
 SampleDataFreeFunc SampleData::sFree = nullptr;
@@ -37,10 +43,7 @@ BinStream &operator<<(BinStream &bs, const SampleMarker &s) {
 void SampleData::Save(BinStream &bs) const {
     SAVE_REVS(0x10, 0);
     bs << mCRC;
-    bs << mFormat;
-    bs << mNumSamples;
-    bs << mSampleRate;
-    bs << mSizeBytes;
+    bs << mFormat << mNumSamples << mSampleRate << mSizeBytes;
     bool hasData = mData;
     bs << hasData;
     if (hasData) {
@@ -48,4 +51,125 @@ void SampleData::Save(BinStream &bs) const {
     }
     bs << mMarkers;
     bs << mNumChannels;
+}
+
+BinStreamRev &operator>>(BinStreamRev &d, SampleMarker &s) {
+    s.Load(d.stream);
+    return d;
+}
+
+INIT_REVS(0x10, 0)
+
+void SampleData::Load(BinStream &bs, const FilePath &fp) {
+    Reset();
+    LOAD_REVS(bs)
+    if (d.rev > 0x10) {
+        MILO_FAIL("%s can't load new %s version %d > %d", fp, "SampleData", d.rev, gRev);
+    }
+    if (d.altRev > 0) {
+        MILO_FAIL(
+            "%s can't load new %s alt version %d > %d", fp, "SampleData", d.altRev, gAltRev
+        );
+    }
+    if (d.rev > 0xE) {
+        d >> (int &)mCRC;
+    } else {
+        mCRC = Hmx::CRC(FileRelativePath(FileExecRoot(), fp.c_str()));
+    }
+    int fmt;
+    d >> fmt >> mNumSamples >> mSampleRate;
+    d >> mSizeBytes;
+    bool b70 = true;
+    mFormat = (Format)fmt;
+    if (d.rev >= 11) {
+        d >> b70;
+    }
+    if (b70) {
+        if (mCRC) {
+            TheWavMgr->CreateSample(mCRC, mData, mSizeBytes);
+        } else {
+            mData = sAlloc(mSizeBytes, __FILE__, 0x6F, "SampleData", 0);
+        }
+        ReadChunks(bs, mData, mSizeBytes, 0x8000);
+    }
+    if (d.rev >= 0xE) {
+        d >> mMarkers;
+    }
+    if (d.rev >= 0x10) {
+        d >> mNumChannels;
+    }
+}
+
+void SampleData::LoadWAV(BinStream &bs, const FilePath &fp, bool b3) {
+    Reset();
+    WaveFile waveFile(bs);
+    if (waveFile.BitsPerSample() != 16) {
+        MILO_NOTIFY("Wave file %s is not 16-bit", fp);
+        return;
+    } else if (waveFile.Format() != 1) {
+        MILO_NOTIFY("Wave file %s is compressed", fp);
+        return;
+    } else {
+        if (!b3) {
+            mCRC = FileRelativePath(FileExecRoot(), fp.c_str());
+        } else {
+            mCRC = Hmx::CRC();
+        }
+        mFormat = kPCM;
+        mNumChannels = waveFile.NumChannels();
+        mNumSamples = waveFile.NumSamples();
+        mSampleRate = waveFile.SamplesPerSec();
+        mSizeBytes = SizeAs(kPCM);
+        if (mCRC) {
+            if (!TheWavMgr->CreateSample(mCRC, mData, mSizeBytes)) {
+                WaveFileData data(waveFile);
+                data.Read(mData, mSizeBytes);
+            }
+        } else {
+            mData = sAlloc(mSizeBytes, __FILE__, 0xA5, "SampleData", 0);
+            WaveFileData data(waveFile);
+            data.Read(mData, mSizeBytes);
+        }
+        for (int i = 0; i < waveFile.NumMarkers(); i++) {
+            mMarkers.push_back(SampleMarker(
+                waveFile.Markers()[i].GetName(), waveFile.Markers()[i].GetFrame()
+            ));
+        }
+    }
+}
+
+void SampleData::Dealloc() {
+    if (mCRC && !TheWavMgr->ReleaseRes(mCRC)) {
+        sFree(mData, __FILE__, 0xC4, "SampleData");
+    }
+    mData = nullptr;
+    (int &)mCRC = 0;
+}
+
+int SampleData::SizeAs(Format f) const {
+    switch (f) {
+    case kPCM:
+    case kBigEndPCM:
+        return mNumChannels * mNumSamples * 2;
+    case kVAG:
+        return ((mNumSamples + 0x6f) / 0x70) * mNumChannels * 64;
+    case kATRAC:
+        return ((mNumSamples + 0x3ff) / 1024) * mNumChannels * 0xc0;
+    case kXMA:
+        MILO_NOTIFY("don't know size as XMA");
+        return mNumSamples / 5;
+    case kMP3:
+        return ((mNumSamples + 0x3ff) / 1024) * mNumChannels * 0xc0;
+    case 7: {
+        int ret = ((mNumChannels * mNumSamples) * 2) / 3.4f;
+        return ret + 0x60;
+    }
+    case kNintendoADPCM: {
+        int ret = ((mNumChannels * mNumSamples) * 2) / 3.4f;
+        return ret + 0x60;
+    }
+    default:
+        MILO_ASSERT(0, 299);
+        return 0;
+    }
 }

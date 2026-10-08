@@ -4,9 +4,79 @@
 #include "utl/MemMgr.h"
 #include <cctype>
 
-#pragma region FixedString
-
 char gEmpty[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+
+void RemoveSpaces(char *out, int len, const char *in) {
+    MILO_ASSERT(out, 0x2C0);
+    MILO_ASSERT(in, 0x2C1);
+    MILO_ASSERT(len > 0, 0x2C2);
+
+    char *max = out + len - 1;
+    char *orig = out;
+    bool wasSpace = true;
+    char c = *in;
+
+    while (c != '\0') {
+        if (out < max) {
+            bool isSpace = (c == ' ');
+            if (!isSpace || !wasSpace) {
+                *out++ = c;
+            }
+            wasSpace = isSpace;
+        } else {
+            break;
+        }
+        c = *++in;
+    }
+    if (out > orig && *(out - 1) == ' ') {
+        out--;
+    }
+    *out = '\0';
+}
+
+// searches for occurrences of substring substr_old within string src, and replaces each
+// occurrence with substr_new. the result goes in dest. if a change was made, this fn
+// returns true. if no changes to the original string were made, return false
+bool SearchReplace(
+    const char *src, const char *substr_old, const char *substr_new, char *dest
+) {
+    bool changed;
+    int temp_r31;
+    char *temp_r3;
+
+    *dest = 0;
+    changed = false;
+
+    while (true) {
+        temp_r3 = strstr(src, substr_old);
+        if (temp_r3 == 0)
+            break;
+        temp_r31 = temp_r3 - src;
+        strncat(dest, src, temp_r31);
+        strcat(dest, substr_new);
+        src = strlen(substr_old) + (src + temp_r31);
+        changed = true;
+    }
+
+    strcat(dest, src);
+    return changed;
+}
+
+// sorta like strncpy, except for the return value
+// returns true if the copy operation was terminated because of reaching the maximum
+// length or encountering the end of src, and 0 otherwise.
+bool StrNCopy(char *dest, const char *src, int n) {
+    MILO_ASSERT(n, 0x2F7);
+
+    for (n = n - 1; *src != '\0' && n != 0; n--) {
+        *dest++ = *src++;
+    }
+    *dest = '\0';
+
+    return (n != 0 || *src == '\0');
+}
+
+#pragma region FixedString
 
 FixedString::FixedString() : mStr((char *)(gEmpty + 4)) {
     *(int *)(mStr - 4) = 0;
@@ -150,9 +220,16 @@ String::String(unsigned int len, char c) {
     mStr[len] = '\0';
 }
 
+String::String(const char *str) { *this = str; }
+String::String(Symbol sym) { *this = sym.Str(); }
+
 String::String(const String &str) { *this = str.c_str(); }
 
-String::~String() {}
+String::~String() {
+    if (capacity() != 0) {
+        MemOrPoolFree(capacity() + 5, mStr - 4);
+    }
+}
 
 bool String::operator!=(const char *str) const {
     if (str == 0)
@@ -173,63 +250,15 @@ String &String::erase() {
     return *this;
 }
 
-// searches for occurrences of substring substr_old within string src, and replaces each
-// occurrence with substr_new. the result goes in dest. if a change was made, this fn
-// returns true. if no changes to the original string were made, return false
-bool SearchReplace(
-    const char *src, const char *substr_old, const char *substr_new, char *dest
-) {
-    bool changed;
-    int temp_r31;
-    char *temp_r3;
-
-    *dest = 0;
-    changed = false;
-
-    while (true) {
-        temp_r3 = strstr(src, substr_old);
-        if (temp_r3 == 0)
-            break;
-        temp_r31 = temp_r3 - src;
-        strncat(dest, src, temp_r31);
-        strcat(dest, substr_new);
-        src = strlen(substr_old) + (src + temp_r31);
-        changed = true;
-    }
-
-    strcat(dest, src);
-    return changed;
-}
-
 bool String::operator!=(const FixedString &str) const {
     return strcmp(str.c_str(), mStr);
 }
 
 bool String::operator==(const FixedString &str) const {
-    return strcmp(mStr, str.c_str()) == 0;
+    return strcmp(str.c_str(), mStr) == 0;
 }
 
-bool String::operator==(Symbol s) const { return strcmp(mStr, s.Str()) == 0; }
-
-void RemoveSpaces(char *out, int len, const char *in) {
-    MILO_ASSERT(out, 0x2C0);
-    MILO_ASSERT(in, 0x2C1);
-    MILO_ASSERT(len > 0, 0x2C2);
-}
-
-// sorta like strncpy, except for the return value
-// returns true if the copy operation was terminated because of reaching the maximum
-// length or encountering the end of src, and 0 otherwise.
-bool StrNCopy(char *dest, const char *src, int n) {
-    MILO_ASSERT(n, 0x2F7);
-
-    for (n = n - 1; *src != '\0' && n != 0; n--) {
-        *dest++ = *src++;
-    }
-    *dest = '\0';
-
-    return (n != 0 || *src == '\0');
-}
+bool String::operator==(Symbol s) const { return strcmp(s.Str(), mStr) == 0; }
 
 void String::reserve(unsigned int len) {
     unsigned int cap = capacity();
@@ -274,10 +303,9 @@ String &String::operator=(const FixedString &str) {
     return *this;
 }
 
-// String &String::operator=(const String &str) {
-//     const char *cstr = str.empty() ? nullptr : str.c_str();
-//     return *this = cstr;
-// }
+String &String::operator=(const String &str) {
+    return *this = static_cast<const FixedString &>(str);
+}
 
 void String::resize(unsigned int arg) {
     reserve(arg);
@@ -289,7 +317,31 @@ void String::resize(unsigned int arg) {
 // length: how many chars you want the replacement to be
 // buffer: the replacement chars
 String &String::replace(unsigned int pos, unsigned int n, const char *buffer) {
+    char *var_r4;
+    char *var_r5;
+    unsigned int bufferLength, end;
     MILO_ASSERT(pos <= capacity(), 0x241);
+    end = pos + n;
+    if (end > capacity()) {
+        n = capacity() - pos;
+    }
+    bufferLength = strlen(buffer);
+    if (bufferLength > n) {
+        String str_tmp;
+        str_tmp.reserve(bufferLength + (length() - n));
+        strncpy(str_tmp.mStr, mStr, pos);
+        strncpy(str_tmp.mStr + pos, buffer, bufferLength);
+        strcpy(str_tmp.mStr + (bufferLength + pos), mStr + (n + pos));
+        swap(str_tmp);
+    } else {
+        strncpy(mStr + pos, buffer, bufferLength);
+        var_r4 = mStr + pos + bufferLength;
+        var_r5 = mStr + pos + n;
+        while (*var_r5 != '\0') {
+            *var_r4++ = *var_r5++;
+        }
+        *var_r4 = *var_r5;
+    }
     return *this;
 }
 
@@ -376,4 +428,31 @@ String String::substr(unsigned int pos, unsigned int len) const {
         buf[len] = '\0';
         return String(buf);
     }
+}
+
+String &String::insert(unsigned int pos, unsigned int count, char c) {
+    MILO_ASSERT(pos <= capacity(), 0x27B);
+    String tmp;
+    tmp.reserve(length() + count);
+    strncpy(tmp.mStr, mStr, pos);
+    for (unsigned int i = 0; i < count; i++) {
+        tmp.mStr[pos + i] = c;
+    }
+    strcpy(tmp.mStr + pos + count, mStr + pos);
+    swap(tmp);
+    return *this;
+}
+
+String &String::insert(unsigned int pos, const char *str) { return replace(pos, 0, str); }
+
+void String::swap(String &s) {
+    char *temp_text;
+    unsigned int temp_len;
+
+    temp_text = mStr;
+    temp_len = capacity();
+    mStr = s.mStr;
+    *(int *)(mStr - 4) = s.capacity();
+    s.mStr = temp_text;
+    *(int *)(s.mStr - 4) = temp_len;
 }

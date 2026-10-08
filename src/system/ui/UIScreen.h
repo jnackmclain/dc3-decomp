@@ -6,15 +6,16 @@
 class UIPanel;
 
 struct PanelRef { // taken from rb3
-public:
-    class UIPanel *mPanel; // 0x0
+    UIPanel *mPanel; // 0x0
     bool mActive; // 0x4
     bool mAlwaysLoad; // 0x5
     bool mLoaded; // 0x6
 
-    friend class UIScreen;
-
-    PanelRef() : mLoaded(false) {}
+    PanelRef() {
+        mLoaded = false;
+        mActive = true;
+        mAlwaysLoad = true;
+    }
 
     bool Active() const { return mActive && mLoaded; }
     bool GetActive() { return mActive; }
@@ -71,13 +72,17 @@ protected:
     int mScreenId; // 0x40
 };
 
-void EnterGlitchCB(float, void *);
-void UnloadGlitchCB(float, void *);
-
 #include "obj/Msg.h"
 
 DECLARE_MESSAGE(UITransitionCompleteMsg, "transition_complete");
 UITransitionCompleteMsg(UIScreen *s1, UIScreen *s2) : Message(Type(), s1, s2) {}
 UIScreen *GetNewScreen() const { return mData->Obj<UIScreen>(2); }
 UIScreen *GetOldScreen() const { return mData->Obj<UIScreen>(3); }
+END_MESSAGE
+
+DECLARE_MESSAGE(UIScreenChangeMsg, "screen_change");
+UIScreenChangeMsg(UIScreen *s1, UIScreen *s2, bool b) : Message(Type(), s1, s2, b) {}
+UIScreen *GetNewScreen() const { return mData->Obj<UIScreen>(2); }
+UIScreen *GetOldScreen() const { return mData->Obj<UIScreen>(3); }
+bool GetBack() const { return mData->Int(4); }
 END_MESSAGE

@@ -1,5 +1,7 @@
 #pragma once
+#include "hamobj/HamNavList.h"
 #include "lazer/meta_ham/HamPanel.h"
+#include "meta_ham/SaveLoadManager.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
 #include "os/JoypadMsgs.h"
@@ -9,6 +11,7 @@
 
 class HelpBarPanel : public HamPanel {
 public:
+    HelpBarPanel();
     // Hmx::Object
     virtual ~HelpBarPanel();
     OBJ_CLASSNAME(HelpBarPanel)
@@ -25,29 +28,23 @@ public:
     virtual void FinishLoad();
 
     static HelpBarPanel *sInstance;
+    NEW_OBJ(HelpBarPanel)
 
-    HelpBarPanel();
     bool IsAnimating();
     bool UpdateBackButton(UIPanel *);
     bool UpdateTertiaryButton(UIPanel *);
     void EnterControllerMode();
     void ExitControllerMode(bool);
     bool IsWriteIconShowing();
+    bool IsWriteIconUp() const;
     void SyncToPanel(UIPanel *);
-    DataNode OnEnterBlacklightMode(DataArray const *);
-    DataNode OnExitBlacklightMode(DataArray const *);
+    void SetTertiaryLabels(DataArray *);
 
-    int unk3c;
-    RndGroup *unk40;
-    bool unk44;
-    Timer unk48;
-    bool unk78;
-    bool unk79;
-    bool unk7a;
-    bool unk7b;
-    bool unk7c;
-    Timer unk80;
-    Hmx::Object *unkb0; // change class type
+    bool GetUnk7a() const { return unk7a; }
+    bool AllowController() const { return mAllowController; }
+
+    DataNode OnEnterBlacklightMode(const DataArray *);
+    DataNode OnExitBlacklightMode(const DataArray *);
 
 private:
     bool ShouldHideHelpbar() const;
@@ -57,8 +54,20 @@ private:
     void ShowWaveGestureIcon();
     void HideWaveGestureIcon();
     void PollSaveDeactivation();
-    DataNode OnWaveGestureEnabled(DataArray const *);
-    DataNode OnWaveGestureDisabled(DataArray const *);
-    DataNode OnMsg(ButtonDownMsg const &);
-    // DataNode OnMsg(SaveLoadMgrStatusUpdateMsg const &);
+    DataNode OnWaveGestureEnabled(const DataArray *);
+    DataNode OnWaveGestureDisabled(const DataArray *);
+    DataNode OnMsg(const ButtonDownMsg &);
+    DataNode OnMsg(const SaveLoadMgrStatusUpdateMsg &);
+
+    HamNavList *mLeftHandNavList; // 0x3c
+    RndGroup *mAll; // 0x40
+    bool unk44;
+    Timer unk48;
+    bool unk78;
+    bool mAllowController; // 0x79
+    bool unk7a;
+    bool unk7b;
+    bool mWaveGestureEnabled; // 0x7c
+    Timer unk80;
+    UIPanel *unkb0;
 };

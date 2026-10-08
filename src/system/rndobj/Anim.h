@@ -1,5 +1,6 @@
 #pragma once
 #include "math/Easing.h"
+#include "math/Utl.h"
 #include "obj/Data.h"
 
 #include "obj/Object.h"
@@ -64,24 +65,41 @@ public:
     /** Kill any active tasks associated with this animatable. */
     void StopAnimation();
 
-    Task *Animate(float, bool, float, Hmx::Object *, EaseType, float, bool);
     Task *Animate(
-        float,
-        bool,
-        float,
-        Rate,
-        float,
-        float,
-        float,
-        float,
-        Symbol,
-        Hmx::Object *,
-        EaseType,
-        float,
-        bool
+        float blend,
+        bool wait,
+        float delay,
+        Hmx::Object *listener = nullptr,
+        EaseType easeType = kEaseLinear,
+        float easePower = 0,
+        bool wrap = false
     );
-    Task *
-    Animate(float, float, TaskUnits, float, float, Hmx::Object *, EaseType, float, bool);
+    Task *Animate(
+        float blend,
+        bool wait,
+        float delay,
+        Rate rate,
+        float start,
+        float end,
+        float period,
+        float scale,
+        Symbol type,
+        Hmx::Object *listener = nullptr,
+        EaseType easeType = kEaseLinear,
+        float easePower = 0,
+        bool wrap = false
+    );
+    Task *Animate(
+        float start,
+        float end,
+        TaskUnits units,
+        float period = 0,
+        float blend = 0,
+        Hmx::Object *listener = nullptr,
+        EaseType easeType = kEaseLinear,
+        float easePower = 0,
+        bool wrap = false
+    );
 
     TaskUnits Units() const;
     float FramesPerUnit();
@@ -91,15 +109,17 @@ public:
     Rate GetRate() { return mRate; }
     void SetRate(Rate r) { mRate = r; }
     float GetFrame() const { return mFrame; }
+    void ResetFrame() { mFrame = kHugeFloat; }
 
     static TaskUnits RateToTaskUnits(Rate);
 
-protected:
+private: // RB2 said so
     /** "Frame of animation". It ranges from 0 to what EndFrame() returns. */
     float mFrame; // 0x8
     /** "Rate to animate" */
     Rate mRate; // 0xc
 
+protected:
     RndAnimatable();
     void FireFlowLabel(Symbol);
     /** Create a new AnimTask using the configuration in the supplied DataArray.
@@ -130,8 +150,8 @@ public:
         float blend,
         Hmx::Object *listener,
         EaseType easeType,
-        float f9,
-        bool b10
+        float easePower,
+        bool wait
     );
     virtual ~AnimTask();
     virtual bool Replace(ObjRef *, Hmx::Object *);
@@ -142,6 +162,8 @@ public:
     AnimTask *BlendTask() const { return mBlendTask; }
     RndAnimatable *Anim() const { return mAnim; }
     Hmx::Object *AnimTarget() const { return mAnimTarget; }
+    Hmx::Object *Listener() const { return mListener; }
+    void SetListener(Hmx::Object *l) { mListener = l; }
 
     POOL_OVERLOAD(AnimTask, 0x75);
 
@@ -166,10 +188,10 @@ public:
     float mOffset; // 0x94
     /** Whether or not the animation should loop. */
     bool mLoop; // 0x98
-    float unk9c;
+    float unk9c; // 0x9c
     EaseFunc *mEaseFunc; // 0xa0
-    float unka4;
-    bool unka8;
-    float unkac;
-    bool unkb0;
+    float mEasePower; // 0xa4
+    bool unka8; // 0xa8
+    float unkac; // 0xac
+    bool unkb0; // 0xb0
 };

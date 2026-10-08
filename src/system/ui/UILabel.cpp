@@ -1,59 +1,468 @@
 #include "ui/UILabel.h"
 #include "macros.h"
+#include "math/Color.h"
+#include "math/Vec.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
+#include "obj/PropSync.h"
+#include "obj/PropSync_p.h"
 #include "obj/Task.h"
+#include "os/Debug.h"
+#include "rndobj/FontBase.h"
 #include "rndobj/Text.h"
 #include "rndobj/Trans.h"
+#include "rndobj/Utl.h"
+#include "ui/ResourceDirPtr.h"
 #include "ui/UI.h"
+#include "ui/UIColor.h"
+#include "ui/UIComponent.h"
 #include "ui/UILabelDir.h"
 #include "ui/UIListWidget.h"
 #include "utl/BinStream.h"
 #include "utl/Loader.h"
 #include "utl/Locale.h"
 #include "utl/Str.h"
+#include "utl/SuperFormatString.h"
 #include "utl/Symbol.h"
+#include "utl/UTF8.h"
+#include <cmath>
 #include <cstring>
 
-bool UILabel::sDeferUpdate;
+bool UILabel::sDeferUpdate = false;
+UILabel *gMe = nullptr;
+
+float GetTextSizeFromPctHeight(float);
+float GetPctHeightFromTextSize(float);
+
+UILabel::UILabel() : mDirty(true), mLabelStyles(this) {
+    mLabelStyles.resize(1);
+    mIcon[0] = 0;
+    mIcon[1] = 0;
+}
+
+BEGIN_HANDLERS(UILabel)
+    HANDLE(set_token_fmt, OnSetTokenFmt)
+    HANDLE(set_prelocalized_string, OnSetPrelocalizedString)
+    HANDLE(set_int, OnSetInt)
+    HANDLE_ACTION(set_float, SetFloat(_msg->Str(2), _msg->Float(3)))
+    HANDLE(set_time_hms, OnSetTimeHMS)
+    HANDLE_ACTION(
+        center_with_label,
+        CenterWithLabel(_msg->Obj<UILabel>(2), _msg->Int(3), _msg->Float(4))
+    )
+    HANDLE_EXPR(
+        get_font_mats, UILabelDir::GetMatVariations(LStyle(_msg->Int(2)).mFontResource)
+    )
+    HANDLE(set_height_from_text, OnSetHeightFromText)
+    HANDLE_EXPR(draw_rect_width, mDrawRect.w)
+    HANDLE_ACTION(reload_string, (SetTextToken(mTextToken), mDirty = true))
+    HANDLE_SUPERCLASS(UIComponent)
+END_HANDLERS
+
+BEGIN_CUSTOM_PROPSYNC(UILabel::LabelStyle)
+    int idx = (&o - &gMe->LStyle(0));
+    SYNC_PROP_MODIFY(font_resource, o.mFontResource, gMe->RefreshFontMat(idx))
+    SYNC_PROP(color_override, o.mColorOverride)
+    SYNC_PROP_SET(
+        font_mat_variation, gMe->GetFontMat(idx), gMe->SetFontMat(_val.Str(), idx);
+        gMe->Update()
+    )
+    RndText::Style &textStyle = gMe->Style(idx);
+    SYNC_PROP_SET(
+        text_size,
+        GetPctHeightFromTextSize(textStyle.mInfo.mSize),
+        textStyle.mInfo.mSize = GetTextSizeFromPctHeight(_val.Float());
+        gMe->Update()
+    )
+    SYNC_PROP_SET(
+        font_alpha,
+        textStyle.mInfo.mFontColor.alpha,
+        textStyle.mInfo.mFontColor.alpha = _val.Float()
+    )
+    SYNC_PROP_MODIFY(italics, textStyle.mInfo.mItalics, gMe->Update())
+    SYNC_PROP_MODIFY(kerning, textStyle.mInfo.mKerning, gMe->Update())
+    SYNC_PROP_MODIFY(z_offset, textStyle.mInfo.mZOffset, gMe->Update())
+    SYNC_PROP_MODIFY(blacklight, textStyle.mBlacklight, gMe->Update())
+END_CUSTOM_PROPSYNC
+
+bool PropSync(
+    ObjVector<UILabel::LabelStyle> &v, DataNode &val, DataArray *prop, int i, PropOp op
+) {
+    if (op == kPropUnknown0x40)
+        return false;
+    else if (i == prop->Size()) {
+        MILO_ASSERT(op == kPropSize, 0x4A9);
+        val = (int)v.size();
+        return true;
+    } else {
+        int idx = prop->Int(i++);
+        MILO_ASSERT(v.size() == gMe->Styles().size(), 0x4B0);
+        auto labelIt = v.begin() + idx;
+        auto stylesIt = gMe->Styles().begin() + idx;
+        if (i < prop->Size() || op & (kPropGet | kPropSet | kPropSize)) {
+            return PropSync(*labelIt, val, prop, i, op);
+        } else if (op == kPropRemove) {
+            if (v.size() > 1) {
+                v.erase(labelIt);
+                gMe->Styles().erase(stylesIt);
+            }
+            return true;
+        } else if (op == kPropInsert) {
+            UILabel::LabelStyle labelStyle(v.Owner());
+            if (PropSync(labelStyle, val, prop, i, op)) {
+                if (v.size() < 8) {
+                    v.insert(labelIt, labelStyle);
+                    RndText::Style textStyle = gMe->Styles().Owner();
+                    gMe->Styles().insert(stylesIt, textStyle);
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+BEGIN_PROPSYNCS(UILabel)
+    SYNC_PROP_SET(text_token, TextToken(), SetTextToken(_val.ForceSym()))
+    SYNC_PROP_SET(icon, mIcon, SetIcon(_val.Str(0)[0]))
+    SYNC_PROP_SET(edit_text, mEditText.c_str(), SetEditText(_val.Str()))
+    SYNC_PROP_MODIFY(width, mWidth, Update())
+    SYNC_PROP_MODIFY(height, mHeight, Update())
+    SYNC_PROP_MODIFY(circle, mCircle, Update())
+    SYNC_PROP_MODIFY(alignment, (int &)mAlignment, Update())
+    SYNC_PROP_MODIFY(fit_type, (int &)mFitType, Update())
+    SYNC_PROP_MODIFY(caps_mode, (int &)mCapsMode, Update())
+    SYNC_PROP_MODIFY(markup, mMarkup, Update())
+    SYNC_PROP_MODIFY(scroll_delay, mScrollDelay, Update())
+    SYNC_PROP_MODIFY(scroll_rate, mScrollRate, Update())
+    SYNC_PROP_MODIFY(scroll_pause, mScrollPause, Update())
+    SYNC_PROP_MODIFY(leading, mLeading, Update())
+    SYNC_PROP_MODIFY(indentation, mIndentation, Update())
+    SYNC_PROP_MODIFY(basic_markup, mBasicMarkup, Update())
+    SYNC_PROP_SET(fixed_length, mFixedLength, SetFixedLength(_val.Int()); Update())
+    SYNC_PROP(draw_width, mDrawRect.w)
+    gMe = this;
+    SYNC_PROP(styles, mLabelStyles)
+    SYNC_SUPERCLASS(UIComponent)
+END_PROPSYNCS
+
+BEGIN_SAVES(UILabel)
+    SAVE_REVS(0x21, 1)
+    SAVE_SUPERCLASS(UIComponent)
+    bs << mTextToken;
+    if (bs.Cached() && !AllowEditText()) {
+        bs << gNullStr;
+    } else {
+        bs << mEditText;
+    }
+    bs << mIcon[0];
+    bs << mAlignment;
+    bs << mWidth;
+    bs << mLeading;
+    bs << mFixedLength;
+    bs << mMarkup;
+    bs << mCapsMode;
+    bs << mHeight;
+    bs << mCircle;
+    bs << mFitType;
+    bs << mLabelStyles.size();
+    for (int i = 0; i < mLabelStyles.size(); i++) {
+        LabelStyle &curLabelStyle = mLabelStyles[i];
+        bs << curLabelStyle.mFontResource;
+        bs << curLabelStyle.mColorOverride;
+        RndText::Style &curStyle = Style(i);
+        bs << curStyle.mInfo.mSize;
+        bs << curStyle.mInfo.mKerning;
+        bs << curStyle.mInfo.mZOffset;
+        bs << curStyle.mInfo.mItalics;
+        bs << curStyle.mInfo.mFontColor.alpha;
+        bs << curStyle.mBlacklight;
+    }
+    bs << mScrollDelay;
+    bs << mScrollRate;
+    bs << mScrollPause;
+    bs << mIndentation;
+    bs << mBasicMarkup;
+    for (int i = 0; i < mLabelStyles.size(); i++) {
+        bs << GetFontMat(i);
+    }
+END_SAVES
+
+BEGIN_COPYS(UILabel)
+    COPY_SUPERCLASS(UIComponent)
+    COPY_SUPERCLASS(RndText)
+    CREATE_COPY(UILabel)
+    BEGIN_COPYING_MEMBERS
+        COPY_MEMBER(mTextToken)
+        COPY_MEMBER(mEditText)
+        strcpy(mIcon, c->mIcon);
+        COPY_MEMBER(mLabelStyles)
+    END_COPYING_MEMBERS
+    Update();
+END_COPYS
 
 void UILabel::Load(BinStream &bs) {
     PreLoad(bs);
     PostLoad(bs);
 }
 
-UILabel::UILabel() : unk122(1), unk124(this) {
-    unk124.resize(1);
-    unk120 = 0;
-    unk121 = false;
+INIT_REVS(0x21, 1)
+
+void UILabel::PreLoad(BinStream &bs) {
+    LOAD_REVS(bs)
+    ASSERT_REVS(0x21, 1)
+    UIComponent::PreLoad(d.stream);
+    if (d.rev > 0x1B) {
+        d >> mTextToken;
+        d >> mEditText;
+        d >> mIcon[0];
+        d >> (int &)mAlignment;
+        d >> mWidth;
+        d >> mLeading;
+        int len;
+        d >> len;
+        SetFixedLength(len);
+        d >> mMarkup;
+        d >> (int &)mCapsMode;
+        d >> mHeight;
+        if (d.altRev > 0) {
+            d >> mCircle;
+        }
+        d >> (int &)mFitType;
+        int numLabelStyles;
+        d >> numLabelStyles;
+        mLabelStyles.resize(numLabelStyles);
+        mStyles.resize(numLabelStyles);
+        for (int i = 0; i < mLabelStyles.size(); i++) {
+            LabelStyle &curLabelStyle = mLabelStyles[i];
+            d >> curLabelStyle.mFontResource;
+            d >> curLabelStyle.mColorOverride;
+            RndText::Style &curStyle = Style(i);
+            d >> curStyle.mInfo.mSize;
+            d >> curStyle.mInfo.mKerning;
+            d >> curStyle.mInfo.mZOffset;
+            d >> curStyle.mInfo.mItalics;
+            d >> curStyle.mInfo.mFontColor.alpha;
+            if (d.rev >= 0x1E) {
+                d >> curStyle.mBlacklight;
+            }
+        }
+        if (d.rev >= 0x1F) {
+            d >> mScrollDelay;
+            d >> mScrollRate;
+            d >> mScrollPause;
+        }
+        if (d.rev >= 0x20) {
+            d >> mIndentation;
+        }
+        if (d.rev >= 0x21) {
+            d >> mBasicMarkup;
+        }
+    } else {
+        if (d.rev > 0 && d.rev < 0xE) {
+            bool b;
+            d >> b;
+        }
+        d >> mTextToken;
+        if (d.rev > 0xD) {
+            d >> mEditText;
+        }
+        if (d.rev > 0xE) {
+            if (d.rev < 0x19) {
+                String str;
+                d >> str;
+                mIcon[0] = str.c_str()[0];
+            } else {
+                d >> mIcon[0];
+            }
+        }
+        if (d.rev > 1) {
+            d >> Style(0).mInfo.mSize;
+            d >> (int &)mAlignment;
+            d >> (int &)mCapsMode;
+            if (d.rev > 7) {
+                d >> mMarkup;
+            }
+            d >> mLeading;
+            d >> Style(0).mInfo.mKerning;
+        }
+        if (d.rev > 4) {
+            d >> Style(0).mInfo.mItalics;
+        }
+        if (d.rev > 2) {
+            d >> (int &)mFitType;
+            d >> mWidth;
+            d >> mHeight;
+        }
+        if (d.rev < 4) {
+            Transform &xfm = DirtyLocalXfm();
+            auto a = mAlignment;
+            if (a & 1) {
+                xfm.v.x -= mWidth / 2.0f;
+            } else if (a & 4) {
+                xfm.v.x += mWidth / 2.0f;
+            }
+            if (a & 0x10) {
+                xfm.v.z += mHeight / 2.0f;
+            } else if (a & 0x40) {
+                xfm.v.z -= mHeight / 2.0f;
+            }
+        }
+        if (d.rev > 5) {
+            int len;
+            d >> len;
+            SetFixedLength(len);
+        }
+        if (d.rev > 6 && d.rev < 0x1B) {
+            int x;
+            d >> x;
+        }
+        if (d.rev > 8 && d.rev < 0x10) {
+            bool b;
+            int x, y, z;
+            d >> b >> z >> x >> y;
+        }
+        if (d.rev > 9 && d.rev < 0x1A) {
+            String str;
+            d >> str;
+        }
+        if (d.rev > 10) {
+            d >> Style(0).mInfo.mFontColor.alpha;
+        }
+        if (d.rev > 0xC) {
+            BinStream &bs2 = d.stream;
+            bs2 >> LStyle(0).mColorOverride;
+        }
+        if (d.rev > 0x10 && d.rev < 0x1D) {
+            bool b;
+            d >> b;
+        }
+        if (d.rev > 0x11) {
+            float size;
+            d >> size;
+            ObjPtr<UIColor> color(this);
+            d >> color;
+            bool b2c4;
+            d >> b2c4;
+            int i9 = b2c4 ? 2 : 1;
+            if (b2c4) {
+                FilePath fp = mLabelStyles[0].mFontResource.GetFile();
+                mLabelStyles.resize(i9);
+                mLabelStyles[0].mFontResource.LoadFile(fp, true, true, kLoadFront, false);
+                mStyles.resize(i9);
+            }
+            Style(1).mInfo.mSize = size;
+            LStyle(1).mColorOverride = color;
+        }
+        if (d.rev > 0x12) {
+            d >> Style(1).mInfo.mKerning;
+        } else {
+            Style(1).mInfo.mKerning = Style(0).mInfo.mKerning;
+        }
+        if (d.rev > 0x13) {
+            d >> Style(1).mInfo.mZOffset;
+            if (d.rev < 0x19) {
+                Style(1).mInfo.mZOffset /= Style(1).mInfo.mSize;
+            }
+        }
+        if (d.rev > 0x14) {
+            Symbol s;
+            d >> s;
+            d.stream.PushRev((int)s, this);
+        }
+        char name[256];
+        char name2[256];
+        if (d.rev > 0x15) {
+            if (mLabelStyles.size() == 2) {
+                BinStream &bs2 = d.stream;
+                ResourceDirPtr<UILabelDir> &rsrc = LStyle(1).mFontResource;
+                bs2.ReadString(name, 256);
+                rsrc.SetName(name, true);
+            } else {
+                d.stream.ReadString(name2, 256);
+            }
+        }
+        if (d.rev > 0x16) {
+            Symbol s;
+            d >> s;
+            d.stream.PushRev((int)s, this);
+        }
+        if (d.rev > 0x17) {
+            d >> Style(1).mInfo.mItalics;
+            d >> Style(1).mInfo.mFontColor.alpha;
+        }
+    }
+    d.PushRev(this);
 }
 
-BEGIN_PROPSYNCS(UILabel)
+void UILabel::PostLoad(BinStream &bs) {
+    BinStreamRev d(bs, bs.PopRev(this));
+    for (int i = 0; i < mLabelStyles.size(); i++) {
+        mLabelStyles[i].mFontResource.PostLoad(nullptr);
+    }
+    if (d.rev >= 0x1C) {
+        for (int i = 0; i < mLabelStyles.size(); i++) {
+            char name[256];
+            d.stream.ReadString(name, 256);
+            SetFontMat(name, i);
+        }
+    } else if (d.rev > 0x14) {
+        if (d.rev > 0x16) {
+            SetFontMat((const char *)d.stream.PopRev(this), 1);
+        }
+        SetFontMat((const char *)d.stream.PopRev(this), 0);
+    } else {
+        for (int i = 0; i < mLabelStyles.size(); i++) {
+            SetFontMat("", i);
+        }
+    }
+    UIComponent::PostLoad(d.stream);
+    sDeferUpdate = true;
+    if (mIcon[0] != 0) {
+        SetText(mIcon);
+    } else if (mEditText.empty() || (!TheLoadMgr.EditMode() && !AllowEditText())) {
+        SetTextToken(mTextToken);
+    } else {
+        SetText(mEditText.c_str());
+    }
+    if (sRequireFixedLength && mFixedLength == 0) {
+        MILO_NOTIFY(
+            "%s: %s is preloaded, but doesn't have fixed length", PathName(Dir()), Name()
+        );
+    }
+    sDeferUpdate = false;
+    if (mTextToken.Null() && mIcon[0] == 0 && mFixedLength == 0) {
+        mDirty = true;
+    } else {
+        LabelUpdate(false);
+    }
+}
 
-END_PROPSYNCS
-
-BEGIN_COPYS(UILabel)
-
-END_COPYS
-
-BEGIN_SAVES(UILabel)
-END_SAVES
-
-void UILabel::PreLoad(BinStream &) {}
-
-void UILabel::PostLoad(BinStream &bs) {}
-
-Symbol UILabel::TextToken() { return mTextToken; }
-
-void UILabel::Poll() {}
-
-void UILabel::Highlight() {}
-
-void UILabel::DrawShowing() {}
+void UILabel::Highlight() {
+    RndTransformable::Highlight();
+    Box box;
+    GetWidthHeightBox(box);
+    Hmx::Color c(1.0f, 1.0f, 0.5f);
+    if (!CheckValid(false)) {
+        int secs = TheTaskMgr.UISeconds() * 2.0f;
+        if (secs % 2 == 0) {
+            c.Set(1.0f, 0.2f, 0.2f, 1.0f);
+        }
+    }
+    RndText::Highlight();
+    UtilDrawBox(WorldXfm(), box, c, false);
+}
 
 void UILabel::SetTextToken(Symbol s) {
     mTextToken = s;
-
+    if (TheLoadMgr.EditMode()) {
+        if (!mEditText.empty()) {
+            return;
+        }
+        if (mIcon[0] != 0) {
+            return;
+        }
+    }
     SetTokenFmtImp(mTextToken, 0, 0, 0, true);
 }
 
@@ -62,6 +471,54 @@ void UILabel::SetInt(int i, bool b) {
         SetDisplayText(LocalizeSeparatedInt(i, TheLocale), true);
     } else
         SetDisplayText(MakeString("%d", i), true);
+}
+
+void UILabel::DrawShowing() {
+    if (Style(0).mInfo.mFontColor.alpha > 0) {
+        if (mDirty) {
+            Update();
+        }
+        MILO_ASSERT(mLabelStyles.size() == mStyles.size(), 0x1EF);
+        UILabelDir *rsrc = mLabelStyles[0].mFontResource;
+        if (rsrc) {
+            UIColor *color = rsrc->GetStateColor(mState);
+            for (int i = 0; i < mLabelStyles.size(); i++) {
+                LabelStyle &curLabelStyle = mLabelStyles[i];
+                RndText::Style &curStyle = Style(i);
+                curStyle.mInfo.mFontColorOverride = true;
+                UIColor *curColor = curLabelStyle.mColorOverride
+                    ? curLabelStyle.mColorOverride.Ptr()
+                    : color;
+                const Hmx::Color &curColorColor = curColor->GetColor();
+                curStyle.mInfo.mFontColor.red = curColorColor.red;
+                curStyle.mInfo.mFontColor.green = curColorColor.green;
+                curStyle.mInfo.mFontColor.blue = curColorColor.blue;
+            }
+        }
+        RndText::DrawShowing();
+        if (sDebugHighlight && !sInDebugHighlight) {
+            sInDebugHighlight = true;
+            Highlight();
+            sInDebugHighlight = false;
+        }
+    }
+}
+
+void UILabel::OldResourcePreload(BinStream &bs) {
+    char buf[0x100];
+    ResourceDirPtr<UILabelDir> &rsrc = LStyle(0).mFontResource;
+    bs.ReadString(buf, 0x100);
+    rsrc.SetName(buf, true);
+}
+
+void UILabel::SetDisplayText(const char *cc, bool b) {
+    if (b)
+        mTextToken = gNullStr;
+    RndText::SetText(cc);
+    if (strchr(cc, '<')) {
+        mMarkup = true;
+    }
+    Update();
 }
 
 void UILabel::SetFloat(const char *cc, float f) {
@@ -74,48 +531,135 @@ void UILabel::SetDateTime(DateTime const &dt, Symbol s) {
     SetDisplayText(str.c_str(), true);
 }
 
-void UILabel::SetIcon(char c) {}
+void UILabel::SetIcon(char c) {
+    mIcon[0] = c;
+    if (mIcon[0] == '\0' && TheLoadMgr.EditMode()) {
+        SetEditText(mEditText.c_str());
+    } else {
+        SetDisplayText(mIcon, !TheLoadMgr.EditMode());
+    }
+}
 
-void UILabel::SetTokenFmt(const DataArray *) {}
+RndText::Style &UILabel::Style(int idx) {
+    if (idx < mStyles.size()) {
+        return mStyles[idx];
+    } else {
+        static RndText::Style s(nullptr);
+        return s;
+    }
+}
 
-RndText::Style &UILabel::Style(int) { return Style(0); }
+const RndText::Style &UILabel::Style(int idx) const {
+    if (idx < mStyles.size()) {
+        return mStyles[idx];
+    } else {
+        static RndText::Style s(nullptr);
+        return s;
+    }
+}
 
-void UILabel::SetPrelocalizedString(String &s) {}
+UILabel::LabelStyle &UILabel::LStyle(int idx) {
+    if (idx < mLabelStyles.size()) {
+        return mLabelStyles[idx];
+    } else {
+        static LabelStyle s(nullptr);
+        return s;
+    }
+}
 
-void UILabel::SetSubtitle(const DataArray *) {}
+const UILabel::LabelStyle &UILabel::LStyle(int idx) const {
+    if (idx < mLabelStyles.size()) {
+        return mLabelStyles[idx];
+    } else {
+        static LabelStyle s(nullptr);
+        return s;
+    }
+}
 
-void UILabel::SetTimeHMS(int, bool) {}
+void UILabel::SetTokenFmt(const DataArray *da) {
+    da->Evaluate(0);
+    bool b = da->Size() > 1 && da->Evaluate(1).Type() == kDataArray;
+    if (b) {
+        SetTokenFmtImp(da->ForceSym(0), da->Array(1), da, 2, false);
+    } else {
+        SetTokenFmtImp(da->ForceSym(0), 0, da, 1, false);
+    }
+}
 
-bool UILabel::CheckValid(bool) { return false; }
+void UILabel::SetPrelocalizedString(String &s) { SetDisplayText(s.c_str(), true); }
 
-void UILabel::SetEditText(const char *) {}
+void UILabel::SetSubtitle(const DataArray *a) { SetDisplayText(a->Str(2), true); }
 
-char const *UILabel::GetDefaultText() const {
-    if (unk120 != 0) {
-        return &unk120;
+void UILabel::SetTimeHMS(int i1, bool b2) {
+    int i28 = Min(99, i1 / 3600);
+    int i2c = Min(99, i1 / 0x3c + i28 * -0x3c);
+    int i30 = Min(99, i1 + (i28 * 0x3c + i2c) * -0x3c);
+    if (i28 > 0 || b2) {
+        SetDisplayText(MakeString("%02d:%02d:%02d", i28, i2c, i30), true);
+    } else {
+        SetDisplayText(MakeString("%d:%02d", i2c, i30), true);
+    }
+}
+
+bool UILabel::CheckValid(bool notify) {
+    if (mFixedLength == 0 || UTF8StrLen(mText.c_str()) <= mFixedLength) {
+        return true;
+    } else {
+        if (notify) {
+            MILO_NOTIFY(
+                "%s: %s has fixed length of %i but text is %i long (%s)",
+                PathName(Dir()),
+                Name(),
+                mFixedLength,
+                UTF8StrLen(mText.c_str()),
+                mText
+            );
+        }
+        return false;
+    }
+}
+
+void UILabel::SetEditText(const char *c) {
+    if (!TheLoadMgr.EditMode()) {
+        if (!AllowEditText()) {
+            MILO_FAIL(
+                "Called SetEditText, not in milo and type %s does not allow edit text",
+                Type()
+            );
+        }
+    }
+    mEditText = c;
+    if (!mIcon[0]) {
+        if (mEditText.empty()) {
+            SetTextToken(mTextToken);
+        } else {
+            char buf[256];
+            ASCIItoUTF8(buf, 256, c);
+            SetDisplayText(buf, !TheLoadMgr.EditMode());
+        }
+    }
+}
+
+const char *UILabel::GetDefaultText() const {
+    if (mIcon[0] != 0) {
+        return mIcon;
     }
 
-    if (TheLoadMgr.EditMode() && !unk118.empty())
-        return unk118.c_str();
+    if (TheLoadMgr.EditMode() && !mEditText.empty())
+        return mEditText.c_str();
     else
         return Localize(mTextToken, nullptr, TheLocale);
 }
 
-void UILabel::CenterWithLabel(UILabel *, bool, float) {}
-
-// UILabel::LabelStyle &UILabel::LStyle(int) { return new LabelStyle(0); }
-
-void UILabel::OldResourcePreload(BinStream &) {}
-
-void UILabel::SetDisplayText(const char *cc, bool b) {
-    if (b)
-        mTextToken = gNullStr;
-    RndText::SetText(cc);
-    if (strchr(cc, 60)) {
-        mMarkup = true;
-    }
-    if (!sDeferUpdate)
-        LabelUpdate(false);
+void UILabel::CenterWithLabel(UILabel *label, bool b2, float f3) {
+    MILO_ASSERT((mAlignment & RndText::kCenter) || (label->mAlignment & RndText::kCenter), 0x400);
+    int add = b2 ? -1 : 1;
+    Transform myXfm = LocalXfm();
+    Transform labelXfm = label->LocalXfm();
+    myXfm.v.x = (label->mDrawRect.w / 2 + f3 / 2) * (float)add + labelXfm.v.x;
+    labelXfm.v.x = -((mDrawRect.w / 2 + f3 / 2) * (float)add - labelXfm.v.x);
+    SetLocalXfm(myXfm);
+    label->SetLocalXfm(labelXfm);
 }
 
 void UILabel::Init() {
@@ -123,32 +667,209 @@ void UILabel::Init() {
     UILabelDir::Init();
 }
 
+bool UILabel::AllowEditText() const {
+    if (TheUI->DefaultAllowEditText()) {
+        return true;
+    } else if (LStyle(0).mFontResource) {
+        UILabelDir *rsrc = LStyle(0).mFontResource;
+        return rsrc->AllowEditText();
+    } else {
+        MILO_NOTIFY("LabelDir is not yet loaded, can't tell if edit text is allowed");
+        return false;
+    }
+}
+
+void UILabel::LabelUpdate(bool b) {
+    mDirty = false;
+    RndFontBase *font = Style(0).mFont;
+    Style(0).mInfo.mTextColor.Set(1, 1, 1, 1);
+    for (int i = 1; i < mLabelStyles.size(); i++) {
+        RndText::Style &curStyle = Style(i);
+        LabelStyle &curLabelStyle = LStyle(i);
+        if (curLabelStyle.mColorOverride && curStyle.mFont && curStyle.mFont != font) {
+            curStyle.mInfo.mTextColor = curLabelStyle.mColorOverride->GetColor();
+        } else {
+            curStyle.mInfo.mTextColor.Set(1, 1, 1, 1);
+        }
+    }
+    UpdateText();
+    CheckValid(!TheLoadMgr.EditMode());
+}
+
+void UILabel::SetFontMat(char const *c, int idx) {
+    RndFontBase *font = nullptr;
+    UILabelDir *fontRsrc = LStyle(idx).mFontResource;
+    if (fontRsrc) {
+        font = fontRsrc->FontObj(c);
+        if (!font) {
+            if (*c != '\0') {
+                MILO_NOTIFY(
+                    "%s is referencing a mat variation '%s' that no longer exists, trying default...",
+                    PathName(this),
+                    c
+                );
+                font = fontRsrc->FontObj("");
+            }
+            if (!font) {
+                MILO_NOTIFY(
+                    "%s in resource %s has no default mat variation",
+                    PathName(this),
+                    PathName(fontRsrc)
+                );
+            }
+        }
+    } else {
+        if (*c != '\0') {
+            MILO_NOTIFY(
+                "%s [styles 0 font_resource] is NULL, can't set fontmat %s",
+                PathName(this),
+                c
+            );
+        }
+    }
+    if (idx < mStyles.size()) {
+        mStyles[idx].mFont = font;
+    }
+}
+
+const char *UILabel::GetFontMat(int idx) {
+    RndFontBase *font = nullptr;
+    if (idx < mStyles.size()) {
+        font = mStyles[idx].mFont;
+    }
+    UILabelDir *fontRsrc = LStyle(idx).mFontResource;
+    return fontRsrc ? fontRsrc->GetMatVariationName(font) : "";
+}
+
+void UILabel::RefreshFontMat(int i) {
+    auto mat = GetFontMat(i);
+    SetFontMat(mat, i);
+    Update();
+}
+
+void UILabel::Update() {
+    if (!sDeferUpdate) {
+        LabelUpdate(false);
+    }
+}
+
+DataNode UILabel::OnSetPrelocalizedString(const DataArray *a) {
+    const DataNode &stringNode = a->Evaluate(2);
+    MILO_ASSERT(stringNode.Type() == kDataString, 0x386);
+    String str(stringNode.Str());
+    SetPrelocalizedString(str);
+    return 1;
+}
+
+DataNode UILabel::OnSetTokenFmt(const DataArray *da) {
+    const DataNode &n = da->Evaluate(2);
+    if (n.Type() == kDataArray) {
+        DataArray *arr = n.Array();
+        bool b = arr->Size() > 1 && arr->Evaluate(1).Type() == kDataArray;
+        if (b) {
+            SetTokenFmtImp(arr->ForceSym(0), arr->Array(1), arr, 2, false);
+        } else
+            SetTokenFmtImp(arr->ForceSym(0), 0, arr, 1, false);
+    } else {
+        bool b = da->Size() > 3 && da->Evaluate(3).Type() == kDataArray;
+        if (b) {
+            SetTokenFmtImp(da->ForceSym(2), da->Array(3), da, 4, false);
+        } else {
+            SetTokenFmtImp(da->ForceSym(2), 0, da, 3, false);
+        }
+    }
+    return 1;
+}
+
+DataNode UILabel::OnSetInt(const DataArray *da) {
+    int num;
+    if (da->Type(2) == kDataFloat) {
+        num = da->Float(2);
+    } else {
+        num = da->Int(2);
+    }
+    bool b = false;
+    if (da->Size() > 3) {
+        b = da->Int(3);
+    }
+    SetInt(num, b);
+    return 1;
+}
+
+DataNode UILabel::OnSetTimeHMS(const DataArray *da) {
+    int num;
+    if (da->Type(2) == kDataFloat) {
+        num = da->Float(2);
+    } else {
+        num = da->Int(2);
+    }
+    SetTimeHMS(num, true);
+    return 1;
+}
+
+DataNode UILabel::OnSetHeightFromText(DataArray *a) {
+    if (mFitType == 0 && Style(0).mFont) {
+        float fl;
+        mHeight = ComputeHeight(unkc4, 1.0f, fl);
+    } else {
+        MILO_NOTIFY(
+            "Could not set height, either no default font set, or fit type is not kFitWrap"
+        );
+    }
+    return 0;
+}
+
 void UILabel::SetTokenFmtImp(
-    Symbol s, const DataArray *da1, const DataArray *da2, int i, bool b
-) {}
+    Symbol s, DataArray const *d1, DataArray const *d2, int i4, bool b5
+) {
+    mTextToken = s;
+    if (s.Null()) {
+        SetDisplayText(gNullStr, true);
+    } else {
+        bool found;
+        const char *localize = Localize(mTextToken, &found, TheLocale);
+        if (found) {
+            SuperFormatString fmtStr(localize, d1, b5, TheLocale, gNullStr);
+            if (d2) {
+                for (int i = i4; i < d2->Size(); i++) {
+                    const DataNode &n = d2->Evaluate(i);
+                    if (n.Type() == kDataSymbol) {
+                        fmtStr << Localize(n.Sym(), nullptr, TheLocale);
+                    } else {
+                        fmtStr << n;
+                    }
+                }
+            }
+            SetDisplayText(fmtStr.FinalStr(), false);
+        } else {
+            SetDisplayText(localize, false);
+        }
+    }
+}
 
-DataNode UILabel::OnSetTokenFmt(DataArray const *da) { return NULL_OBJ; }
+float GetPctHeightFromTextSize(float f) {
+    if (TheLoadMgr.EditMode()) {
+        Vector3 vec3a(0, 0, 0);
+        Vector2 vec2a;
+        TheUI->GetCam()->WorldToScreen(vec3a, vec2a);
+        Vector3 vec3b(0, 0, -f);
+        Vector2 vec2b;
+        TheUI->GetCam()->WorldToScreen(vec3b, vec2b);
+        return fabs(vec2a.y - vec2b.y);
+    }
+    return f;
+}
 
-DataNode UILabel::OnSetInt(DataArray const *da) { return DataNode(1); }
-
-DataNode UILabel::OnSetTimeHMS(DataArray const *) { return NULL_OBJ; }
-
-bool UILabel::AllowEditText() const { return false; }
-
-void UILabel::LabelUpdate(bool b) { unk122 = false; }
-
-DataNode UILabel::OnSetHeightFromText(DataArray *) { return NULL_OBJ; }
-
-void UILabel::SetFontMat(char const *, int) {}
-
-char const *UILabel::GetFontMat(int) { return 0; }
-
-void UILabel::RefreshFontMat(int i) {}
-
-BEGIN_HANDLERS(UILabel)
-
-END_HANDLERS
-
-bool PropSync(UILabel::LabelStyle &, DataNode &, DataArray *, int, PropOp) {
-    return false;
+float GetTextSizeFromPctHeight(float f) {
+    if (TheLoadMgr.EditMode()) {
+        float val = -TheUI->GetCam()->LocalXfm().v.y;
+        Vector2 vec2a(0, 0);
+        Vector3 vec3a;
+        TheUI->GetCam()->ScreenToWorld(vec2a, val, vec3a);
+        Vector2 vec2b(0, f);
+        Vector3 vec3b;
+        TheUI->GetCam()->ScreenToWorld(vec2b, val, vec3b);
+        return fabs(vec3a.z - vec3b.z);
+    }
+    return f;
 }

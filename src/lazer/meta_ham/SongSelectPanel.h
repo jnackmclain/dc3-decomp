@@ -14,10 +14,13 @@ public:
 
     // UIPanel
     virtual void Load();
+    virtual void Enter();
     virtual void Exit();
     virtual void Poll();
     virtual bool IsLoaded() const;
     virtual void FinishLoad();
+
+    NEW_OBJ(SongSelectPanel)
 
     SongSelectPanel();
     RndTex *GetTexForCharacter(Symbol);

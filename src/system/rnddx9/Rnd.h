@@ -1,5 +1,5 @@
 #pragma once
-#include "Memory.h"
+#include "os/Memory.h"
 #include "math/Color.h"
 #include "movie/Splash.h"
 #include "os/Debug.h"
@@ -9,7 +9,9 @@
 #include "rndobj/Bitmap.h"
 #include "rndobj/Rnd_NG.h"
 #include "xdk/D3D9.h"
+#include "xdk/D3DX9.h"
 #include "xdk/XGRAPHICS.h"
+#include "xdk/xapilibi/xbase.h"
 #include <types.h>
 
 struct LargeQuadRenderData {
@@ -31,8 +33,13 @@ public:
     virtual void Init() { Init(nullptr); }
     virtual void Terminate();
     virtual void Clear(unsigned int, const Hmx::Color &);
-    virtual void
-    DrawRect(const Hmx::Rect &, const Hmx::Color &, RndMat *, const Hmx::Color *, const Hmx::Color *);
+    virtual void DrawRect(
+        const Hmx::Rect &,
+        const Hmx::Color &,
+        RndMat *,
+        const Hmx::Color *,
+        const Hmx::Color *
+    );
     virtual Vector2 &
     DrawString(const char *, const Vector2 &, const Hmx::Color &, bool); // 0x80
     virtual void
@@ -49,8 +56,14 @@ public:
     virtual void PopClipPlanesInternal(ObjPtrVec<RndTransformable> &);
 
     virtual void SetViewport(const Viewport &v);
-    virtual void
-    DrawRect(const Hmx::Rect &, RndMat *, ShaderType, const Hmx::Color &, const Hmx::Color *, const Hmx::Color *);
+    virtual void DrawRect(
+        const Hmx::Rect &,
+        RndMat *,
+        ShaderType,
+        const Hmx::Color &,
+        const Hmx::Color *,
+        const Hmx::Color *
+    );
     virtual void DrawRectDepth(
         const Vector3 &, const Vector3 (&)[4], const Vector4 &, RndMat *, ShaderType
     );
@@ -69,9 +82,9 @@ public:
     D3DDevice *Device() { return mD3DDevice; }
     void AutoRelease(D3DResource *r) {
         if (r) {
-            if (unk1b4) {
+            if (mSplashing) {
                 MILO_ASSERT(CurrentThreadId() != TheSplasher->SplashThreadId(), 0xF4);
-                D3DResource_Release(r);
+                r->Release();
             } else {
                 unk304.push_back(r);
             }
@@ -79,7 +92,7 @@ public:
     }
     void AutoDelete(D3DBaseTexture *t) {
         if (t) {
-            if (unk1b4) {
+            if (mSplashing) {
                 MILO_ASSERT(CurrentThreadId() != TheSplasher->SplashThreadId(), 0x105);
                 UINT data;
                 XGGetTextureLayout(
@@ -103,7 +116,8 @@ public:
         }
     }
 
-    u8 Unk301() const { return unk_0x301; }
+    bool Unk301() const { return unk_0x301; }
+    void SetUnk301(bool b) { unk_0x301 = b; }
     D3DSurface *BackBuffer() const;
     void PreInit(HWND__ *);
     void Init(HWND__ *);
@@ -113,12 +127,14 @@ public:
     void InitRenderState();
     D3DFORMAT D3DFormatForBitmap(const RndBitmap &);
     int BitmapOrderForD3DFormat(D3DFORMAT);
-    long GetDeviceCaps(D3DCAPS9 *);
+    HRESULT GetDeviceCaps(D3DCAPS9 *);
     void Present();
     void SetDefaultRenderStates();
     void SetShaderRegisterAlloc(RegisterAlloc);
 
-    static const char *Error(long);
+    static const char *Error(HRESULT);
+
+    XVIDEO_MODE *VideoMode() { return &mVideoMode; }
 
 protected:
     virtual void DoPostProcess();
@@ -146,8 +162,9 @@ private:
     void FinishPostProcess();
     void CopyPostProcess();
     void DoPointTests();
+    void DrawSafeArea(float, bool, const Hmx::Color &);
 
-    // static D3DXMATRIX sIdentityMtx;
+    static D3DXMATRIX sIdentityMtx;
 
     int unk220;
     D3DDevice *mD3DDevice; // 0x224
@@ -164,7 +181,7 @@ private:
     int unk2cc;
     Timer unk2d0;
     bool unk300;
-    u8 unk_0x301;
+    bool unk_0x301; // 0x301 - invert the TestFunc greater/less than check for renderstate
     std::vector<D3DResource *> unk304; // 0x304 - released resources?
     std::vector<D3DBaseTexture *> unk310; // 0x310 - deleted textures?
     XVIDEO_MODE mVideoMode; // 0x31c
@@ -216,40 +233,24 @@ private:
     int mDefaultVSRegAlloc; // 0x3fc
     int mDefaultPSRegAlloc; // 0x400
     bool unk404;
-    int unk408;
+    int unk408; // 0x408 - clipping plane index
 };
-
-#define GPU_GPRS 0x80
 
 extern DxRnd TheDxRnd;
 
+#define GPU_GPRS 0x80
+
 int D3DFORMAT_BitsPerPixel(D3DFORMAT);
 
-inline unsigned long MakeColor(const Hmx::Color &c) {
-    return ((unsigned long)(c.alpha * 255.0f) & 0xFF) << 24
-        | ((unsigned long)(c.red * 255.0f) & 0xFF) << 16
-        | ((unsigned long)(c.green * 255.0f) & 0xFF) << 8
-        | ((unsigned long)(c.blue * 255.0f) & 0xFF);
+inline DWORD MakeColor(const Hmx::Color &c) {
+    return D3DCOLOR_COLORVALUE(c.red, c.green, c.blue, c.alpha);
 }
 
 #define DX_RELEASE(x) (TheDxRnd.AutoRelease(x), x = nullptr)
 #define DX_DELETE(x) (TheDxRnd.AutoDelete(x), x = nullptr)
 
-inline HRESULT DxCheck(void *v) { return v ? ERROR_SUCCESS : E_OUTOFMEMORY; }
-
 // check that the thing allocated successfully (e.g. no E_OUTOFMEMORY)
-#define DX_ASSERT(cond, line)                                                            \
-    {                                                                                    \
-        HRESULT code = DxCheck(cond);                                                    \
-        ((code)                                                                          \
-         && (TheDebugFailer << MakeString(                                               \
-                 "File: %s Line: %d Error: %s\n", __FILE__, line, DxRnd::Error(code)     \
-             ),                                                                          \
-             0));                                                                        \
-    }
-
-// check that the thing allocated successfully (e.g. no E_OUTOFMEMORY)
-#define DX_ASSERT_CODE(code, line)                                                       \
+#define DX_ASSERT(code, line)                                                            \
     {                                                                                    \
         ((code)                                                                          \
          && (TheDebugFailer << MakeString(                                               \

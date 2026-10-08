@@ -36,6 +36,8 @@ BEGIN_COPYS(Screenshot)
     Sync();
 END_COPYS
 
+INIT_REVS(1, 0)
+
 BEGIN_LOADS(Screenshot)
     LOAD_REVS(bs);
     ASSERT_REVS(1, 0);
@@ -46,7 +48,7 @@ BEGIN_LOADS(Screenshot)
 END_LOADS
 
 void Screenshot::DrawShowing() {
-    if (!TheRnd.GetDrawMode() && TheLoadMgr.EditMode() && mMat) {
+    if (!TheRnd.DrawMode() && TheLoadMgr.EditMode() && mMat) {
         TheRnd.DrawRect(
             Hmx::Rect(0, 0, TheRnd.Width(), TheRnd.Height()),
             Hmx::Color(0, 0, 0),

@@ -1,8 +1,12 @@
 #include "hamobj/SongLayout.h"
+#include "hamobj/Difficulty.h"
+#include "hamobj/HamDirector.h"
 #include "hamobj/MoveMgr.h"
+#include "obj/Data.h"
 #include "obj/Object.h"
+#include "os/Debug.h"
+#include "utl/BinStream.h"
 #include "utl/Std.h"
-#include <cstring>
 
 SongLayout::SongLayout() {
     if (TheMoveMgr) {
@@ -21,8 +25,34 @@ BEGIN_HANDLERS(SongLayout)
     HANDLE(add_section, AddSection)
     HANDLE_EXPR(pattern_name, GetPatternName(_msg->Int(2)))
     HANDLE_EXPR(pattern_count, (int)mSongPatterns.size())
-    // HANDLE_EXPR(pattern_size, mSongPatterns[_msg->Int(2)].mElements.size())
+    HANDLE_EXPR(pattern_size, (int)mSongPatterns[_msg->Int(2)].mElements.size())
+    HANDLE_EXPR(first_measure, mSongPatterns[_msg->Int(2)].mInitialMeasureRange.start)
+    HANDLE_EXPR(move_count, mSongPatterns[_msg->Int(2)].mNumMoves)
+    HANDLE_ACTION(add_move, AddPatternMove(_msg->Int(2), _msg->ForceSym(3)))
+    HANDLE_ACTION(replace_move, SetReplacerMove(_msg->Int(2), _msg->ForceSym(3)))
+    HANDLE_ACTION(clear_moves, ClearMoves(_msg->Int(2)))
+    HANDLE_ACTION(clear_all_moves, ClearAllPatternMoves())
+    HANDLE_EXPR(measure_in_pattern, MeasureInPattern(_msg->Int(2), _msg->Int(3)))
+    HANDLE_EXPR(first_unfilled_pattern, FirstUnfilledPattern())
+    HANDLE_EXPR(first_unfilled_replacer, FirstUnfilledReplacer())
+    HANDLE_EXPR(replacer_first_measure, ReplacerFirstMeasure(_msg->Int(2)))
+    HANDLE_ACTION(dump_patterns, DumpPatterns())
+    HANDLE_SUPERCLASS(Hmx::Object)
 END_HANDLERS
+
+void SongLayout::ClearMoves(int pattern) {
+    mSongPatterns[pattern].mNumMoves = 0;
+    auto itEnd = mSongPatterns[pattern].mMoveParents.end();
+    auto it = mSongPatterns[pattern].mMoveParents.begin();
+    for (; it != itEnd; ++it) {
+        (*it) = nullptr;
+    }
+}
+
+bool SongLayout::MeasureInPattern(int measure, int pattern) const {
+    Range r = mSongPatterns[pattern].mInitialMeasureRange;
+    return measure >= r.start && measure <= r.end;
+}
 
 BEGIN_CUSTOM_PROPSYNC(SongSection)
     SYNC_PROP(measure_range, o.mMeasureRange)
@@ -42,12 +72,266 @@ BEGIN_PROPSYNCS(SongLayout)
     SYNC_SUPERCLASS(Hmx::Object)
 END_PROPSYNCS
 
+BinStream &operator<<(BinStream &bs, const SongPattern &s) {
+    bs << s.mName;
+    bs << s.mInitialMeasureRange.start;
+    bs << s.mInitialMeasureRange.end;
+    bs << s.mElements;
+    return bs;
+}
+
+BinStream &operator<<(BinStream &bs, const SongSection &s) {
+    bs << s.mMeasureRange.start;
+    bs << s.mMeasureRange.end;
+    bs << s.mPatternRange.start;
+    bs << s.mPatternRange.end;
+    bs << s.mPattern;
+    return bs;
+}
+
+BEGIN_SAVES(SongLayout)
+    SAVE_REVS(2, 0)
+    SAVE_SUPERCLASS(Hmx::Object)
+    bs << mSongPatterns;
+    bs << mSongSections;
+END_SAVES
+
 BEGIN_COPYS(SongLayout)
     COPY_SUPERCLASS(Hmx::Object)
     CREATE_COPY(SongLayout)
     BEGIN_COPYING_MEMBERS
-        COPY_MEMBER(mSongPatterns)
-        COPY_MEMBER(mSongSections)
-        COPY_MEMBER(mMoveReplacers)
+        mSongPatterns.clear();
+        mSongPatterns.insert(
+            mSongPatterns.begin(), c->mSongPatterns.begin(), c->mSongPatterns.end()
+        );
+        mSongSections.clear();
+        mSongSections.insert(
+            mSongSections.begin(), c->mSongSections.begin(), c->mSongSections.end()
+        );
     END_COPYING_MEMBERS
 END_COPYS
+
+BinStreamRev &operator>>(BinStreamRev &d, SongPattern &s) {
+    d >> s.mName;
+    d >> s.mInitialMeasureRange.start;
+    d >> s.mInitialMeasureRange.end;
+    d >> s.mElements;
+    s.mMoveParents.resize(s.mElements.size());
+    return d;
+}
+
+BinStreamRev &operator>>(BinStreamRev &d, SongSection &s) {
+    d >> s.mMeasureRange.start;
+    d >> s.mMeasureRange.end;
+    d >> s.mPatternRange.start;
+    d >> s.mPatternRange.end;
+    d >> s.mPattern;
+    return d;
+}
+
+INIT_REVS(2, 0)
+
+BEGIN_LOADS(SongLayout)
+    LOAD_REVS(bs)
+    ASSERT_REVS(2, 0)
+    LOAD_SUPERCLASS(Hmx::Object)
+    d >> mSongPatterns;
+    d >> mSongSections;
+    FOREACH (it, mSongSections) {
+        FOREACH (pit, mSongPatterns) {
+            if (pit->mName == it->mPattern) {
+                it->unk14 = pit;
+                break;
+            }
+        }
+    }
+END_LOADS
+
+void SongLayout::ClearChosenPatterns() {
+    FOREACH (it, mSongPatterns) {
+        memset(
+            it->mMoveParents.begin(), 0, it->mMoveParents.size() * sizeof(MoveParent *)
+        );
+        it->mNumMoves = 0;
+    }
+}
+
+void SongLayout::ClearAllPatternMoves() {
+    FOREACH (it, mSongPatterns) {
+        it->mNumMoves = 0;
+        auto itEnd = it->mMoveParents.end();
+        auto pit = it->mMoveParents.begin();
+        for (; pit != itEnd; ++pit) {
+            (*pit) = nullptr;
+        }
+    }
+}
+
+void SongLayout::DumpPatterns() const {
+    int i = 0;
+    MILO_LOG("SongLayout patterns:\n");
+    FOREACH (it, mSongPatterns) {
+        MILO_LOG(
+            "pattern %d %s start=%d end=%d",
+            i,
+            it->mName.Str(),
+            it->mInitialMeasureRange.start,
+            it->mInitialMeasureRange.end
+        );
+        MILO_LOG(" size=%d moves=%d\n", (int)it->mElements.size(), it->mNumMoves);
+        i++;
+        for (int j = 0; j < it->mNumMoves; j++) {
+            MILO_LOG("   %s\n", it->mMoveParents[j]->Name());
+        }
+    }
+}
+
+void SongLayout::AddPatternMove(int i1, Symbol s2) {
+    if (mSongPatterns[i1].mNumMoves < mSongPatterns[i1].mElements.size()) {
+        int numMoves = mSongPatterns[i1].mNumMoves;
+        mSongPatterns[i1].mElements[numMoves] = s2;
+        mSongPatterns[i1].mMoveParents[numMoves] = TheMoveMgr->Graph().GetMoveParent(s2);
+        mSongPatterns[i1].mNumMoves++;
+    }
+}
+
+void SongLayout::SetReplacerMove(int i, Symbol s2) {
+    MILO_ASSERT(mMoveReplacers.size() > i, 0x107);
+    MILO_LOG(
+        "Replacer %d replacing %s with %s at measures:",
+        i,
+        mMoveReplacers[i].unk0.Str(),
+        s2.Str()
+    );
+    for (int n = 0; n < mMoveReplacers[i].mMeasures.size(); n++) {
+        MILO_LOG(" %d", mMoveReplacers[i].mMeasures[n] + 1);
+    }
+    MILO_LOG("\n");
+    mMoveReplacers[i].unk4 = s2;
+    mMoveReplacers[i].unk8 = TheMoveMgr->Graph().GetMoveParent(s2);
+}
+
+int SongLayout::ReplacerFirstMeasure(int i) const {
+    MILO_ASSERT(i < mMoveReplacers.size(), 0x150);
+    MILO_ASSERT(mMoveReplacers[i].mMeasures.size() > 0, 0x151);
+    return mMoveReplacers[i].mMeasures[0];
+}
+
+int SongLayout::FirstUnfilledPattern() const {
+    int count = 0;
+    for (auto it = mSongPatterns.begin();
+         it != mSongPatterns.end() && it->mNumMoves >= it->mElements.size();
+         ++it) {
+        count++;
+    }
+    if (count >= mSongPatterns.size()) {
+        count = -1;
+    }
+    return count;
+}
+
+int SongLayout::FirstUnfilledReplacer() const {
+    for (int i = 0; i < mMoveReplacers.size(); i++) {
+        if (mMoveReplacers[i].unk8 == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void SongLayout::SetDefaultReplacer() {
+    SongPattern sp;
+    sp.mName = Symbol("Verse");
+    auto anim = TheHamDirector->SongAnimByDifficulty(kDifficultyEasy);
+    if (anim == nullptr) {
+        MILO_FAIL("song not loaded?");
+    }
+    static Symbol move("move");
+    PropKeys *keys = anim->GetKeys(TheHamDirector, DataArrayPtr(move));
+    Symbol Rest_move("Rest.move");
+    Symbol rest_move("rest.move");
+    Symbol Finishing_move("Finishing_Move.move");
+    for (int i = 0; i < keys->NumKeys(); i++) {
+        Keys<Symbol, Symbol> *symkeys = keys->AsSymbolKeys();
+        Symbol this_key = (*symkeys)[i].value;
+        if (this_key == Rest_move || this_key == rest_move
+            || this_key == Finishing_move) {
+            continue;
+        }
+        std::vector<MoveReplacer>::iterator mover = mMoveReplacers.begin();
+        for (; mover != (mMoveReplacers).end(); (++mover)) {
+            if (mover->unk0 == this_key) {
+                mover->mMeasures.push_back(i);
+                break;
+            }
+        }
+        if (mover == mMoveReplacers.end()) {
+            MoveReplacer mr;
+            mr.unk0 = this_key;
+            mr.mMeasures.push_back(i);
+            mMoveReplacers.push_back(mr);
+        }
+    }
+}
+
+void SongLayout::SetDefaultPattern(int patnum) {
+    ClearChosenPatterns();
+    MoveParent *mp = nullptr;
+    u32 unk_r29 = 5;
+    for (int i = 0; i < 2; i++) {
+        SongPattern sp;
+        const char *str = MakeString("%s%d", "Verse", i);
+        sp.mName = Symbol(str);
+        for (int j = 0; j < 4; j++) {
+            sp.mElements.push_back(Symbol("Rest.move"));
+            sp.mMoveParents.push_back(mp);
+        }
+        sp.mInitialMeasureRange.start = unk_r29;
+        sp.mInitialMeasureRange.end = unk_r29 + 4;
+        unk_r29 += 5;
+        mSongPatterns.push_back(sp);
+    }
+    for (int i = 5; i < patnum;) {
+        SongSection ss;
+        ss.mPatternRange.start = 0;
+        ss.mPatternRange.end = 0;
+        SongPattern sp2 = mSongPatterns[(i - 5) % 2];
+        ss.mPattern = sp2.mName;
+        ss.unk14 = &sp2;
+        ss.mMeasureRange.start = i + 1;
+        i += (patnum - i <= 4) ? patnum - i : 4;
+        ss.mMeasureRange.end = i;
+        mSongSections.push_back(ss);
+    }
+}
+
+DataNode SongLayout::AddPattern(DataArray *a) {
+    DataArray *arr = a->Array(2);
+    SongPattern pattern;
+    pattern.mName = arr->Sym(0);
+    pattern.mInitialMeasureRange.start = arr->Int(1);
+    pattern.mInitialMeasureRange.end = arr->Int(2);
+    pattern.mNumMoves = 0;
+    for (int i = 3; i < arr->Size(); i++) {
+        pattern.mElements.push_back(arr->Sym(i));
+        pattern.mMoveParents.push_back(nullptr);
+    }
+    mSongPatterns.push_back(pattern);
+    return 0;
+}
+
+DataNode SongLayout::AddSection(DataArray *a) {
+    DataArray *arr = a->Array(2);
+    SongSection section;
+    section.mMeasureRange.start = arr->Int(0);
+    section.mMeasureRange.end = arr->Int(1);
+    section.mPattern = arr->Sym(2);
+    section.mPatternRange.start = arr->Int(3);
+    section.mPatternRange.end = arr->Int(4);
+    mSongSections.push_back(section);
+    return 0;
+}
+
+DataNode SongLayout::GetPatternName(int idx) const {
+    return mSongPatterns[idx].mName.Str();
+}

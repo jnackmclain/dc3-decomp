@@ -5,8 +5,20 @@ class NetAddress {
 public:
     NetAddress(unsigned int ip, unsigned short port) : mIP(ip), mPort(port) {}
     NetAddress() : mIP(0), mPort(0) {}
+
+    unsigned int GetIP() const { return mIP; }
+    unsigned short GetPort() const { return mPort; }
+    void SetIP(unsigned int ip) { mIP = ip; }
+    void SetPort(unsigned short port) { mPort = port; }
+    //   public: bool operator==(const NetAddress&) const;
+    //   public: bool operator!=(const NetAddress&) const;
+    //   public: void Save(BinStream&) const;
+    //   public: void Load(BinStream&);
+    //   public: bool Invalid() const;
+
+protected:
     unsigned int mIP;
-    unsigned int mPort;
+    unsigned short mPort;
 };
 
 class NetworkSocket {
@@ -17,7 +29,7 @@ public:
     virtual bool Fail() const = 0;
     virtual void Disconnect() = 0;
     virtual void Bind(unsigned short port) = 0;
-    virtual int InqBoundPort(unsigned short &) const = 0;
+    virtual bool InqBoundPort(unsigned short &) const = 0;
     virtual void Listen() = 0;
     virtual NetworkSocket *Accept() = 0;
     virtual void GetRemoteIP(unsigned int &ip, unsigned short &port) = 0;

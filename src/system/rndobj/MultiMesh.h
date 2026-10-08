@@ -53,8 +53,7 @@ namespace STLPORT {
         ~TransformListAlloc() {}
 
         pointer allocate(const size_type count, const void *hint = nullptr) const {
-            return reinterpret_cast<pointer>(gTransListAlloc.CustAlloc(count * sizeof(T))
-            );
+            return reinterpret_cast<pointer>(gTransListAlloc.CustAlloc(count * sizeof(T)));
         }
 
         void deallocate(pointer ptr, size_type count) const {
@@ -78,10 +77,6 @@ public:
     struct Instance {
         Instance();
         Instance(const Transform &t) : unk0(1), mXfm(t) {}
-        Instance &operator=(const Instance &other) {
-            memcpy(this, &other, sizeof(*this));
-            return *this;
-        }
 
         void Save(BinStream &) const;
         void Load(BinStreamRev &);

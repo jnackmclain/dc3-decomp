@@ -34,21 +34,26 @@ public:
     void SetTopRadius(float rad) { mTopRadius = rad; }
     void SetBotRadius(float rad) { mBotRadius = rad; }
     void SetShadowOverride(ObjPtrList<RndDrawable> *);
-    // float Range() const { return mRange; }
-    // float FalloffStart() const { return mFalloffStart; }
     const Hmx::Color &GetColor() const { return mColorOwner->mColor; }
     float Range() const { return mRange; }
+    float FalloffStart() const { return mFalloffStart; }
     Type GetType() const { return mType; }
     void SetShowing(bool b) { mShowing = b; }
     float Intensity() const;
     void SetProjectedBlend(int i) { mProjectedBlend = i; }
-    // bool GetAnimateFromPreset() const {
-    //     return mAnimateColorFromPreset || mAnimatePositionFromPreset
-    //         || mAnimateRangeFromPreset;
-    // }
+    int GetProjectedBlend() const { return mProjectedBlend; }
+    RndTex *GetTexture() const { return mTexture; }
+    bool GetAnimateFromPreset() const {
+        return mAnimateColorFromPreset || mAnimatePositionFromPreset
+            || mAnimateRangeFromPreset;
+    }
     bool Showing() const { return mShowing; }
-    // bool AnimatePosFromPreset() const { return mAnimatePositionFromPreset; }
-    // bool AnimateRangeFromPreset() const { return mAnimateRangeFromPreset; }
+    bool AnimateColorFromPreset() const { return mAnimateColorFromPreset; }
+    bool AnimatePosFromPreset() const { return mAnimatePositionFromPreset; }
+    bool AnimateRangeFromPreset() const { return mAnimateRangeFromPreset; }
+    ObjPtrList<RndDrawable> *GetShadowOverride() const { return mShadowOverride; }
+    const ObjPtrList<RndDrawable> &GetShadowObjects() const { return mShadowObjects; }
+    RndCubeTex *GetCubeTexture() const { return mCubeTexture; }
 
     Transform Projection();
 
@@ -78,7 +83,7 @@ protected:
     ObjPtrList<RndDrawable> *mShadowOverride; // 0x11c
     ObjPtrList<RndDrawable> mShadowObjects; // 0x120
     Transform mTextureXfm; // 0x134
-    float mTopRadius; // 0x10C
-    float mBotRadius; // 0x110
-    int mProjectedBlend; // 0x114
+    float mTopRadius; // 0x174
+    float mBotRadius; // 0x178
+    int mProjectedBlend; // 0x17c
 };

@@ -1,0 +1,32 @@
+#pragma once
+#include "xdk/XAUDIO2.h"
+
+DEFINE_CLSID(DelayEffect, 24BE678A, C537, 4C1C, A8, 2F, 16, 4C, FB, 06, E7, A6);
+
+// size 0x14
+class DelayEffect {
+public:
+    struct Params {
+        Params() : bypass(false) {}
+        /** "Bypass the effect and stop it from processing" */
+        bool bypass; // 0x0
+        float delayTime; // 0x4
+        float gain; // 0x8
+        /** "Depth of ping pong effect (percent)". Ranges from 0 to 100. */
+        float pingPongPct; // 0xc
+    };
+
+    DelayEffect(IXAudioBatchAllocator *);
+    ~DelayEffect();
+    void Reset();
+    void Process(float *, int, int);
+    void SetParameter(int, float);
+    void SetParameters(const DelayEffect::Params &);
+
+private:
+    int delaytime;
+    int saved_writepos;
+    float gain;
+    float pongpct;
+    float *delaybuf;
+};

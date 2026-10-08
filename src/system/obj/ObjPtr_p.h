@@ -47,14 +47,14 @@ template <class T1, class T2>
 Hmx::Object *ObjRefConcrete<T1, T2>::SetObj(Hmx::Object *root_obj) {
     T1 *obj = root_obj ? dynamic_cast<T1 *>(root_obj) : nullptr;
     SetObjConcrete(obj);
-    return mObject ? mObject : nullptr;
+    return mObject;
 }
 
 template <class T1>
 BinStream &operator<<(BinStream &bs, const ObjRefConcrete<T1, class ObjectDir> &f) {
     MILO_ASSERT(f.RefOwner(), 0x4D1);
-    // TODO: the comparison here is emitting a cmpwi instead of a cmplwi
-    const char *objName = f ? f->Name() : "";
+    T1 *obj = f;
+    const char *objName = obj ? obj->Name() : "";
     bs << objName;
     return bs;
 }
@@ -79,7 +79,7 @@ bool ObjRefConcrete<T1, T2>::Load(BinStream &bs, bool print, ObjectDir *dir) {
         }
     } else {
         if (mObject) {
-            Release(this);
+            Release();
         }
         mObject = nullptr;
         if (buf[0] != '\0') {
@@ -102,9 +102,6 @@ ObjPtr<T>::ObjPtr(Hmx::Object *owner, T *ptr = nullptr)
 
 template <class T>
 ObjPtr<T>::ObjPtr(const ObjPtr &p) : ObjRefConcrete(p), mOwner(p.mOwner) {}
-
-template <class T>
-ObjPtr<T>::~ObjPtr() {}
 
 template <class T>
 BinStream &operator>>(BinStream &bs, ObjPtr<T> &ptr) {
@@ -187,23 +184,23 @@ void ObjPtrVec<T1, T2>::ReplaceNode(Node *n, Hmx::Object *obj) {
 }
 
 template <class T1, class T2>
-void ObjPtrVec<T1, T2>::Set(iterator it, T1 *obj) {
+__declspec(noinline) void ObjPtrVec<T1, T2>::Set(iterator it, T1 *obj) {
     if (!obj && mListMode == 0) {
         erase(it);
     } else
         it->SetObjConcrete(obj);
 }
 
-// see Draw.cpp for this
 template <class T1, class T2>
 void ObjPtrVec<T1, T2>::operator=(const ObjPtrVec &other) {
     if (this != &other) {
         mNodes.clear();
-    }
-    mNodes.reserve(other.mNodes.size());
-    for (const_iterator it = other.begin(); it != other.end(); ++it) {
-        mNodes.push_back(Node(this));
-        Set(end(), *it);
+        mNodes.reserve(other.mNodes.size());
+        for (const_iterator it = other.begin(); it != other.end(); ++it) {
+            Node n(this);
+            mNodes.push_back(n);
+            Set(--end(), *it);
+        }
     }
 }
 
@@ -215,12 +212,60 @@ void ObjPtrVec<T1, T2>::push_back(T1 *obj) {
 template <class T1, class T2>
 typename ObjPtrVec<T1, T2>::iterator
 ObjPtrVec<T1, T2>::insert(typename ObjPtrVec<T1, T2>::const_iterator it, T1 *obj) {
-    int idx = *it != nullptr ? size() : 0;
     if (obj || mListMode != kObjListNoNull) {
-        // mNodes.insert(it, Node(obj));
-        Set(iterator(0), obj);
+        int idx = it != nullptr ? (&*it - &*mNodes.begin()) : 0;
+        Node n(this);
+        mNodes.insert(mNodes.begin() + idx, n);
+        Set(begin() + idx, obj);
     }
-    return iterator(&Node(obj));
+    return reinterpret_cast<iterator &>(it);
+}
+
+template <class T1, class T2>
+typename ObjPtrVec<T1, T2>::iterator
+ObjPtrVec<T1, T2>::erase(typename ObjPtrVec<T1, T2>::iterator it) {
+    unsigned int idx = it != nullptr ? (&*it - &*mNodes.begin()) : 0;
+    if (mEraseMode == 1 && idx != size() - 1) {
+        T1 *n = mNodes.back();
+        mNodes.pop_back();
+        Set(begin() + idx, n);
+    } else {
+        mNodes.erase(mNodes.begin() + idx);
+    }
+    return it;
+}
+
+template <class T1, class T2>
+typename ObjPtrVec<T1, T2>::const_iterator
+ObjPtrVec<T1, T2>::find(const Hmx::Object *target) const {
+    auto it = begin();
+    for (; it != end(); ++it) {
+        if (*it == target) {
+            break;
+        }
+    }
+    return it;
+}
+
+template <class T1, class T2>
+bool ObjPtrVec<T1, T2>::remove(T1 *obj) {
+    const_iterator found = find(obj);
+    if (found != end_const()) {
+        erase(reinterpret_cast<iterator &>(found));
+        return true;
+    } else {
+        return false;
+    }
+}
+
+template <class T1, class T2>
+typename ObjPtrVec<T1, T2>::iterator ObjPtrVec<T1, T2>::FindRef(ObjRef *ref) {
+    ObjRefOwner *parent = ref->Parent();
+    if (parent == this) {
+        return static_cast<Node *>(ref);
+    } else {
+        return end();
+    }
 }
 
 template <class T1, class T2>
@@ -254,6 +299,20 @@ bool ObjPtrVec<T1, T2>::Load(BinStream &bs, bool print, ObjectDir *dir) {
         count--;
     }
     return ret;
+}
+
+template <class T1>
+BinStream &operator<<(BinStream &bs, const ObjPtrVec<T1, ObjectDir> &c) {
+    bs << c.size();
+    MILO_ASSERT(c.Owner(), 0x525);
+    for (auto it = c.begin(); it != c.end(); ++it) {
+        if (*it) {
+            bs << (*it)->Name();
+        } else {
+            bs << "";
+        }
+    }
+    return bs;
 }
 
 template <class T1>
@@ -298,11 +357,8 @@ template <class T1, class T2>
 void ObjPtrList<T1, T2>::ReplaceNode(struct ObjPtrList::Node *node, Hmx::Object *obj) {
     if (mListMode == kObjListOwnerControl) {
         mOwner->Replace(node, obj);
-    } else {
-        Hmx::Object *old = node->SetObj(obj);
-        if (!old && mListMode == kObjListNoNull) {
-            erase(node);
-        }
+    } else if (!node->SetObj(obj) && mListMode == kObjListNoNull) {
+        erase(node);
     }
 }
 
@@ -322,6 +378,30 @@ void ObjPtrList<T1, T2>::operator=(const ObjPtrList &other) {
 }
 
 template <class T1, class T2>
+void ObjPtrList<T1, T2>::Link(iterator it, Node *n) {
+    n->mOwner = this;
+    n->next = it.mNode;
+    if (n->next == mNodes) {
+        if (mNodes) {
+            n->prev = mNodes->prev;
+            mNodes->prev = n;
+        } else {
+            n->prev = n;
+        }
+        mNodes = n;
+    } else if (n->next == nullptr) {
+        n->prev = mNodes->prev;
+        mNodes->prev->next = n;
+        mNodes->prev = n;
+    } else {
+        n->prev = it.mNode->prev;
+        it.mNode->prev->next = n;
+        it.mNode->prev = n;
+    }
+    mSize++;
+}
+
+template <class T1, class T2>
 void ObjPtrList<T1, T2>::pop_back() {
     MILO_ASSERT(mNodes != NULL, 0x18B);
     erase(mNodes->prev);
@@ -336,6 +416,29 @@ void ObjPtrList<T1, T2>::pop_front() {
 template <class T1, class T2>
 void ObjPtrList<T1, T2>::push_back(T1 *obj) {
     insert(end(), obj);
+}
+
+template <class T1, class T2>
+void ObjPtrList<T1, T2>::push_front(T1 *obj) {
+    insert(begin(), obj);
+}
+
+template <class T1, class T2>
+T1 *ObjPtrList<T1, T2>::front() const {
+    MILO_ASSERT(mNodes != NULL, 0x189);
+    // stupid way of getting the underlying T1*
+    // the operator T1*() SHOULD work, but it isn't, and I don't wanna add a Obj() method
+    // so here you go. don't like it? cry more
+    return mNodes->operator->();
+}
+
+template <class T1, class T2>
+T1 *ObjPtrList<T1, T2>::back() const {
+    MILO_ASSERT(mNodes != NULL, 0x18A);
+    // stupid way of getting the underlying T1*
+    // the operator T1*() SHOULD work, but it isn't, and I don't wanna add a Obj() method
+    // so here you go. don't like it? cry more
+    return mNodes->prev->operator->();
 }
 
 template <class T1, class T2>
@@ -366,10 +469,32 @@ ObjPtrList<T1, T2>::find(const Hmx::Object *target) const {
 }
 
 template <class T1, class T2>
+template <typename Cmp>
+void ObjPtrList<T1, T2>::sort(const Cmp &cmp) {
+    if (mNodes && mNodes->next) {
+        Node *last = mNodes->prev;
+        for (Node *n = last->prev; n != last; n = n->prev) {
+            for (Node *x = n; x != last; x = x->next) {
+                Node *nextX = x->next;
+                if (cmp(*nextX, *x)) {
+                    T1 *tmp = *x;
+                    x->SetObjConcrete(*nextX);
+                    nextX->SetObjConcrete(tmp);
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+template <class T1, class T2>
 bool ObjPtrList<T1, T2>::remove(T1 *target) {
-    for (iterator it = begin(); it != end(); ++it) {
-        if (*it == target) {
-            erase(it);
+    for (Node *it = mNodes; it != nullptr;) {
+        Node *old = it;
+        it = it->next;
+        if (*old == target) {
+            erase(old);
             return true;
         }
     }
@@ -418,6 +543,20 @@ bool ObjPtrList<T1, T2>::Load(BinStream &bs, bool print, ObjectDir *dir, bool b4
         count--;
     }
     return ret;
+}
+
+template <class T1>
+BinStream &operator<<(BinStream &bs, const ObjPtrList<T1, ObjectDir> &c) {
+    bs << c.size();
+    MILO_ASSERT(c.Owner(), 0x4E1);
+    FOREACH (it, c) {
+        if (*it) {
+            bs << (*it)->Name();
+        } else {
+            bs << "";
+        }
+    }
+    return bs;
 }
 
 template <class T1>

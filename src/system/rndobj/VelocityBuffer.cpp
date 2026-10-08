@@ -5,20 +5,61 @@
 #include "rndobj/BaseMaterial.h"
 #include "rndobj/Cam.h"
 #include "rndobj/Mat.h"
+#include "rndobj/Rnd.h"
+#include "rndobj/Shader.h"
+#include "rndobj/ShaderMgr.h"
+#include "rndobj/Stats_NG.h"
 #include "rndobj/Tex.h"
 #include "rndobj/Utl.h"
 
 RndVelocityBuffer RndVelocityBuffer::sSingleton;
+static const int sMaxBones = 40;
 
-// why doesn't this symbol spawn? something with the volatile RndMesh
 bool RndXfmCache::GetXfms(
-    unsigned int *ui1,
-    volatile RndMesh &mesh,
+    const RndMesh *__restrict mesh,
     unsigned int ui2,
     unsigned int ui3,
     const float *&floats
 ) const {
-    return true;
+    if (ui2 + ui3 <= unk1b580) {
+        const RndMesh *ui2_mesh = unk0[ui2];
+        const RndMesh *__restrict what = unk0[ui2 + ui3 - 1];
+        if (ui2_mesh == mesh && what == mesh) {
+            floats = unk1f40[ui2];
+            return true;
+        }
+    }
+    floats = nullptr;
+    return false;
+}
+
+bool RndXfmCache::CacheXfms(
+    const RndMesh *__restrict mesh,
+    const float *__restrict floats,
+    unsigned int ui3,
+    unsigned int &uiref
+) {
+    uiref = -1;
+    if (unk1b580 + ui3 <= 2000) {
+        uiref = unk1b580;
+        float *which = unk1f40[unk1b580];
+        float diff = floats[0] - which[0];
+        for (int i = 0; i < ui3; i++) {
+            which[i] += diff;
+        }
+        if (ui3) {
+            int *unkPtr = &unk19640[unk1b580 - 1];
+            RndMesh **meshPtr = &unk0[unk1b580 - 1];
+            for (int i = 0; i < ui3; i++) {
+                meshPtr[i] = (RndMesh *)mesh;
+            }
+            for (int i = 0; i < ui3; i++) {
+                unkPtr[i] = 0;
+            }
+        }
+        unk1b580 += ui3;
+    }
+    return uiref < 2000;
 }
 
 RndVelocityBuffer::RndVelocityBuffer()
@@ -54,7 +95,7 @@ void RndVelocityBuffer::AllocateData(
 ) {
     MILO_ASSERT(mVelocityTex == NULL, 0x45);
     mVelocityTex = Hmx::Object::New<RndTex>();
-    mVelocityTex->SetBitmap(ui1 / 2, ui2 / 2, ui3, RndTex::kTexRendered, false, nullptr);
+    mVelocityTex->SetBitmap(ui1 / 2, ui2 / 2, ui3, RndTex::kRendered, false, nullptr);
     MILO_ASSERT(mMat == NULL, 0x4A);
     mMat = Hmx::Object::New<RndMat>();
     mMat->SetPerPixelLit(false);
@@ -63,9 +104,47 @@ void RndVelocityBuffer::AllocateData(
     CreateAndSetMetaMat(mMat);
 }
 
+void RndVelocityBuffer::DrawMesh(RndMesh *mesh) const {
+    MILO_ASSERT(mesh, 0x123);
+    MILO_ASSERT(mesh->Showing(), 0x124);
+    MILO_ASSERT(TheRnd.DrawMode() == Rnd::kDrawVelocity, 0x125);
+    if (mesh->Mat() && mesh->Mat()->GetZMode() != kZModeTransparent) {
+        int numBones = mesh->NumBones();
+        int i10 = Max(1, numBones);
+        const float *fptr;
+        if (mXfmCaches[unk36c6c].GetXfms(mesh, 0, i10, fptr)) {
+            if (numBones <= 40) {
+                TheShaderMgr.SetMeshInfo(numBones, false);
+                RndShader::SelectConfig(mMat, kVelocityObjectShader, false);
+                mesh->DrawFacesInRange(0, -1);
+                TheNgStats->mMotionBlurs++;
+            } else {
+                MILO_NOTIFY_ONCE(
+                    "%s (%s): Has too many bones to apply object motion blur (%d bones of max %d)",
+                    mesh->Name(),
+                    PathName(mesh),
+                    numBones,
+                    sMaxBones
+                );
+            }
+        }
+    }
+}
+
 void RndVelocityBuffer::FreeData() {
     RELEASE(mVelocityTex);
     RELEASE(mMat);
 }
 
 void RndVelocityBuffer::ResetFrame() { mFrame = 0; }
+
+void RndVelocityBuffer::CacheTransform(
+    class RndMesh *__restrict mesh, const float *__restrict floats, unsigned int ui3
+) {
+    if ((TheRnd.ProcCmds() & kProcessWorld) > 0) {
+        unsigned int uiref;
+        if (mXfmCaches[unk36c6c].CacheXfms(mesh, floats, ui3, uiref)) {
+            mesh->GetBlurCache().mCacheKey[unk36c6c] = uiref;
+        }
+    }
+}

@@ -23,6 +23,9 @@ HxGuid::HxGuid() { Clear(); }
 
 void HxGuid::Clear() { mData[0] = mData[1] = mData[2] = mData[3] = 0; }
 
+// there's no way this worked lmfao
+__declspec(noinline) const char *MakeString(const char *);
+
 void HxGuid::Generate() {
     while (true) {
         Clear();
@@ -41,6 +44,8 @@ bool HxGuid::IsNull() const {
 const char *HxGuid::ToString() const {
     return MakeString("%08x%08x%08x%08x", mData[0], mData[1], mData[2], mData[3]);
 }
+
+const int *HxGuid::Data() const { return mData; }
 
 #define kGuidRev 1
 

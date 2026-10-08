@@ -8,6 +8,14 @@
 #include "obj/Dir.h"
 #include "obj/Object.h"
 #include "rndobj/Cam.h"
+#include "rndobj/Trans.h"
+
+// does nothing, doesn't get called anywhere
+// this func only exists to spawn the RndTransformable vector symbols in this TU
+void CharUtlDummyTransFunc() {
+    std::vector<RndTransformable *> transes;
+    transes.push_back(nullptr);
+}
 
 #pragma region CharUtl
 
@@ -23,7 +31,7 @@ void CharUtlInit() {
 }
 
 void CharUtlMergeBones(ObjectDir *dir1, ObjectDir *dir2, int i) {
-    for (ObjDirItr<CharBone> it(dir1, true); it != 0; ++it) {
+    for (ObjDirItr<CharBone> it(dir1, true); it != nullptr; ++it) {
         if (it->Target()) {
             CharBone *bone = GrabBone(it, dir2);
             if (bone) {
@@ -114,7 +122,13 @@ bool CharUtlIsAnimatable(RndTransformable *trans) {
     return strncmp(trans->Name(), "spot_", 5) != 0;
 }
 
-void CharUtlResetTransform(ObjectDir *dir) {}
+void CharUtlResetTransform(ObjectDir *dir) {
+    for (ObjDirItr<RndTransformable> it(dir, true); it != nullptr; ++it) {
+        if (!it->TransParent()) {
+            it->DirtyLocalXfm().Reset();
+        }
+    }
+}
 
 CharBone *CharUtlFindBone(const char *cc, ObjectDir *dir) {
     if (!dir)
@@ -155,7 +169,7 @@ DataNode OnCharMergeBones(DataArray *da) {
 #pragma region CharUtlBoneSaver
 
 CharUtlBoneSaver::CharUtlBoneSaver(ObjectDir *dir) : mDir(dir) {
-    for (ObjDirItr<RndTransformable> it(mDir, true); it != 0; ++it) {
+    for (ObjDirItr<RndTransformable> it(mDir, true); it != nullptr; ++it) {
         if (strncmp("bone_", it->Name(), 5) == 0) {
             mXfms.push_back(it->LocalXfm());
         }
@@ -164,7 +178,7 @@ CharUtlBoneSaver::CharUtlBoneSaver(ObjectDir *dir) : mDir(dir) {
 
 CharUtlBoneSaver::~CharUtlBoneSaver() {
     int idx = 0;
-    for (ObjDirItr<RndTransformable> it(mDir, true); it != 0; ++it) {
+    for (ObjDirItr<RndTransformable> it(mDir, true); it != nullptr; ++it) {
         if (strncmp("bone_", it->Name(), 5) == 0) {
             it->SetLocalXfm(mXfms[idx++]);
         }
@@ -207,8 +221,7 @@ void ClipPredict::Predict(float f1, float f2) {
     Subtract(mLastPos, v34, v34);
     RotateAboutZ(v34, norm, v34);
     mPos += v34;
-    float norm1 = LimitAng(mLastAng - locf);
-    mAng = LimitAng(norm1 + mAng);
+    mAng = LimitAng(LimitAng(mLastAng - locf) + mAng);
 }
 
 #pragma endregion ClipPredict

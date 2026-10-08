@@ -2,6 +2,7 @@
 #include "game/HamUser.h"
 #include "hamobj/Difficulty.h"
 #include "hamobj/HamLabel.h"
+#include "hamobj/HamPlayerData.h"
 #include "meta/Profile.h"
 #include "meta_ham/AccomplishmentProgress.h"
 #include "meta_ham/CampaignProgress.h"
@@ -12,6 +13,7 @@
 #include "meta_ham/SongStatusMgr.h"
 #include "os/OnlineID.h"
 #include "utl/JobMgr.h"
+#include "utl/Symbol.h"
 
 struct CharacterPref {
     bool operator==(Symbol s) const { return mChar == s; }
@@ -24,7 +26,8 @@ struct CharacterPref {
 class HamProfile : public Profile {
 public:
     enum {
-        kMaxPlaylists = 5
+        kMaxPlaylists = 5,
+        kNumCharacters = 23
     };
     HamProfile(int);
     virtual ~HamProfile();
@@ -105,13 +108,34 @@ public:
     void UpdateFlaunt();
     bool IsContentUnlockedForProfile(Symbol) const;
     bool IsContentNew(Symbol) const;
+    bool IsDifficultyUnlockedForProfile(Symbol, Symbol);
+    void UpdateBattleScore(int, const HamPlayerData *, int, bool);
+    void UpdateScore(
+        int, HamPlayerData const *, Difficulty, int, int, int, int, int, int, int, bool, bool
+    );
 
     void IncrementSkippedSongCount() { mSkippedSongCount++; }
     void UpdateNag() { unk368++; }
     MoveRatingHistory *GetMoveRatingHistory() const { return mRatingHistory; }
     bool InFitnessMode() { return mInFitnessMode; }
     MetagameRank *GetMetagameRank() const { return mRank; }
+    MetagameStats *GetMetagameStats() const { return mStats; }
     OnlineID *GetOnlineID() { return mOnlineID; }
+    bool IsSignedIn() const { return mSignedIn; }
+    float FitnessTime() const { return mFitnessTime; }
+    float FitnessCalories() const { return mFitnessCalories; }
+    int GetProfileTime() const { return mProfileTime; }
+    bool GetUnk360() const { return unk360; }
+    void SetUnk388(Symbol s) { unk338 = s; }
+    Symbol GetUnk388() const { return unk338; }
+    void SetChallengeTimestamp(int i) { mChallengeTimeStamp = i; }
+    int GetChallengeTimestamp() const { return mChallengeTimeStamp; }
+    void SetUnk334(bool b) { unk334 = b; }
+    bool GetUnk334() const { return unk334; }
+    int GetUnk330() const { return unk330; }
+    void SetUnk330(int i) { unk330 = i; }
+    int GetUnk32C() const { return unk32c; }
+    void SetUnk32C(int i) { unk32c = i; }
 
 private:
     // FixedSizeSaveable
@@ -144,12 +168,12 @@ private:
     OnlineID *mOnlineID; // 0x318
     bool mSignedIn; // 0x31c
     int unk320;
-    int unk324;
+    int mChallengeTimeStamp; // 0x324 - challenge timestamp?
     int mSkippedSongCount; // 0x328
     int unk32c;
     int unk330;
     bool unk334;
-    Symbol unk338;
+    Symbol unk338; // 0x338 - song? shortname?
     bool mIsFitnessGoalSet; // 0x33c
     /** The day/month/year from which this fitness goal started. */
     int mFitnessGoalStartDay; // 0x340
@@ -167,7 +191,7 @@ private:
     int mTrackedCalories; // 0x358
     int unk35c;
     bool unk360;
-    int unk364;
+    int mProfileTime; // 0x364
     int unk368;
     bool unk36c;
     int unk370; // 0x370 - nag index?

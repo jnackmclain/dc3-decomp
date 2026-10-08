@@ -106,12 +106,15 @@ public:
     void EnableBlinks(bool, bool);
     void SetInterestObjects(const ObjPtrList<CharInterest> &, ObjectDir *);
     void SetSelfShadow(bool selfshadow) { mSelfShadow = selfshadow; }
+    void SetSpotCutout(bool cutout) { mSpotCutout = cutout; }
+    void SetFloorShadow(bool shadow) { mFloorShadow = shadow; }
     void SetLodType(LODType lod) { mForceLod = lod; }
     void SetDebugDrawInterestObjects(bool);
     void ForceBlink();
     void CopyBoundingSphere(Character *);
     CharServoBone *BoneServo();
     void DrawLodOrShadow(int, DrawMode);
+    void DrawLod(int);
     void SetTeleport(bool t) { mTeleported = t; }
     CharDriver *Driver() const { return mDriver; }
     bool DebugDrawInterestObjects() const { return mDebugDrawInterestObjects; }
@@ -121,11 +124,15 @@ public:
     bool LODCheck() const { return mForceLod > 0; }
     PollState GetPollState() const { return mPollState; }
     int LastLod() const { return mLastLod; }
+    bool SelfShadow() const { return mSelfShadow; }
+    bool SpotCutout() const { return mSpotCutout; }
+    bool FloorShadow() const { return mFloorShadow; }
 
     static void Init();
     static void Terminate();
     static Character *Current() { return sCurrent; }
     static void SetCurrent(Character *c) { sCurrent = c; }
+    void SetDrawMode(DrawMode m) { mDrawMode = m; }
 
 protected:
     virtual void AddedObject(Hmx::Object *);
@@ -156,8 +163,8 @@ protected:
     CharDriver *mDriver; // 0x24c
     /** "Whether this character should be self-shadowed." */
     bool mSelfShadow; // 0x250
-    bool unk251; // 0x251
-    bool unk252; // 0x252
+    bool mSpotCutout; // 0x251
+    bool mFloorShadow; // 0x252
     /** "Base for bounding sphere, such as bone_pelvis.mesh" */
     ObjOwnerPtr<RndTransformable> mSphereBase; // 0x254
     /** "bounding sphere for the character, fixed" */
@@ -168,7 +175,7 @@ protected:
     CharacterTest *mTest; // 0x28c
     /** "if true, is frozen in place, no polling happens" */
     bool mFrozen; // 0x290
-    int unk294;
+    DrawMode mDrawMode; // 0x294
     bool mTeleported; // 0x298
     /** "select an interest object here and select 'force_interest' below
         to force the character to look at it." */

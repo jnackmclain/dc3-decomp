@@ -9,6 +9,7 @@
 #include "rndobj/Poll.h"
 #include "utl/BinStream.h"
 #include "utl/MemMgr.h"
+#include <list>
 
 /** "Class to play back clips, has a tree view of layers" */
 class HamDriver : public RndHighlightable, public CharWeightable, public CharPollable {
@@ -24,7 +25,8 @@ public:
 
         MEM_OVERLOAD(Layer, 0x27)
 
-        float unk4; // 0x4
+        float unk4; // 0x4 - beat?
+        float unk8;
     };
 
     struct LayerArray : public Layer {
@@ -38,21 +40,18 @@ public:
 
         void Clear();
 
-        float unk8;
         char unkc[0x20];
         std::list<Layer *> unk2c;
     };
 
     struct LayerClip : public Layer {
         LayerClip(Hmx::Object *);
-        virtual ~LayerClip();
         virtual void Eval(float);
         virtual void Play(CharBones &);
         virtual bool Replace(ObjRef *, Hmx::Object *);
         virtual CharClip *FirstClip();
         virtual void OffsetSec(float);
 
-        int unk8;
         float unkc;
         ObjOwnerPtr<CharClip> unk10; // 0x10
     };
@@ -81,19 +80,23 @@ public:
     NEW_OBJ(HamDriver)
 
     void Clear();
+    void SetClipWeightMap();
     LayerClip *NewLayerClip();
     void OffsetSec(float);
     CharClip *FirstClip();
     LayerArray &Layers() { return mLayers; }
+    const std::map<CharClip *, float> &ClipWeights() const { return mClipWeights; }
 
 protected:
     HamDriver();
 
     float Display(float);
+    float DisplayRecurse(Layer *, int, float);
+    void SetClipMapRecurse(HamDriver::Layer *);
 
     /** "The CharBones object to add into." */
     ObjPtr<CharBonesObject> mBones; // 0x30
     LayerArray mLayers; // 0x44
-    float unk78; // 0x78
-    std::map<CharClip *, float> unk7c; // 0x7c
+    float unk78; // 0x78 - beat?
+    std::map<CharClip *, float> mClipWeights; // 0x7c
 };

@@ -26,19 +26,23 @@ public:
     virtual const char *DebugText() = 0;
     virtual bool IsLoaded() const = 0;
     virtual const char *StateName() const { return "Unknown"; }
+    virtual void PollLoading() = 0;
 
     LoaderPos GetPos() const { return mPos; }
     FilePath &LoaderFile() { return mFile; }
+    void SetUnk4(int i) { unk4 = i; }
+    int GetUnk4() const { return unk4; }
+    int GetLoadTimeStartMs() const { return mLoadTimeStartMs; }
+    void SetLoadTimeStartMs(int i) { mLoadTimeStartMs = i; }
+    int Heap() const { return mHeap; }
 
     MEM_OVERLOAD(Loader, 0xA8);
 
 protected:
-    virtual void PollLoading() = 0;
-
-    int unk4; // 0x4
+    int unk4; // 0x4 - poll idx?
     LoaderPos mPos; // 0x8
     FilePath mFile; // 0xc
-    int unk14; // 0x14
+    int mLoadTimeStartMs; // 0x14
     int mHeap; // 0x18
 };
 
@@ -81,6 +85,14 @@ public:
         return ret;
     }
     bool CheckSplit() { return mTimer.SplitMs() > unk1c; }
+    void SetUnk1c(float x) { unk1c = x; }
+    Loader *GetFirstLoading() {
+        if (mLoading.empty()) {
+            return nullptr;
+        } else {
+            return mLoading.front();
+        }
+    }
 
     void SetEditMode(bool);
     void SetCacheMode(bool mode) { mCacheMode = mode; }
@@ -103,7 +115,16 @@ typedef void (FileLoader::*FileLoaderStateFunc)(void);
 
 class FileLoader : public Loader {
 public:
-    FileLoader(const FilePath &, const char *, LoaderPos, int, bool, bool, BinStream *, const char *);
+    FileLoader(
+        const FilePath &,
+        const char *,
+        LoaderPos,
+        int,
+        bool,
+        bool,
+        BinStream *,
+        const char *
+    );
     virtual ~FileLoader();
     virtual const char *DebugText();
     virtual bool IsLoaded() const;

@@ -1,9 +1,9 @@
 #pragma once
 #include "game/SongDB.h"
 #include "hamobj/HamMaster.h"
+#include "meta/DataArraySongInfo.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
-#include "stl/_vector.h"
 #include "ui/UIPanel.h"
 #include "utl/BeatMap.h"
 #include "utl/MemMgr.h"
@@ -19,12 +19,11 @@ public:
     virtual DataNode Handle(DataArray *, bool);
     virtual bool SyncProperty(DataNode &, DataArray *, int, PropOp);
 
+    NEW_OBJ(LoadingPanel)
+
     LoadingPanel();
 
-    static HamMaster *sLoadingMaster; // DAT_8311A440
-    static SongDB *sSongDB; // DAT_8311A444 i think, def a SongDB
-
-    int unk38;
+    DataArraySongInfo *unk38;
     TempoMap *unk3c;
     BeatMap *unk40;
 
@@ -41,3 +40,5 @@ protected:
     Symbol ChooseLoadingScreen();
     void PlayLoadingMusic();
 };
+
+void ResetLoadingMusic();

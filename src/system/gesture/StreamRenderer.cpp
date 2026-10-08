@@ -1,17 +1,51 @@
 #include "gesture/StreamRenderer.h"
+#include "gesture/GestureMgr.h"
+#include "gesture/LiveCameraInput.h"
+#include "hamobj/HamGameData.h"
 #include "math/Color.h"
 #include "obj/Data.h"
 #include "obj/Dir.h"
 #include "obj/Object.h"
 #include "os/Debug.h"
+#include "rnddx9/Rnd.h"
 #include "rndobj/Cam.h"
 #include "rndobj/Draw.h"
+#include "rndobj/RenderState.h"
 #include "rndobj/Rnd.h"
+#include "rndobj/ShaderMgr.h"
+#include "rndobj/ShaderOptions.h"
 #include "rndobj/Tex.h"
 #include "rndobj/Utl.h"
 
 RndCam *StreamRenderer::mCam;
 RndTex *StreamRenderer::mBlurRT[2];
+
+namespace {
+    int *DisplayStreams;
+
+    bool CheckTexType(RndTex *tex) {
+        MILO_ASSERT(tex, 0x45);
+
+        if ((tex->GetType() & 2) == 0) {
+            MILO_NOTIFY_ONCE("%s not renderable", tex->Name());
+            return false;
+        }
+        return true;
+    }
+
+    RndTex *SetPaletteTexture(RndTex *tex, enum StreamDisplay display) {
+        if (tex) {
+            return tex;
+        }
+        if ((((display != kStreamPlayerDepthShell)
+              && (display != kStreamPlayerDepthShell2))
+             && (display != kStreamPlayerGreenscreen))
+            && (display != kStreamPlayerDepthGreenscreen)) {
+            return TheRnd.GetDefaultTex(1);
+        }
+        return TheRnd.GetDefaultTex(2);
+    }
+};
 
 StreamRenderer::StreamRenderer()
     : mOutputTex(this), mForceMips(false), mDisplay(kStreamColor), mNumBlurs(4),
@@ -29,8 +63,8 @@ StreamRenderer::StreamRenderer()
     for (int i = 0; i < 6; i++) {
         mSmoothers[i].SetSmoothParameters(6, 0);
     }
-    mLaggedPrimaryTexture[0] = 0;
-    mLaggedPrimaryTexture[1] = 0;
+    mLaggedPrimaryTexture[0] = nullptr;
+    mLaggedPrimaryTexture[1] = nullptr;
 }
 
 StreamRenderer::~StreamRenderer() {
@@ -51,6 +85,26 @@ BEGIN_HANDLERS(StreamRenderer)
         SetCrewPhotoPlayerDetected(_msg->Int(2), _msg->Int(3))
     )
     HANDLE_ACTION(set_crew_photo_player_centers, SetCrewPhotoPlayerCenters())
+    HANDLE_ACTION(
+        set_pink_player,
+        SetPinkPlayer(
+            TheGestureMgr->GetSkeletonIndexByTrackingID(
+                TheGameData->Player(_msg->Size() > 2 ? _msg->Int(2) : 0)
+                    ->GetSkeletonTrackingID()
+            )
+            + 1
+        )
+    )
+    HANDLE_ACTION(
+        set_blue_player,
+        SetBluePlayer(
+            TheGestureMgr->GetSkeletonIndexByTrackingID(
+                TheGameData->Player(_msg->Size() > 2 ? _msg->Int(2) : 0)
+                    ->GetSkeletonTrackingID()
+            )
+            + 1
+        )
+    )
 END_HANDLERS
 
 BEGIN_PROPSYNCS(StreamRenderer)
@@ -98,7 +152,7 @@ BEGIN_PROPSYNCS(StreamRenderer)
 END_PROPSYNCS
 
 BEGIN_SAVES(StreamRenderer)
-    SAVE_REVS(0xC, 1)
+    SAVE_REVS(12, 1)
     SAVE_SUPERCLASS(Hmx::Object)
     SAVE_SUPERCLASS(RndDrawable)
     bs << mOutputTex;
@@ -114,7 +168,7 @@ BEGIN_SAVES(StreamRenderer)
     bs << mPlayerOtherDepthPalette << mPlayerOtherDepthPaletteOffset;
     bs << mDrawPreClear << mForceDraw;
     bs << mLagPrimaryTexture;
-    bs << mPlayer1DepthColor << mPlayer2DepthColor << mPlayer3DepthColor;
+    bs << mPlayer4DepthColor << mPlayer5DepthColor << mPlayer6DepthColor;
     bs << mStaticColorIndices;
     bs << mCrewPhotoEdgeIterations;
     bs << mCrewPhotoEdgeOffset;
@@ -126,21 +180,151 @@ BEGIN_SAVES(StreamRenderer)
     bs << mCrewPhotoBackgroundBrightness;
 END_SAVES
 
+BEGIN_COPYS(StreamRenderer)
+    COPY_SUPERCLASS(Hmx::Object)
+    COPY_SUPERCLASS(RndDrawable)
+    CREATE_COPY(StreamRenderer)
+    BEGIN_COPYING_MEMBERS
+        COPY_MEMBER(mOutputTex)
+        COPY_MEMBER(mForceMips)
+        COPY_MEMBER(mDisplay)
+        COPY_MEMBER(mPlayer1DepthColor)
+        COPY_MEMBER(mPlayer2DepthColor)
+        COPY_MEMBER(mPlayer3DepthColor)
+        COPY_MEMBER(mPlayer4DepthColor)
+        COPY_MEMBER(mPlayer5DepthColor)
+        COPY_MEMBER(mPlayer6DepthColor)
+        COPY_MEMBER(mPlayerDepthNobody)
+        COPY_MEMBER(mPlayer1DepthPalette)
+        COPY_MEMBER(mPlayer1DepthPaletteOffset)
+        COPY_MEMBER(mPlayer2DepthPalette)
+        COPY_MEMBER(mPlayer2DepthPaletteOffset)
+        COPY_MEMBER(mPlayerOtherDepthPalette)
+        COPY_MEMBER(mPlayerOtherDepthPaletteOffset)
+        COPY_MEMBER(mBackgroundDepthPalette)
+        COPY_MEMBER(mBackgroundDepthPaletteOffset)
+        COPY_MEMBER(mNumBlurs)
+        COPY_MEMBER(mPCTestTex)
+        COPY_MEMBER(mDrawPreClear)
+        COPY_MEMBER(mForceDraw)
+        COPY_MEMBER(mLagPrimaryTexture)
+        COPY_MEMBER(mCrewPhotoEdgeIterations)
+        COPY_MEMBER(mCrewPhotoEdgeOffset)
+        COPY_MEMBER(mCrewPhotoHorizontalColor)
+        COPY_MEMBER(mCrewPhotoVerticalColor)
+        COPY_MEMBER(mCrewPhotoBlurStart)
+        COPY_MEMBER(mCrewPhotoBlurWidth)
+        COPY_MEMBER(mCrewPhotoBlurIterations)
+        COPY_MEMBER(mCrewPhotoBackgroundBrightness)
+        SetOutputTex();
+    END_COPYING_MEMBERS
+END_COPYS
+
+INIT_REVS(12, 1)
+
+BEGIN_LOADS(StreamRenderer)
+    LOAD_REVS(bs)
+    ASSERT_REVS(12, 1)
+    LOAD_SUPERCLASS(Hmx::Object)
+    LOAD_SUPERCLASS(RndDrawable)
+    d >> mOutputTex;
+    SetOutputTex();
+    d >> mForceMips;
+    d >> (int &)mDisplay;
+    if (d.rev > 1) {
+        d >> mPlayer1DepthColor >> mPlayer2DepthColor >> mPlayer3DepthColor
+            >> mPlayerDepthNobody >> mPlayer1DepthPalette >> mPlayer1DepthPaletteOffset;
+    }
+    if (d.rev > 2) {
+        d >> mBackgroundDepthPalette >> mBackgroundDepthPaletteOffset;
+    }
+    if (d.rev > 3) {
+        d >> mNumBlurs;
+    }
+    if (d.rev > 4) {
+        d >> mPCTestTex;
+    }
+    if (d.rev > 5) {
+        d >> mPlayer2DepthPalette;
+        d >> mPlayer2DepthPaletteOffset;
+    } else {
+        mPlayer2DepthPalette = mPlayer1DepthPalette;
+        mPlayer2DepthPaletteOffset = mPlayer1DepthPaletteOffset;
+    }
+    if (d.rev > 6) {
+        d >> mPlayerOtherDepthPalette;
+        d >> mPlayerOtherDepthPaletteOffset;
+    } else {
+        mPlayerOtherDepthPalette = mPlayer1DepthPalette;
+        mPlayerOtherDepthPaletteOffset = mPlayer1DepthPaletteOffset;
+    }
+    if (d.rev > 7) {
+        d >> mDrawPreClear;
+        if (d.altRev > 0) {
+            d >> mForceDraw;
+        }
+    }
+    if (d.rev > 8) {
+        d >> mLagPrimaryTexture;
+    }
+    if (d.rev > 9) {
+        d >> mPlayer4DepthColor >> mPlayer5DepthColor >> mPlayer6DepthColor;
+    } else {
+        mPlayer4DepthColor = mPlayer3DepthColor;
+        mPlayer5DepthColor = mPlayer3DepthColor;
+        mPlayer6DepthColor = mPlayer3DepthColor;
+    }
+    if (d.rev > 10) {
+        d >> mStaticColorIndices;
+    } else {
+        mStaticColorIndices = false;
+    }
+    if (d.rev > 11) {
+        d >> mCrewPhotoEdgeIterations;
+        d >> mCrewPhotoEdgeOffset;
+        d >> mCrewPhotoHorizontalColor;
+        d >> mCrewPhotoVerticalColor;
+        d >> mCrewPhotoBlurStart;
+        d >> mCrewPhotoBlurWidth;
+        d >> mCrewPhotoBlurIterations;
+        d >> mCrewPhotoBackgroundBrightness;
+    } else {
+        mCrewPhotoEdgeIterations = 0;
+        mCrewPhotoEdgeOffset = 0;
+        mCrewPhotoBlurStart = 0;
+        mCrewPhotoBlurWidth = 0;
+        mCrewPhotoBlurIterations = 0;
+        mCrewPhotoBackgroundBrightness = 0;
+        mCrewPhotoHorizontalColor = 0;
+        mCrewPhotoVerticalColor = 0;
+    }
+END_LOADS
+
+void StreamRenderer::DrawShowing() {
+    if (!mDrawPreClear) {
+        DrawToTexture();
+    }
+}
+
+void StreamRenderer::UpdatePreClearState() {
+    TheRnd.PreClearDrawAddOrRemove(this, mDrawPreClear, false);
+}
+
 void StreamRenderer::Init() {
     REGISTER_OBJ_FACTORY(StreamRenderer)
     MILO_ASSERT(!mCam, 0xC9);
     mCam = ObjectDir::Main()->New<RndCam>("[stream renderer cam]");
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < DIM(mBlurRT); i++) {
         MILO_ASSERT(mBlurRT[i] == NULL, 0xCF);
         mBlurRT[i] = Hmx::Object::New<RndTex>();
         mBlurRT[i]->SetBitmap(
-            0x140, 0xf0, TheRnd.Bpp(), RndTex::kTexRenderedNoZ, false, nullptr
+            320, 240, TheRnd.Bpp(), RndTex::kRenderedNoZ, false, nullptr
         );
     }
 }
 
 void StreamRenderer::Terminate() {
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < DIM(mBlurRT); i++) {
         RELEASE(mBlurRT[i]);
     }
     RELEASE(mCam);
@@ -151,10 +335,6 @@ void StreamRenderer::SetBluePlayer(int player) { mBluePlayer = player; }
 
 DataNode StreamRenderer::OnGetRenderTextures(DataArray *) {
     return GetRenderTextures(Dir());
-}
-
-void StreamRenderer::UpdatePreClearState() {
-    TheRnd.PreClearDrawAddOrRemove(this, mDrawPreClear, false);
 }
 
 void StreamRenderer::SetCrewPhotoHorizontalColor(DataArray *cfg) {
@@ -171,4 +351,139 @@ void StreamRenderer::SetCrewPhotoVerticalColor(DataArray *cfg) {
         mCrewPhotoVerticalColor.green = cfg->Float(1);
         mCrewPhotoVerticalColor.blue = cfg->Float(2);
     }
+}
+
+ShaderType StreamRenderer::GetShaderType() const {
+    ShaderType t = kDrawRectShader;
+    switch (mDisplay) {
+    case 0:
+        t = kYUVtoRGBShader;
+        break;
+    case 1:
+        t = kYUVtoBlackAndWhiteShader;
+        break;
+    case 2:
+        t = kDrawRectShader;
+        break;
+    case 3:
+        t = kPlayerDepthVisShader;
+        break;
+    case 4:
+        t = kPlayerDepthShellShader;
+        break;
+    case 5:
+        t = kPlayerDepthShell2Shader;
+        break;
+    case 6:
+        t = kPlayerGreenScreenShader;
+        break;
+    case 7:
+        t = kPlayerDepthGreenScreenShader;
+        break;
+    case 8:
+        t = kCrewPhotoShader;
+        break;
+    default:
+        MILO_FAIL("Unknown StreamDisplay in StreamRenderer");
+        break;
+    }
+    return t;
+}
+
+void StreamRenderer::SetCrewPhotoPlayerDetected(int player, bool b2) {
+    MILO_ASSERT_RANGE(player, 0, 6, 0x212);
+    float set = b2 ? 1.0f : 0.0f;
+    switch (player) {
+    case 0:
+        unk190 = set;
+        break;
+    case 1:
+        unk194 = set;
+        break;
+    case 2:
+        unk198 = set;
+        break;
+    case 3:
+        unk19c = set;
+        break;
+    case 4:
+        unk1a0 = set;
+        break;
+    case 5:
+        unk1a4 = set;
+        break;
+    default:
+        break;
+    }
+}
+
+void StreamRenderer::DrawToTexture() {
+    if (TheRnd.DrawMode() != Rnd::kDrawNormal)
+        return;
+    if (!Showing())
+        return;
+    if (mLagPrimaryTexture && mLaggedPrimaryTexture[0] == NULL) {
+        MILO_ASSERT(mLaggedPrimaryTexture[1] == NULL, 245);
+        mLaggedPrimaryTexture[0] = New<RndTex>();
+        mLaggedPrimaryTexture[0]->SetBitmap(
+            320, 240, 16, RndTex::kRegularLinear, false, nullptr
+        );
+        mLaggedPrimaryTexture[1] = New<RndTex>();
+        mLaggedPrimaryTexture[1]->SetBitmap(
+            320, 240, 16, RndTex::kRegularLinear, false, nullptr
+        );
+    }
+    if (mOutputTex == nullptr)
+        return;
+    TheDxRnd.SetShaderRegisterAlloc(static_cast<DxRnd::RegisterAlloc>(3));
+    LiveCameraInput *cam = TheGestureMgr->GetLiveCameraInput();
+    int stream = DisplayStreams[mDisplay];
+    int stream_wat = (stream & 2) >> 1;
+    if (stream & 1 && !cam->Unk11EA()) {
+        cam->PollNewStream(LiveCameraInput::kBufferDepth);
+    } else if ((stream_wat & 0xff) != 0 && !cam->Unk11E9()) {
+        cam->PollNewStream(LiveCameraInput::kBufferColor);
+    }
+
+    // 0x254
+    const RndTex *cam_tex = RndCam::Current()->TargetTex();
+    if (cam_tex != nullptr) {
+        MILO_NOTIFY_ONCE(
+            "%s: Cannot render to texture (%s) while already rendering to texture (%s).",
+            PathName(cam_tex),
+            PathName(this),
+            PathName(cam_tex)
+        );
+    }
+    mCam->SetTargetTex(nullptr);
+
+    // 0x390
+    TheRenderState.SetTextureFilter(0, RndRenderState::kFilterModePoint, false);
+    TheRenderState.SetTextureClamp(0, RndRenderState::kClampModeClamp);
+    RndTex *pal = SetPaletteTexture(mPlayer1DepthPalette, mDisplay);
+    TheShaderMgr.SetPConstant(static_cast<PShaderConstant>(10), pal);
+
+    TheRenderState.SetTextureFilter(10, RndRenderState::kFilterModeLinear, false);
+    TheRenderState.SetTextureClamp(10, RndRenderState::kClampModeWrap);
+    pal = SetPaletteTexture(mPlayer2DepthPalette, mDisplay);
+    TheShaderMgr.SetPConstant(static_cast<PShaderConstant>(12), pal);
+
+    TheRenderState.SetTextureFilter(12, RndRenderState::kFilterModeLinear, false);
+    TheRenderState.SetTextureClamp(12, RndRenderState::kClampModeWrap);
+    pal = SetPaletteTexture(mPlayerOtherDepthPalette, mDisplay);
+    TheShaderMgr.SetPConstant(static_cast<PShaderConstant>(14), pal);
+
+    TheRenderState.SetTextureFilter(14, RndRenderState::kFilterModeLinear, false);
+    TheRenderState.SetTextureClamp(14, RndRenderState::kClampModeWrap);
+    pal = SetPaletteTexture(mPlayerOtherDepthPalette, mDisplay);
+    TheShaderMgr.SetPConstant(static_cast<PShaderConstant>(11), pal);
+
+    TheRenderState.SetTextureFilter(11, RndRenderState::kFilterModeLinear, false);
+    TheRenderState.SetTextureClamp(11, RndRenderState::kClampModeWrap);
+    Vector4 v4;
+    v4.x = mPlayerDepthNobody.red;
+    v4.y = mPlayerDepthNobody.green;
+    v4.z = mPlayerDepthNobody.blue;
+    v4.w = mPlayerDepthNobody.alpha;
+    TheShaderMgr.SetPConstant(static_cast<PShaderConstant>(64), v4);
 }

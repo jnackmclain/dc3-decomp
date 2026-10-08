@@ -11,7 +11,7 @@ HamPanel::HamPanel() : mNavList(nullptr) {}
 
 void HamPanel::Enter() {
     UIPanel::Enter();
-    if (HasNavList()) {
+    if (ShouldUseLocalNavlist()) {
         HamNavList *right_hand = DataDir()->Find<HamNavList>("right_hand.hnl", false);
         mNavList = right_hand;
         if (right_hand == nullptr) {
@@ -21,8 +21,8 @@ void HamPanel::Enter() {
     }
     static Symbol draw_after_letterbox("draw_after_letterbox");
     auto letterbox = Property(draw_after_letterbox, false);
-    if (letterbox)
-        unk34 = !letterbox->Int();
+    if (letterbox && letterbox->Int() != 0)
+        unk34 = 1;
     else
         unk34 = 0;
 }
@@ -30,9 +30,8 @@ void HamPanel::Enter() {
 bool HamPanel::Exiting() const {
     if (UIPanel::Exiting()) {
         return true;
-    }
-    if (HasNavList() && mNavList != nullptr) {
-        return !mNavList->IsAnimating();
+    } else if (ShouldUseLocalNavlist() && mNavList && mNavList->IsAnimating()) {
+        return true;
     }
     return false;
 }
@@ -42,7 +41,16 @@ void HamPanel::Poll() { UIPanel::Poll(); }
 UIComponent *HamPanel::FocusComponent() {
     auto pEventDialog = TheHamUI.EventDialogPanel();
     MILO_ASSERT(pEventDialog, 60);
-    return UIPanel::FocusComponent();
+    if (pEventDialog->GetState() == kUp) {
+        if (pEventDialog == this) {
+            return UIPanel::FocusComponent();
+        }
+        return pEventDialog->FocusComponent();
+    }
+    if (!TheHamUI.GetOverlayPanel() || TheHamUI.GetOverlayPanel() == this) {
+        return UIPanel::FocusComponent();
+    }
+    return TheHamUI.GetOverlayPanel()->FocusComponent();
 }
 
 BEGIN_HANDLERS(HamPanel)

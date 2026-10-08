@@ -3,10 +3,13 @@
 #include "os/Platform.h"
 #include "os/Timer.h"
 #include "utl/BinStream.h"
+#include "utl/MemMgr.h"
 
 #define kChunkSizeMask 0x00ffffff
 #define kChunkUnusedMask 0xfe000000
 #define CHUNKSTREAM_Z_ID 0xCBBEDEAF
+#define CHUNKSTREAM_Z_ID2 0xCCBEDEAF
+#define CHUNKSTREAM_Z_ID3 0xCDBEDEAF
 #define kChunkIDMask 0xC0BEDEAF
 
 enum BufferState {
@@ -14,6 +17,21 @@ enum BufferState {
     kReading,
     kDecompressing,
     kReady,
+};
+
+struct DecompressTask {
+    DecompressTask(
+        int *size, char *data, BufferState *state, int out, int id, const char *name
+    )
+        : mChunkSize(size), mUncompressedData(data), mState(state),
+          mUncompressedSize(out), mID(id), mFilename(name) {}
+
+    int *mChunkSize; // 0x0
+    void *mUncompressedData; // 0x4
+    BufferState *mState; // 0x8
+    int mUncompressedSize; // 0xc
+    int mID; // 0x10
+    const char *mFilename; // 0x14
 };
 
 class ChunkStream : public BinStream {
@@ -37,7 +55,14 @@ public:
         kWrite = 1,
     };
 
-    ChunkStream(const char *, FileType, int, bool, Platform, bool);
+    ChunkStream(
+        const char *file,
+        FileType type,
+        int chunkSize,
+        bool compress,
+        Platform plat,
+        bool cached
+    );
     virtual ~ChunkStream();
     virtual void Flush() {}
     virtual int Tell();
@@ -47,10 +72,19 @@ public:
     virtual bool Cached() const;
     virtual Platform GetPlatform() const;
 
+    MEM_TEMP_OVERLOAD(ChunkStream, 0x31)
+
+    void PotentiallyWriteChunk() { MaybeWriteChunk(false); } // so dumb
+    static bool PollDecompressionWorker();
+
 private:
-    virtual void ReadImpl(void *, int);
-    virtual void WriteImpl(const void *, int);
+    virtual void ReadImpl(void *data, int bytes);
+    virtual void WriteImpl(const void *data, int bytes);
     virtual void SeekImpl(int, SeekType);
+
+    static void DecompressChunk(DecompressTask &);
+    void DecompressChunkAsync();
+    int WriteChunk();
 
     void SetPlatform(Platform);
     void ReadChunkAsync();
@@ -81,4 +115,6 @@ private:
 
 BinStream &MarkChunk(BinStream &);
 void SetActiveChunkObject(Hmx::Object *obj);
+BinStream &ReadChunks(BinStream &, void *, int, int);
 BinStream &WriteChunks(BinStream &, const void *, int, int);
+void DecompressMemHelper(const void *, int, void *, int &, const char *);

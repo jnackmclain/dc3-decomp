@@ -4,7 +4,10 @@
 #include "os/DateTime.h"
 #include "os/Debug.h"
 #include "rndobj/Text.h"
+#include "ui/ResourceDirPtr.h"
+#include "ui/UIColor.h"
 #include "ui/UIComponent.h"
+#include "ui/UILabelDir.h"
 #include "utl/BinStream.h"
 #include "utl/MemMgr.h"
 #include "utl/Symbol.h"
@@ -12,20 +15,18 @@
 class UILabel : public RndText, public UIComponent, public TextHolder {
 public:
     struct LabelStyle {
-        LabelStyle(Hmx::Object *);
-        ~LabelStyle();
-        int unk0;
-        int unk4;
-        int unk8;
-        int unkc;
-        int unk10;
-        int unk14;
-        int unk18;
-        int unk1c;
-        int unk20;
-        int unk24;
-        int unk28;
+        LabelStyle(Hmx::Object *owner) : mColorOverride(owner), mFontResource(owner) {}
+        __forceinline LabelStyle &operator=(const LabelStyle &style) {
+            mFontResource = style.mFontResource;
+            mColorOverride = style.mColorOverride;
+            return *this;
+        }
+
+        ObjPtr<UIColor> mColorOverride; // 0x0
+        ResourceDirPtr<UILabelDir> mFontResource; // 0x14
     };
+    friend bool __cdecl PropSync(LabelStyle &, DataNode &, DataArray *, int, PropOp);
+
     // Hmx::Object
     virtual ~UILabel() {}
     OBJ_CLASSNAME(UILabel)
@@ -38,12 +39,12 @@ public:
     virtual void PreLoad(BinStream &);
     virtual void PostLoad(BinStream &);
     // RndText
-    virtual Symbol TextToken();
+    virtual Symbol TextToken() { return mTextToken; }
     virtual void SetCreditsText(DataArray *, class UIListSlot *) {
         MILO_ASSERT(false, 0x50);
     }
     // UIComponent
-    virtual void Poll();
+    virtual void Poll() { UIComponent::Poll(); }
     virtual void Highlight();
     // TextHolder
     virtual void SetTextToken(Symbol);
@@ -62,16 +63,19 @@ public:
     void SetDateTime(DateTime const &, Symbol);
     void SetIcon(char);
     void SetTokenFmt(const DataArray *);
+    const RndText::Style &Style(int) const;
     RndText::Style &Style(int);
     void SetPrelocalizedString(String &);
     void SetSubtitle(const DataArray *);
     void SetTimeHMS(int, bool);
     bool CheckValid(bool);
     void SetEditText(char const *);
+    void Update();
 
     char const *GetDefaultText() const;
     void CenterWithLabel(UILabel *, bool, float);
     LabelStyle &LStyle(int);
+    const LabelStyle &LStyle(int) const;
 
     template <class T1>
     void SetTokenFmt(Symbol s, T1 t1) {
@@ -86,6 +90,11 @@ public:
     template <class T1, class T2, class T3>
     void SetTokenFmt(Symbol s, T1 t1, T2 t2, T3 t3) {
         SetTokenFmt(DataArrayPtr(s, t1, t2, t3));
+    }
+
+    template <class T1, class T2, class T3, class T4>
+    void SetTokenFmt(Symbol s, T1 t1, T2 t2, T3 t3, T4 t4) {
+        SetTokenFmt(DataArrayPtr(s, t1, t2, t3, t4));
     }
 
 protected:
@@ -107,13 +116,17 @@ protected:
 
     static bool sDeferUpdate;
     static bool sDebugHighlight;
+    static bool sInDebugHighlight;
 
     Symbol mTextToken; // 0x114
-    String unk118; // 0x118
-    char unk120;
-    bool unk121;
-    bool unk122;
-    ObjVector<LabelStyle> unk124; // 0x124
+    String mEditText; // 0x118
+    // this should be just one character, but because it gets grabbed as a const char*,
+    // the second byte serves as the null terminator
+    char mIcon[2]; // 0x120
+    bool mDirty; // 0x122
+    ObjVector<LabelStyle> mLabelStyles; // 0x124
 };
 
 bool PropSync(UILabel::LabelStyle &, DataNode &, DataArray *, int, PropOp);
+float GetPctHeightFromTextSize(float);
+float GetTextSizeFromPctHeight(float);

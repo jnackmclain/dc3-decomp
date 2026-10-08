@@ -1,12 +1,18 @@
 #include "ui/UIListSubList.h"
 #include "obj/Object.h"
+#include "ui/UIComponent.h"
 #include "ui/UIList.h"
 #include "ui/UIListSlot.h"
+#include "ui/UIListWidget.h"
 #include "utl/Loader.h"
 
 #pragma region UIListSubList
 
 UIListSubList::UIListSubList() : mList(this) {}
+
+BEGIN_HANDLERS(UIListSubList)
+    HANDLE_SUPERCLASS(UIListSlot)
+END_HANDLERS
 
 BEGIN_PROPSYNCS(UIListSubList)
     SYNC_PROP(list, mList)
@@ -26,15 +32,18 @@ BEGIN_COPYS(UIListSubList)
     COPY_MEMBER_FROM(sl, mList)
 END_COPYS
 
+INIT_REVS(0, 0)
+
 BEGIN_LOADS(UIListSubList)
     LOAD_REVS(bs)
     ASSERT_REVS(0, 0)
     LOAD_SUPERCLASS(UIListSlot)
-    bs >> mList;
+    d >> mList;
 END_LOADS
 
 UIList *UIListSubList::SubList(int index) {
-    UIListSubListElement *sle = dynamic_cast<UIListSubListElement *>(mElements[index]);
+    auto element = mElements[index];
+    UIListSubListElement *sle = dynamic_cast<UIListSubListElement *>(element);
     MILO_ASSERT(sle, 0x62);
     return sle->List();
 }
@@ -47,12 +56,35 @@ void UIListSubList::Draw(
     Box *box,
     DrawCommand cmd
 ) {
+    if (RootTrans()) {
+        int numElements = drawstate.mElements.size();
+        for (int i = 0; i < numElements; i++) {
+            const UIListElementDrawState &cur = drawstate.mElements[i];
+            UIList *uilist = SubList(i);
+            switch (cur.mElementState) {
+            case kUIListWidgetActive:
+                uilist->SetState(UIComponent::kNormal);
+                break;
+            case kUIListWidgetHighlight:
+                if (compstate == UIComponent::kFocused) {
+                    uilist->SetState(UIComponent::kFocused);
+                } else {
+                    uilist->SetState(UIComponent::kNormal);
+                }
+                break;
+            case kUIListWidgetInactive:
+                uilist->SetState(UIComponent::kDisabled);
+                break;
+            }
+        }
+    }
     UIListSlot::Draw(drawstate, liststate, tf, compstate, box, cmd);
 }
 
 UIListSlotElement *UIListSubList::CreateElement(UIList *parent) {
     MILO_ASSERT(mList, 0x8d);
-    UIList *l = dynamic_cast<UIList *>(Hmx::Object::NewObject(mList->ClassName()));
+    auto obj = Hmx::Object::NewObject(mList->ClassName());
+    UIList *l = dynamic_cast<UIList *>(obj);
     MILO_ASSERT(l, 0x90);
     l->SetParent(parent);
     l->SetType(mList->Type());

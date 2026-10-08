@@ -31,17 +31,26 @@ public:
     String GetPlayerName() const;
     SkeletonSide Side() const;
     void SetUsingFitness(bool);
+    Symbol GetPreferredOutfit() const;
+
     Difficulty GetDifficulty() { return mDifficulty; }
     PropertyEventProvider *Provider() const { return mProvider; }
     bool InFreestyle() const { return mSkeletonTrackingID >= 0; }
     Symbol Crew() const { return mCrew; }
     Symbol Char() const { return mChar; }
     Symbol Outfit() const { return mOutfit; }
+    Symbol Autoplay() const { return mAutoplay; }
     int GetSkeletonTrackingID() const { return mSkeletonTrackingID; }
     void AssignSkeleton(int id) { SetSkeletonTrackingID(id); }
     int PadNum() const { return mPadNum; }
     bool IsAutoplaying() const { return !mAutoplay.Null(); }
     void SetUnk48(Symbol s) { unk48 = s; }
+    Symbol Unk48() const { return unk48; }
+    void SetAutoplay(Symbol s) { mAutoplay = s; }
+    const String &Unk2c() const { return unk2c; }
+    void SetUnk2C(String &s) { unk2c = s; }
+    int Unk40() const { return unk40; }
+    std::vector<String> &GetUnk34() { return unk34; }
 
 private:
     void SetSkeletonTrackingID(int);

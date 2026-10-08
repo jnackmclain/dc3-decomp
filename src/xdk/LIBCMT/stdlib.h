@@ -11,7 +11,6 @@ void *calloc(size_t nitems, size_t size);
 void *realloc(void *ptr, size_t size);
 void free(void *);
 
-#pragma intrinsic(_alloca)
 void *_alloca(size_t size);
 
 typedef struct {
@@ -52,6 +51,15 @@ int __wctomb_noconv(char *, wchar_t);
 int mblen(const char *s, size_t n);
 int mbtowc(wchar_t *pwc, const char *s, size_t n);
 size_t mbstowcs(wchar_t *dst, const char *src, size_t len);
+
+int mbstowcs_s(
+    size_t *pReturnValue,
+    wchar_t *wcstr,
+    size_t sizeInWords,
+    const char *mbstr,
+    size_t count
+);
+
 int wctomb(char *s, wchar_t wc);
 size_t wcstombs(char *dst, const wchar_t *src, size_t len);
 
@@ -96,17 +104,25 @@ unsigned long long __strtoull(
 int atoi(const char *str);
 long atol(const char *str);
 long long atoll(const char *str);
+char *itoa(int value, char *str, int base);
 
 long strtol(const char *str, char **str_end, int base);
 long long strtoll(const char *str, char **str_end, int base);
 unsigned long strtoul(const char *str, char **str_end, int base);
 unsigned long long strtoull(const char *str, char **str_end, int base);
 
+unsigned long long _rotr64(unsigned long long value, int shift);
+unsigned int _rotr(unsigned int value, int shift);
+unsigned long long _rotl64(unsigned long long value, int shift);
+unsigned int _rotl(unsigned int value, int shift);
+unsigned long _lrotr(unsigned long value, int shift);
+unsigned long _lrotl(unsigned long value, int shift);
+
 int system(const char *command);
 char *getenv(const char *name);
 
 int atexit(void (*func)(void));
-void exit(int);
+__declspec(noreturn) void exit(int status);
 void abort(void);
 void _Exit(int exit_code);
 

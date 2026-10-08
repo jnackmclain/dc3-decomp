@@ -1,7 +1,9 @@
 #pragma once
+#include "macros.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
 #include "os/DateTime.h"
+#include "os/Debug.h"
 #include "ui/UILabel.h"
 #include "ui/UIListLabel.h"
 #include "utl/Symbol.h"
@@ -24,19 +26,58 @@ public:
     virtual ~NavListItemSortCmp() {}
     virtual int Compare(const NavListItemSortCmp *, NavListNodeType) const = 0;
     virtual bool HasSubheader() const { return false; }
-    virtual const class DifficultyCmp *GetDifficultyCmp() const;
-    virtual const class SongCmp *GetSongCmp() const;
-    virtual const class ArtistCmp *GetArtistCmp() const; // tentative
-    virtual const class LocationCmp *GetLocationCmp() const; // tentative
-    virtual const class DecadeCmp *GetDecadeCmp() const; // tentative
-    virtual const class VenueCmp *GetVenueCmp() const; // tentative
-    virtual const class DateCmp *GetDateCmp() const; // tentative
-    virtual const class AlbumCmp *GetAlbumCmp() const; // tentative
-    virtual const class VocalPartsCmp *GetVocalPartsCmp() const; // tentative
-    virtual const class PlaylistTypeCmp *GetPlaylistTypeCmp() const;
-    virtual const class ChallengeScoreCmp *GetChallengeScoreCmp() const;
-    virtual const class MQSongCharCmp *GetMQSongCharCmp() const; // tentative
-    virtual const class FitnessCalorieSortCmp *GetFitnessCalorieSortCmp() const;
+    virtual const class DifficultyCmp *GetDifficultyCmp() const {
+        MILO_FAIL("Conversion to the wrong type\n");
+        return nullptr;
+    } // 0xc
+    virtual const class SongCmp *GetSongCmp() const {
+        MILO_FAIL("Conversion to the wrong type\n");
+        return nullptr;
+    } // 0x10
+    virtual const class ArtistCmp *GetArtistCmp() const {
+        MILO_FAIL("Conversion to the wrong type\n");
+        return nullptr;
+    } // tentative
+    virtual const class DecadeCmp *GetDecadeCmp() const {
+        MILO_FAIL("Conversion to the wrong type\n");
+        return nullptr;
+    } // tentative
+    virtual const class VenueCmp *GetVenueCmp() const {
+        MILO_FAIL("Conversion to the wrong type\n");
+        return nullptr;
+    } // tentative
+    virtual const class DateCmp *GetDateCmp() const {
+        MILO_FAIL("Conversion to the wrong type\n");
+        return nullptr;
+    } // tentative
+    virtual const class LocationCmp *GetLocationCmp() const {
+        MILO_FAIL("Conversion to the wrong type\n");
+        return nullptr;
+    } // tentative - 0x24
+    virtual const class AlbumCmp *GetAlbumCmp() const {
+        MILO_FAIL("Conversion to the wrong type\n");
+        return nullptr;
+    } // tentative
+    virtual const class VocalPartsCmp *GetVocalPartsCmp() const {
+        MILO_FAIL("Conversion to the wrong type\n");
+        return nullptr;
+    } // tentative
+    virtual const class PlaylistTypeCmp *GetPlaylistTypeCmp() const {
+        MILO_FAIL("Conversion to the wrong type\n");
+        return nullptr;
+    } // 0x30
+    virtual const class ChallengeScoreCmp *GetChallengeScoreCmp() const {
+        MILO_FAIL("Conversion to the wrong type\n");
+        return nullptr;
+    } // 0x34
+    virtual const class MQSongCharCmp *GetMQSongCharCmp() const {
+        MILO_FAIL("Conversion to the wrong type\n");
+        return nullptr;
+    } // tentative
+    virtual const class FitnessCalorieSortCmp *GetFitnessCalorieSortCmp() const {
+        MILO_FAIL("Conversion to the wrong type\n");
+        return nullptr;
+    } // 0x3c
 };
 
 class NavListNode : public Hmx::Object {
@@ -50,6 +91,9 @@ public:
 
     int Compare(const NavListNode *, NavListNodeType) const;
     void GetID(DataArray *);
+    NavListItemSortCmp *GetCmp() { return mCmp; }
+    NavListNode *Parent() const { return mParent; }
+    void SetParent(NavListNode *parent) { mParent = parent; }
 
 protected:
     NavListItemSortCmp *mCmp; // 0x2c
@@ -77,8 +121,8 @@ public:
     virtual void Text(UIListLabel *, UILabel *) const;
     virtual void Custom(UIListCustom *, Hmx::Object *) const;
     virtual RndMat *Mat(UIListMesh *) const { return nullptr; }
-    virtual bool IsEnabled() const = 0; // 0x9c
-    virtual bool IsActive() const = 0; // 0xa0
+    virtual bool IsActive() const = 0; // 0x9c
+    virtual bool IsEnabled() const = 0; // 0xa0
     virtual const char *GetAlbumArtPath() = 0; // 0xa4
     virtual void DeleteAll();
     virtual void Renumber(std::vector<NavListSortNode *> &);
@@ -86,8 +130,14 @@ public:
 
     void SetShortcut(NavListShortcutNode *);
     int StartIndex() const { return mStartIx; }
+    void SetStartIndex(int idx) { mStartIx = idx; }
     NavListShortcutNode *GetShortcut() const { return mShortcut; }
-    const std::list<NavListSortNode *> &Children() const { return mChildren; }
+    std::list<NavListSortNode *> &Children() { return mChildren; }
+    NavListSortNode *FirstChild() const { return mChildren.front(); }
+    bool HasChildren() const { return !mChildren.empty(); }
+    int GetStartIx() { return mStartIx; }
+    void ClearList() { mChildren.clear(); }
+    bool IsFunctionType() { return GetType() == kNodeFunction; }
 
 protected:
     std::list<NavListSortNode *> mChildren; // 0x34
@@ -105,21 +155,23 @@ public:
     virtual const DateTime *GetDateTime() const { return mDateTime; }
     virtual void DeleteAll();
 
-    void Insert(class NavListItemNode *, class NavListSort *);
-    void
-    InsertHeaderRange(class NavListItemNode **, class NavListItemNode **, class NavListSort *);
+    void Insert(class NavListItemNode *, NavListSort *);
+    void InsertHeaderRange(NavListItemNode **, NavListItemNode **, NavListSort *);
     NavListSortNode *GetFirstActive();
     bool IsActive() const;
     void FinishBuildList(NavListSort *);
     void FinishSort(NavListSort *);
     void Renumber(std::vector<NavListSortNode *> &);
-    const std::list<NavListSortNode *> &Children() const { return mChildren; }
+    std::list<NavListSortNode *> &Children() { return mChildren; }
+    NavListSortNode *FirstChild() const { return mChildren.front(); }
+    void InsertNode(NavListSortNode *node) { mChildren.push_back(node); }
 
 protected:
     Symbol mToken; // 0x34
     bool mLocalizeToken; // 0x38
     DateTime *mDateTime; // 0x3c
     std::list<NavListSortNode *> mChildren; // 0x40
+    u32 unk44;
 };
 
 class NavListItemNode : public NavListSortNode {
@@ -143,7 +195,7 @@ public:
     virtual void Text(UIListLabel *, UILabel *) const;
     virtual void Custom(UIListCustom *, Hmx::Object *) const {}
     virtual RndMat *Mat(UIListMesh *) const;
-    virtual bool IsEnabled() const { return IsEnabled(); } // lmao what
+    virtual bool IsEnabled() const { return IsActive(); }
     virtual bool IsActive() const { return true; }
     virtual const char *GetAlbumArtPath() { return nullptr; }
     virtual void Renumber(std::vector<NavListSortNode *> &);
@@ -153,19 +205,28 @@ public:
     Symbol HeaderText() const;
     bool UseQuickplayPerformer();
 
+    Symbol Header() const { return mHeader; }
+
 protected:
     Symbol mHeader; // 0x44
 };
 
 class NavListFunctionNode : public NavListSortNode {
 public:
-    NavListFunctionNode(NavListItemSortCmp *, Symbol, const char *);
+    NavListFunctionNode(NavListItemSortCmp *cmp, Symbol s, const char *c)
+        : NavListSortNode(cmp), unk44(c), unk4c(s) {}
     virtual ~NavListFunctionNode() {}
     virtual DataNode Handle(DataArray *, bool);
     virtual NavListNodeType GetType() const { return kNodeFunction; }
-    virtual Symbol GetToken() const { return unk4c; }
+    virtual Symbol GetToken() const;
+    virtual Symbol OnSelect();
     virtual Symbol Select();
-    virtual bool IsEnabled() const { return IsEnabled(); } // lmao what
+    virtual void OnHighlight();
+    virtual void OnUnHighlight();
+    virtual void SetCollapseIconLabel(UILabel *);
+    virtual int GetItemCount();
+    virtual NavListSortNode *GetFirstActive();
+    virtual bool IsEnabled() const;
     virtual bool IsActive() const { return false; }
     virtual const char *GetAlbumArtPath() { return unk44.c_str(); }
     virtual void Renumber(std::vector<NavListSortNode *> &);
@@ -197,10 +258,10 @@ public:
     virtual int GetItemCount() { return 0; }
     virtual NavListSortNode *GetFirstActive() { return nullptr; }
     virtual bool IsEnabled() const;
-    virtual bool IsActive() const { return IsActive(); } // ok then
+    virtual bool IsActive() const { return IsEnabled(); }
     virtual const char *GetAlbumArtPath() { return nullptr; }
     virtual void Insert(NavListItemNode *, NavListSort *);
-    virtual void UpdateItemCount(NavListItemNode *) {}
+    virtual void UpdateItemCount(NavListItemNode *) {} // 0xb8
     virtual UILabel *GetCollapseIconLabel() const { return mCollapseIconLabel; }
     virtual Symbol SelectChildren(std::list<NavListSortNode *> &, int);
     virtual void SetItemCountString(UILabel *) const;

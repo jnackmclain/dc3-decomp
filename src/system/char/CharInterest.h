@@ -24,6 +24,14 @@ public:
     bool IsMatchingFilterFlags(int);
     float
     ComputeScore(const Vector3 &, const Vector3 &, const Vector3 &, float, int, bool);
+    const CharEyeDartRuleset *GetDartRulesetOverride() const;
+    float RefractoryPeriod() const { return mRefractoryPeriod; }
+    bool OverridesMinTargetDist() const { return mOverridesMinTargetDist; }
+    float MinTargetDistOverride() const { return mMinTargetDistOverride; }
+    float MaxViewAngleCos() const { return mMaxViewAngleCos; }
+    int CategoryFlags() const { return mCategoryFlags; }
+    float MinLookTime() const { return mMinLookTime; }
+    float MaxLookTime() const { return mMaxLookTime; }
 
 protected:
     CharInterest();

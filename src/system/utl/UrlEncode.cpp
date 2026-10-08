@@ -13,25 +13,26 @@ namespace {
     }
 }
 
+const char *const reserved = "$&+,/:;=?@";
+const char *const forbidden = " \"<>#%{}|\\^~[]`";
+const char *const hexstr = "0123456789ABCDEF";
+
 void URLEncode(char const *input, String &output, bool escapeUnsafe) {
-    char const *reserved = "$&+,/:;=?@\"<>";
-    char const *unsafe = "#%{}|\\^~[]`";
-    char const *hexmap = "0123456789ABCDEF";
     int length = strlen(input);
-
-    for (int i = 0; i < length; ++i) {
+    for (int i = 0; i < length; i++) {
         char c = input[i];
-        if (IsCharInString(c, unsafe) || IsCharInString(c, reserved) || c < ' '
-            || c > '~') {
-            output += '%';
-
-            if (escapeUnsafe && (c < ' ' || c > '~')) {
-                output += "2";
-            } else {
-                output += hexmap[c >> 4];
-                c = hexmap[c & 0xf];
-            }
+        if (!IsCharInString(c, forbidden) && !IsCharInString(c, reserved) && c >= ' '
+            && c <= '~') {
             output += c;
+        } else {
+            output += "%";
+            if (escapeUnsafe && (c < ' ' || c > '~')) {
+                output += hexstr[(' ' >> 4) & 0xF];
+                output += hexstr[(' ') & 0xF];
+            } else {
+                output += hexstr[(c >> 4) & 0xF];
+                output += hexstr[c & 0xF];
+            }
         }
     }
 }

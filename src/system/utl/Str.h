@@ -23,11 +23,6 @@ protected:
 public:
     FixedString();
     FixedString(char *, int);
-    ~FixedString() {
-        if (capacity() != 0) {
-            MemOrPoolFree(capacity() + 5, mStr - 4);
-        }
-    }
 
     unsigned int length() const { return strlen(mStr); }
     unsigned int size() const { return strlen(mStr); }
@@ -57,7 +52,7 @@ public:
     static const unsigned int npos;
 };
 
-class String : public TextStream, public FixedString {
+class String : public FixedString, public TextStream {
     // TextStream vtable = 0x0
     // FixedString = 0x4
 public:
@@ -104,7 +99,7 @@ public:
     String substr(unsigned int) const;
     String substr(unsigned int, unsigned int) const;
 
-    // void swap(String &);
+    void swap(String &);
     String &replace(unsigned int, unsigned int, const char *);
     String &erase();
     String &erase(unsigned int);
@@ -118,20 +113,28 @@ bool SearchReplace(const char *, const char *, const char *, char *);
 bool StrNCopy(char *, const char *, int);
 void RemoveSpaces(char *, int, const char *);
 
-inline TextStream &operator<<(TextStream &ts, const String &str) {
+inline TextStream &operator<<(TextStream &ts, const FixedString &str) {
     ts.Print(str.c_str());
     return ts;
 }
 
 template <int N>
-class StackString : public TextStream, public FixedString {
+class StackString : public FixedString, public TextStream {
 private:
     char mStack[N];
 
 public:
     StackString() : FixedString(mStack, N + 5) {}
     StackString(const char *str) : FixedString(mStack, N + 5) { *this += str; }
-    // virtual ~StackString() {} // dtor is at 0x8269E480
     virtual void Print(const char *str) { *this += str; }
-    operator const char *() const { return c_str(); }
+
+    StackString &operator=(const StackString &str) {
+        const FixedString &fStr = str;
+        mStr[0] = '\0';
+        *this += fStr.c_str();
+        for (int i = 0; i < N + 5; i++) {
+            mStack[i] = str.mStack[i];
+        }
+        return *this;
+    }
 };

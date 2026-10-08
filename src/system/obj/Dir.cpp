@@ -35,7 +35,7 @@ ObjectDir::ObjectDir()
     : mHashTable(0, Entry(), Entry(), 0), mStringTable(0), mProxyOverride(false),
       mInlineProxyType(kInlineCached), mLoader(nullptr), mIsSubDir(false),
       mInlineSubDirType(kInlineNever), mPathName(gNullStr), mViewports(7),
-      mCurViewportID((ViewportId)0), unk8c(nullptr), mCurCam(nullptr), mAlwaysInlined(0),
+      mCurViewport(kPerspective), mCurAnim(nullptr), mCurCam(nullptr), mAlwaysInlined(0),
       mAlwaysInlineHash(gNullStr) {
     ResetViewports();
 }
@@ -117,6 +117,7 @@ ObjectDir *SyncSubDir(const FilePath &fp, ObjectDir *dir) {
         }
         return retDir;
     }
+    // FIXME:
     // i would think you'd wanna return nullptr here if there's no dirLoader
     // but this is what HMX did
 }
@@ -217,15 +218,15 @@ void ObjectDir::Save(BinStream &bs) {
         bs << 0;
     }
     bs << mViewports;
-    bs << mCurViewportID;
+    bs << mCurViewport;
     bs << (unsigned char)mInlineProxyType;
     bs << mProxyFile;
     std::vector<ObjDirPtr<ObjectDir> > inlinedSubDirs;
     std::vector<ObjDirPtr<ObjectDir> > notInlinedSubDirs;
     if (SaveSubdirs()) {
         for (int i = 0; i < mSubDirs.size(); i++) {
-            if (mSubDirs[i]) {
-                ObjDirPtr<ObjectDir> &curSubDir = mSubDirs[i];
+            ObjDirPtr<ObjectDir> &curSubDir = mSubDirs[i];
+            if (curSubDir.Ptr()) {
                 if (curSubDir->InlineSubDirType() != kInlineNever) {
                     inlinedSubDirs.push_back(curSubDir);
                 } else {
@@ -237,30 +238,31 @@ void ObjectDir::Save(BinStream &bs) {
     bs << notInlinedSubDirs;
     bs << (unsigned char)mInlineSubDirType;
     bs << inlinedSubDirs;
-
     for (int i = 0; i < inlinedSubDirs.size(); i++) {
-        InlineDirType iType = ((ObjectDir *)inlinedSubDirs[i])->InlineSubDirType();
+        InlineDirType iType = inlinedSubDirs[i].Ptr()->InlineSubDirType();
         bs << (unsigned char)iType;
         SaveInlined(inlinedSubDirs[i].GetFile(), false, iType);
     }
-
     std::vector<bool> boolVec;
     boolVec.resize(mInlinedDirs.size(), false);
     for (int i = 0; i < mInlinedDirs.size(); i++) {
         InlinedDir &id = mInlinedDirs[i];
+        const FilePath &idFile = id.file;
         switch (id.mType) {
-        case kInlineCachedShared:
-            id.shared = true;
-        case kInlineCached: {
-            bool old = gLoadingProxyFromDisk;
-            if (!bs.Cached()) {
-                id.dir = nullptr;
-            } else {
+        case kInlineCached:
+        case kInlineCachedShared: {
+            if (id.mType == kInlineCachedShared) {
+                id.shared = true;
+            }
+            if (bs.Cached()) {
+                bool old = gLoadingProxyFromDisk;
                 gLoadingProxyFromDisk = false;
                 DirLoader::SetCacheMode(false);
-                id.dir.LoadFile(id.file, false, false, kLoadFront, true);
+                id.dir.LoadFile(idFile, false, false, kLoadFront, true);
                 DirLoader::SetCacheMode(true);
                 gLoadingProxyFromDisk = old;
+            } else {
+                id.dir = nullptr;
             }
             break;
         }
@@ -268,11 +270,12 @@ void ObjectDir::Save(BinStream &bs) {
             MILO_ASSERT(id.mType == kInlineAlways, 0x211);
             int gg = 0;
             for (; gg != mSubDirs.size(); gg++) {
-                if (mSubDirs[gg].GetFile() == id.file)
+                if (mSubDirs[gg].GetFile() == idFile) {
                     break;
+                }
             }
             MILO_ASSERT(gg < mSubDirs.size(), 0x21A);
-            id.dir = (ObjectDir *)mSubDirs[gg];
+            id.dir = mSubDirs[gg];
             if (id.shared) {
                 id.shared = false;
                 MILO_NOTIFY("Can't share kInlineAlways dirs");
@@ -280,9 +283,10 @@ void ObjectDir::Save(BinStream &bs) {
             break;
         }
         }
-        // what's happening here?
         if (id.dir) {
+            boolVec[i] = id.shared && !bs.AddSharedInlined(idFile);
         } else {
+            boolVec[i] = true;
         }
         bs << boolVec[i];
     }
@@ -292,43 +296,44 @@ void ObjectDir::Save(BinStream &bs) {
     for (int i = mInlinedDirs.size() - 1; i >= 0; i--) {
         InlinedDir &id = mInlinedDirs[i];
         if (!boolVec[i]) {
-            if (id.dir->IsSubDir()) {
+            bool subDir = id.dir->IsSubDir();
+            if (subDir) {
                 RemovingSubDir(id.dir);
             }
-            String dirName = id.dir->Name();
-            ObjectDir *dirDir = id.dir->Dir();
-            if (!id.shared) {
-                ObjectDir *dirToSet = id.dir;
-                if (dirToSet->Dir()) {
-                    int uniqIdx = 0;
-                    const char *uniqStr;
-                    while (true) {
-                        uniqStr = MakeString("uniq%x", uniqIdx);
-                        if (!dirToSet->FindContainingDir(uniqStr)
-                            && !FindContainingDir(uniqStr))
-                            break;
-                        uniqIdx++;
+            {
+                String dirName = id.dir->Name();
+                ObjectDir *dirDir = id.dir->Dir();
+                if (!id.shared) {
+                    ObjectDir *dirToSet = id.dir;
+                    if (dirToSet->Dir()) {
+                        int uniqIdx = 0;
+                        const char *uniqStr;
+                        while (true) {
+                            uniqStr = MakeString("uniq%x", uniqIdx);
+                            if (!dirToSet->FindContainingDir(uniqStr)
+                                && !FindContainingDir(uniqStr))
+                                break;
+                            uniqIdx++;
+                        }
+                        dirToSet->SetName(uniqStr, dirToSet);
                     }
-                    dirToSet->SetName(uniqStr, dirToSet);
+                }
+                FilePathTracker tracker(FileGetPath(id.file.c_str()));
+                DirLoader::SaveObjects(bs, id.dir);
+                if (!id.shared) {
+                    id.dir->SetName(dirName.c_str(), dirDir);
                 }
             }
-            FilePathTracker tracker(FileGetPath(id.file.c_str()));
-            DirLoader::SaveObjects(bs, id.dir);
-            if (!id.shared) {
-                id.dir->SetName(dirName.c_str(), dirDir);
-            }
-            if (id.dir->IsSubDir()) {
+            if (subDir) {
                 AddedSubDir(id.dir);
             }
         }
     }
-    std::vector<InlinedDir> unused;
-    mCurViewportID = (ViewportId)0;
-    const char *nextname = unk8c ? unk8c->Name() : "";
+    std::vector<InlinedDir> tmp;
+    tmp.swap(mInlinedDirs);
     gLoadingProxyFromDisk = oldProxy;
-    bs << nextname;
-    const char *camName = mCurCam ? mCurCam->Name() : "";
-    bs << camName;
+    bs << (mCurAnim ? mCurAnim->Name() : "");
+    bs << (mCurCam ? mCurCam->Name() : "");
     SaveRest(bs);
     gLoadingProxyFromDisk = false;
 }
@@ -340,7 +345,7 @@ BEGIN_COPYS(ObjectDir)
         BEGIN_COPYING_MEMBERS
             if (!IsProxy()) {
                 COPY_MEMBER(mViewports)
-                COPY_MEMBER(mCurViewportID)
+                COPY_MEMBER(mCurViewport)
                 for (int i = 0; i < mSubDirs.size(); i++) {
                     RemovingSubDir(mSubDirs[i]);
                 }
@@ -364,6 +369,335 @@ void ObjectDir::Load(BinStream &bs) {
 }
 
 void ObjectDir::PostSave(BinStream &) { SyncObjects(); }
+
+INIT_REVS(0x1C, 0)
+
+void ObjectDir::PreLoad(BinStream &bs) {
+    LOAD_REVS(bs)
+    ASSERT_REVS(0x1C, 0)
+
+    if (d.rev > 0x15) {
+        Hmx::Object::LoadType(d.stream);
+    } else if (d.rev > 1 && d.rev < 0x11) {
+        Hmx::Object::Load(d.stream);
+    }
+    if (d.rev < 3) {
+        int i, j;
+        d.stream >> i >> j;
+        Reserve(i, j);
+    }
+    if (d.rev > 0x19) {
+        if (d.rev < 0x1B) {
+            bool b;
+            d >> b;
+            mAlwaysInlined = b != false;
+        } else {
+            d >> mAlwaysInlined;
+        }
+        int toAlloc;
+        d >> toAlloc;
+        if (toAlloc) {
+            mAlwaysInlineHash =
+                (char *)MemOrPoolAlloc(toAlloc + 1, __FILE__, 0x30A, "Always Inline CDB");
+            char *hash = (char *)mAlwaysInlineHash;
+            d.stream.Read(hash, toAlloc);
+            ((char *)mAlwaysInlineHash)[toAlloc] = '\0';
+        }
+    }
+    if (d.rev > 1) {
+        d >> mViewports;
+        d >> (int &)mCurViewport;
+        if (d.rev == 3 && mCurViewport > kBack) {
+            mCurViewport = kBack;
+        }
+    }
+    if (d.rev > 0xC) {
+        if (d.rev > 0x13) {
+            InlineDirType idType;
+            if (d.rev > 0x1B) {
+                d >> idType;
+            } else {
+                bool b;
+                d >> b;
+                idType = b != false ? kInlineCached : kInlineNever;
+            }
+            if (!gLoadingProxyFromDisk) {
+                mInlineProxyType = idType;
+            }
+        }
+        if (!gLoadingProxyFromDisk && !mProxyOverride) {
+            FilePath fp;
+            d >> fp;
+            if (!fp.empty() && fp == mProxyFile) {
+                mProxyOverride = true;
+            } else {
+                if (!DirLoader::ShouldBlockSubdirLoad(fp)) {
+                    mProxyFile = fp;
+                }
+                mProxyOverride = false;
+            }
+        } else {
+            if (mProxyOverride && mInlineProxyType != kInlineNever) {
+                MILO_FAIL("You cannot override an inlined proxy!");
+            }
+            FilePath fp;
+            d >> fp;
+            mProxyOverride = false;
+        }
+    }
+    char anim[0x80];
+    char cam[0x80];
+    char dummy[0x80];
+    if (d.rev > 1 && d.rev < 0xB) {
+        d.stream.ReadString(anim, 0x80);
+        mCurAnim = FindObject(anim, false, true);
+    }
+    if (d.rev > 3 && d.rev < 0xB) {
+        d.stream.ReadString(cam, 0x80);
+        mCurCam = FindObject(cam, false, true);
+        if (!mCurCam && mCurViewport == kCustom) {
+            mCurViewport = kPerspective;
+        }
+    }
+    if (d.rev == 5) {
+        d.stream.ReadString(dummy, 0x80);
+    }
+    static std::vector<FilePath> inlinedSubDirs;
+    static std::vector<FilePath> notInlinedSubDirs;
+    if (d.rev > 2) {
+        d >> notInlinedSubDirs;
+        auto notInlinedEnd = notInlinedSubDirs.end();
+        auto notInlinedRemoveIt = std::remove_if(
+            notInlinedSubDirs.begin(), notInlinedEnd, DirLoader::ShouldBlockSubdirLoad
+        );
+        if (notInlinedRemoveIt != notInlinedEnd) {
+            notInlinedSubDirs.erase(notInlinedRemoveIt, notInlinedEnd);
+        }
+        std::vector<int> intVec;
+        if (d.rev == 0x17) {
+            d >> intVec;
+        }
+        if (d.rev > 0x14) {
+            d >> mInlineSubDirType;
+            d >> inlinedSubDirs;
+            auto inlinedEnd = inlinedSubDirs.end();
+            auto inlinedRemoveIt = std::remove_if(
+                inlinedSubDirs.begin(),
+                inlinedSubDirs.end(),
+                DirLoader::ShouldBlockSubdirLoad
+            );
+            if (inlinedRemoveIt != inlinedEnd) {
+                inlinedSubDirs.erase(inlinedRemoveIt, inlinedEnd);
+            }
+        } else {
+            inlinedSubDirs.clear();
+        }
+
+        int i17 = 0;
+        if (SaveSubdirs() || inlinedSubDirs.size() || notInlinedSubDirs.size()) {
+            for (int i = 0; i < mSubDirs.size(); i++) {
+                RemovingSubDir(mSubDirs[i]);
+            }
+            if (!d.stream.Cached()
+                && notInlinedSubDirs.size() + inlinedSubDirs.size() == mSubDirs.size()) {
+                i17 = 1;
+            } else {
+                mSubDirs.reserve(notInlinedSubDirs.size() + inlinedSubDirs.size());
+                mSubDirs.resize(notInlinedSubDirs.size() + inlinedSubDirs.size());
+            }
+        } else {
+            i17 = 2;
+        }
+
+        for (int i = 0; i != notInlinedSubDirs.size(); i++) {
+            bool filesneq = mSubDirs[i].GetFile() != notInlinedSubDirs[i];
+            if (i17 == 0 || filesneq) {
+                bool b17 = false;
+                if (intVec.size() > 0) {
+                    b17 = intVec[i];
+                }
+                LoadSubDir(i, notInlinedSubDirs[i], bs, !b17);
+            }
+        }
+
+        if (d.rev > 0x17) {
+            int numNotInlined = notInlinedSubDirs.size();
+            for (int i = 0; i < inlinedSubDirs.size(); i++) {
+                bool getfileres =
+                    mSubDirs[i + numNotInlined].GetFile() != inlinedSubDirs[i];
+                InlineDirType dType;
+                if (d.rev > 0x18) {
+                    unsigned char b;
+                    d >> b;
+                    MILO_ASSERT_RANGE_EQ(b, kInlineCached, kInlineCachedShared, 0x3BE);
+                    dType = (InlineDirType)b;
+                } else {
+                    dType = kInlineCached;
+                }
+                inlinedSubDirs[i] = GetSubDirPath(inlinedSubDirs[i], d.stream);
+                PreLoadInlined(inlinedSubDirs[i], false, dType);
+                if (i17 == 1) {
+                    d.stream.PushRev(getfileres, this);
+                }
+            }
+            d.stream.PushRev(numNotInlined, this);
+            if (!d.stream.Cached()) {
+                d.stream.PushRev(i17, this);
+            }
+        }
+    }
+    if (d.rev > 0xB && d.rev < 0xE) {
+        OldLoadProxies(d.stream, d.rev);
+    }
+
+    if (d.rev < 0x13) {
+        if (d.rev > 0xF) {
+            int inlineProxy;
+            d >> inlineProxy;
+            MILO_ASSERT(inlineProxy != 1, 0x3DC);
+        } else if (d.rev > 0xE) {
+            bool inlineProxy;
+            d >> inlineProxy;
+            MILO_ASSERT(!inlineProxy, 0x3E1);
+        }
+    }
+
+    std::vector<bool> boolvec;
+    boolvec.resize(mInlinedDirs.size());
+    for (int i = 0; i < mInlinedDirs.size(); i++) {
+        if (d.rev < 0x19 && !d.stream.Cached()) {
+            boolvec[i] = true;
+        } else {
+            bool b;
+            d >> b;
+            boolvec[i] = b;
+        }
+    }
+
+    for (int i = 0; i < mInlinedDirs.size(); i++) {
+        InlinedDir &curIDir = mInlinedDirs[i];
+        FilePath fpath(curIDir.file);
+        if (!d.stream.Cached() || !boolvec[i]) {
+            if (!boolvec[i] && (curIDir.mType == kInlineAlways || d.stream.Cached())) {
+                curIDir.dir.LoadInlinedFile(fpath, d.stream);
+            } else if (IsProxy() && !mProxyFile.empty()) {
+                curIDir.dir = nullptr;
+            } else {
+                curIDir.dir.LoadFile(fpath, true, curIDir.shared, kLoadFront, true);
+            }
+        }
+    }
+
+    if (d.rev > 0x14 && d.rev < 0x18) {
+        int offset = notInlinedSubDirs.size();
+        MILO_ASSERT(mSubDirs.capacity() >= offset + inlinedSubDirs.size(), 0x415);
+        for (int i = 0; i < inlinedSubDirs.size(); i++) {
+            mSubDirs[i + offset].LoadInlinedFile(inlinedSubDirs[i], d.stream);
+        }
+    }
+
+    mIsSubDir = false;
+    d.PushRev(this);
+}
+
+void ObjectDir::PostLoad(BinStream &bs) {
+    BinStreamRev d(bs, bs.PopRev(this));
+    for (int i = mInlinedDirs.size() - 1; i >= 0; i--) {
+        InlinedDir &iDir = mInlinedDirs[i];
+        ObjDirPtr<ObjectDir> &ptr = iDir.dir;
+        ptr.PostLoad(mLoader);
+        if (iDir.mType == kInlineCachedShared) {
+            iDir.shared = true;
+        }
+        if (iDir.shared) {
+            FilePath &fp = iDir.file;
+            DirLoader *last = DirLoader::FindLast(fp);
+            if (last) {
+                if (last->IsLoaded()) {
+                    ptr = last->GetDir();
+                } else {
+                    MILO_NOTIFY("Can't share unloaded dir %s", fp);
+                }
+            }
+        } else {
+            if (ptr.IsLoaded()) {
+                RELEASE(ptr->mLoader);
+            }
+        }
+    }
+    if (d.rev > 0x17) {
+        int revs2 = d.stream.Cached() ? 0 : bs.PopRev(this);
+        int offset = bs.PopRev(this);
+        MILO_ASSERT_RANGE_EQ(offset, 0, mSubDirs.size(), 0x45D);
+        if (revs2 != 2) {
+            for (int i = mSubDirs.size() - offset - 1; i >= 0; i--) {
+                bool bbb = false;
+                if (revs2 == 1) {
+                    bbb = bs.PopRev(this) != 0;
+                }
+                ObjDirPtr<ObjectDir> inlinedDirPtr = PostLoadInlined();
+                ObjDirPtr<ObjectDir> &curDirPtr = mSubDirs[i + offset];
+                if (revs2 == 0 || bbb) {
+                    curDirPtr = inlinedDirPtr;
+                }
+                AddedSubDir(curDirPtr);
+            }
+            for (offset = offset - 1; offset >= 0; offset--) {
+                ObjDirPtr<ObjectDir> &offsetPtr = mSubDirs[offset];
+                offsetPtr.PostLoad(mLoader);
+                AddedSubDir(offsetPtr);
+            }
+        }
+    } else {
+        for (int i = 0; i < mSubDirs.size(); i++) {
+            ObjDirPtr<ObjectDir> &curDirPtr = mSubDirs[i];
+            curDirPtr.PostLoad(mLoader);
+            AddedSubDir(curDirPtr);
+            if (curDirPtr.IsLoaded()) {
+                if (curDirPtr->InlineSubDirType() != kInlineNever) {
+                    RELEASE(curDirPtr->mLoader);
+                }
+            }
+        }
+    }
+    if (d.rev > 10) {
+        char buf[0x80];
+        d.stream.ReadString(buf, 0x80);
+        mCurAnim = FindObject(buf, false, true);
+        d.stream.ReadString(buf, 0x80);
+        mCurCam = FindObject(buf, true, true);
+        if (!mCurCam && mCurViewport == kCustom) {
+            mCurViewport = kPerspective;
+        }
+    }
+    if (d.rev > 0x15) {
+        LoadRest(d.stream);
+    } else if (d.rev > 0x10) {
+        Hmx::Object::Load(d.stream);
+    }
+    static Message msg("change_proxies");
+    HandleType(msg);
+
+    if (mProxyOverride) {
+        mProxyOverride = false;
+        if (!TheLoadMgr.EditMode() && (!IsProxy() || mInlineProxyType)) {
+            MILO_FAIL("You cannot override an inlined proxy!");
+        }
+    } else if (ShouldSaveProxy(d.stream)) {
+        DeleteObjects();
+        DeleteSubDirs();
+        // FIXME: leak?
+        DirLoader *dl = new DirLoader(
+            mProxyFile,
+            kLoadFront,
+            nullptr,
+            InlineProxy(d.stream) ? &d.stream : nullptr,
+            this,
+            false,
+            nullptr
+        );
+    }
+}
 
 void ObjectDir::SetProxyFile(const FilePath &file, bool override) {
     if (!IsProxy()) {
@@ -399,22 +733,22 @@ void ObjectDir::SyncObjects() {
 
 void ObjectDir::ResetEditorState() {
     mViewports.resize(7);
-    unk8c = 0;
-    mCurCam = 0;
-    mAlwaysInlined = 0;
+    mCurViewport = kPerspective;
+    mCurAnim = nullptr;
+    mCurCam = nullptr;
     ResetViewports();
 }
 
 void ObjectDir::AddedObject(Hmx::Object *) {}
 
 void ObjectDir::RemovingObject(Hmx::Object *obj) {
-    if (obj == unk8c) {
-        unk8c = nullptr;
+    if (obj == mCurAnim) {
+        mCurAnim = nullptr;
     }
     if (obj == mCurCam) {
         mCurCam = nullptr;
-        if (mCurViewportID == 7) {
-            mCurViewportID = (ViewportId)0;
+        if (mCurViewport == kCustom) {
+            mCurViewport = kPerspective;
         }
     }
 }
@@ -422,8 +756,9 @@ void ObjectDir::RemovingObject(Hmx::Object *obj) {
 void ObjectDir::OldLoadProxies(BinStream &bs, int i) {
     int x;
     bs >> x;
-    if (x != 0)
+    if (x != 0) {
         MILO_FAIL("Proxies not allowed here");
+    }
 }
 
 #pragma endregion
@@ -448,13 +783,13 @@ void ObjectDir::SetInlineProxyType(InlineDirType t) {
     mInlineProxyType = t;
 }
 
-BinStreamRev &operator>>(BinStreamRev &bs, ObjectDir::Viewport &v) {
-    bs >> v.mXfm;
-    if (bs.rev < 0x12) {
+BinStreamRev &operator>>(BinStreamRev &d, ObjectDir::Viewport &v) {
+    d >> v.mXfm;
+    if (d.rev < 0x12) {
         int x;
-        bs >> x;
+        d >> x;
     }
-    return bs;
+    return d;
 }
 
 void ObjectDir::TransferLoaderState(ObjectDir *dir) {
@@ -468,7 +803,7 @@ bool ObjectDir::HasDirPtrs() const {
     if (sDeleting == this) {
         return true;
     } else {
-        for (ObjRef::iterator it = mRefs.begin(); it != mRefs.end(); ++it) {
+        FOREACH_OBJREF (it, this) {
             if (it->IsDirPtr())
                 return true;
         }
@@ -488,10 +823,10 @@ namespace {
 }
 
 ObjectDir::Viewport &ObjectDir::CurViewport() {
-    if (mCurViewportID >= kNumViewports) {
-        MILO_FAIL("%s mCurView = %d, >= kNumViewports", PathName(this), mCurViewportID);
+    if (mCurViewport >= kCustom) {
+        MILO_FAIL("%s mCurView = %d, >= kNumViewports", PathName(this), mCurViewport);
     }
-    return mViewports[mCurViewportID];
+    return mViewports[mCurViewport];
 }
 
 bool ObjectDir::HasSubDir(ObjectDir *dir) {
@@ -518,20 +853,31 @@ void ObjectDir::SaveProxy(BinStream &bs) {
 }
 
 void ObjectDir::ResetViewports() {
-    mViewports[1].mXfm.m.Set(0, -1, 0, 1, 0, 0, 0, 0, 1);
-    mViewports[1].mXfm.v.Set(-768, 0, 0);
-    mViewports[2].mXfm.m.Set(0, 1, 0, -1, 0, 0, 0, 0, 1);
-    mViewports[2].mXfm.v.Set(768, 0, 0);
-    mViewports[3].mXfm.m.Set(1, 0, 0, 0, 0, 1, 0, 1, 0);
-    mViewports[3].mXfm.v.Set(0, 0, 768);
-    mViewports[4].mXfm.m.Set(1, 0, 0, 0, 0, 1, 0, -1, 0);
-    mViewports[4].mXfm.v.Set(0, 0, -768);
-    mViewports[5].mXfm.m.Set(1, 0, 0, 0, 1, 0, 0, 0, 1);
-    mViewports[5].mXfm.v.Set(0, -768, 0);
-    mViewports[6].mXfm.m.Set(-1, 0, 0, 0, -1, 0, 0, 0, 1);
-    mViewports[6].mXfm.v.Set(0, 768, 0);
-    MakeRotMatrix(Vector3(1, 1, -1), Vector3(0, 0, 1), mViewports[0].mXfm.m);
-    Multiply(Vector3(0, -768.0f, 0), mViewports[0].mXfm.m, mViewports[0].mXfm.v);
+    mViewports[kLeft].mXfm.m.Set(0, -1, 0, 1, 0, 0, 0, 0, 1);
+    mViewports[kLeft].mXfm.v.Set(-768, 0, 0);
+    mViewports[kRight].mXfm.m.Set(0, 1, 0, -1, 0, 0, 0, 0, 1);
+    mViewports[kRight].mXfm.v.Set(768, 0, 0);
+    mViewports[kTop].mXfm.m.Set(1, 0, 0, 0, 0, 1, 0, 1, 0);
+    mViewports[kTop].mXfm.v.Set(0, 0, 768);
+    mViewports[kBottom].mXfm.m.Set(1, 0, 0, 0, 0, 1, 0, -1, 0);
+    mViewports[kBottom].mXfm.v.Set(0, 0, -768);
+    mViewports[kFront].mXfm.m.Set(1, 0, 0, 0, 1, 0, 0, 0, 1);
+    mViewports[kFront].mXfm.v.Set(0, -768, 0);
+    mViewports[kBack].mXfm.m.Set(-1, 0, 0, 0, -1, 0, 0, 0, 1);
+    mViewports[kBack].mXfm.v.Set(0, 768, 0);
+    MakeRotMatrix(Vector3(1, 1, -1), Vector3(0, 0, 1), mViewports[kPerspective].mXfm.m);
+    Multiply(
+        Vector3(0, -768, 0),
+        mViewports[kPerspective].mXfm.m,
+        mViewports[kPerspective].mXfm.v
+    );
+    // ???;
+    // clang-format off
+    // v = (0, -768, 0)
+    // vout.x = (float)(m.x.x * v.x + (float)(m.z.x * v.z + (float)(m.y.x * v.y)));
+    // vout.y = (float)(m.x.y * v.x + (float)(m.z.y * v.z + (float)(m.y.y * v.y)));
+    // vout.z = (float)(m.x.z * v.x + (float)(m.z.z * v.z + (float)(m.y.z * v.y)));
+    // clang-format on
 }
 
 DataNode OnLoadObjects(DataArray *a) {
@@ -551,15 +897,12 @@ DataNode OnInitObject(DataArray *a) {
 }
 
 void ObjectDir::Reserve(int hashSize, int stringSize) {
-    MemTemp tmp;
+    MemDoTempAllocations tmp;
     if (mHashTable.Size() < hashSize) {
         mHashTable.Resize(hashSize, 0);
     }
     mStringTable.Reserve(stringSize);
 }
-
-ObjectDir::InlinedDir::InlinedDir() : dir(), file() {}
-ObjectDir::InlinedDir::~InlinedDir() {}
 
 void ObjectDir::LoadSubDir(int i, const FilePath &fp, BinStream &bs, bool b) {
     if (IsProxy() && !mProxyFile.empty()) {
@@ -643,7 +986,7 @@ void ObjectDir::DeleteObjects() {
 void ObjectDir::RemoveSubDir(const ObjDirPtr<ObjectDir> &dPtr) {
     std::vector<ObjDirPtr<ObjectDir> >::iterator it = mSubDirs.begin();
     while (it != mSubDirs.end()) {
-        if ((*it) == dPtr) {
+        if (*it == dPtr) {
             RemovingSubDir(*it);
             it = mSubDirs.erase(it);
             if (it == mSubDirs.end())
@@ -669,16 +1012,15 @@ void CheckForDuplicates() {
     syms.sort();
     Symbol previous;
     bool fail = false;
-    for (std::list<Symbol>::iterator it = syms.begin(); it != syms.end();
-         previous = *it, ++it) {
-        Symbol cur = *it;
-        if (cur == previous) {
-            MILO_NOTIFY("Duplicate object %s in config", cur);
+    for (auto it = syms.begin(); it != syms.end(); previous = *it, ++it) {
+        if (*it == previous) {
+            MILO_NOTIFY("Duplicate object %s in config", previous);
             fail = true;
         }
     }
-    if (fail)
+    if (fail) {
         MILO_FAIL("duplicate objects found in configs, bailing");
+    }
     syms.unique();
 }
 
@@ -702,37 +1044,36 @@ void ObjectDir::Init() {
     DirLoader::sPrintTimes = OptionBool("loader_times", false);
 }
 
-void ObjectDir::Iterate(DataArray *arr, bool b) {
-    const DataNode &n = arr->Evaluate(2);
+void ObjectDir::Iterate(DataArray *msg, bool recurse) {
+    const DataNode &n = msg->Evaluate(2);
     Symbol s2;
     Symbol s8;
     if (n.Type() == kDataSymbol) {
-        const char *str = n.UncheckedStr();
-        s2 = STR_TO_SYM(str);
+        s2 = n.SymbolValue();
     } else {
-        DataArray *a2 = n.UncheckedArray();
+        DataArray *a2 = n.ArrayValue();
         s2 = a2->Sym(0);
         s8 = a2->Sym(1);
     }
     static DataArray *objects = SystemConfig("objects");
     objects->FindArray(s2);
-    DataNode *var = arr->Var(3);
+    DataNode *var = msg->Var(3);
     DataNode varNode(*var);
-    for (ObjDirItr<Hmx::Object> it(this, b); it != nullptr; ++it) {
-        bool bbb;
-        Symbol first = it->ClassName();
-        std::pair<Symbol, Symbol> key = std::make_pair(first, s2);
+    for (ObjDirItr<Hmx::Object> it(this, recurse); it != nullptr; ++it) {
+        bool subclass;
+        std::pair<Symbol, Symbol> key = std::make_pair(it->ClassName(), s2);
         std::map<std::pair<Symbol, Symbol>, bool>::iterator superclassIt =
             sSuperClassMap.find(key);
         if (superclassIt == sSuperClassMap.end()) {
-            bbb = IsASubclass(first, s2);
-            sSuperClassMap[key] = bbb;
-        } else
-            bbb = superclassIt->second;
-        if (bbb && (s2.Null() || it->Type() == s2)) {
+            subclass = IsASubclass(key.first, key.second);
+            sSuperClassMap[key] = subclass;
+        } else {
+            subclass = superclassIt->second;
+        }
+        if (subclass && (s8.Null() || it->Type() == s8)) {
             *var = &*it;
-            for (int i = 4; i < arr->Size(); i++) {
-                arr->Command(i)->Execute(true);
+            for (int i = 4; i < msg->Size(); i++) {
+                msg->Command(i)->Execute();
             }
         }
     }
@@ -740,14 +1081,14 @@ void ObjectDir::Iterate(DataArray *arr, bool b) {
 }
 
 ObjDirPtr<ObjectDir> ObjectDir::PostLoadInlined() {
-    MILO_ASSERT(mInlinedDirs.size() > 0, 0x296);
+    MILO_ASSERT(mInlinedDirs.size() > 0, 0x28D);
     InlinedDir iDir = mInlinedDirs.back();
     mInlinedDirs.pop_back();
     if (mInlinedDirs.size() == 0) {
-        ClearAndShrink(mInlinedDirs);
+        mInlinedDirs.swap(std::vector<InlinedDir>());
     }
     if (iDir.shared && iDir.file.length() != 0 && !iDir.dir) {
-        MILO_NOTIFY("Couldn't load shared inlined file %s\n", iDir.file);
+        MILO_NOTIFY("Couldn't load shared inlined file %s", iDir.file);
     }
     return iDir.dir;
 }
@@ -863,7 +1204,7 @@ void ObjectDir::PreLoadInlined(const FilePath &fp, bool share, InlineDirType typ
 }
 
 void ObjectDir::SetCurViewport(ViewportId id, Hmx::Object *o) {
-    mCurViewportID = id;
+    mCurViewport = id;
     mCurCam = o;
 }
 

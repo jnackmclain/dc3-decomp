@@ -5,8 +5,10 @@
 #include "math/Utl.h"
 #include "math/Vec.h"
 #include "obj/DataFunc.h"
+#include "os/Debug.h"
 #include "os/System.h"
 #include "utl/BinStream.h"
+#include "utl/Std.h"
 
 float gUnitsPerMeter = 39.370079f;
 float gBSPPosTol = 0.01f;
@@ -25,17 +27,26 @@ void NumNodes(const BSPNode *node, int &num, int &maxDepth) {
         } else if (depth > maxDepth) {
             maxDepth = depth;
         }
-        NumNodes(node->left, num, maxDepth);
-        NumNodes(node->right, num, maxDepth);
+        NumNodes(node->front, num, maxDepth);
+        NumNodes(node->back, num, maxDepth);
         num++;
         depth--;
     }
 }
 
+template <>
+TextStream &operator<<(TextStream &ts, const std::vector<Vector2> &vec) {
+    ts << "( size: " << vec.size() << ")";
+    FOREACH_CONST (v2, vec) {
+        ts << "\n" << vec.end() - v2 << "\t" << *v2;
+    }
+    return ts;
+}
+
 BinStream &operator<<(BinStream &bs, const BSPNode *node) {
     if (node) {
         bs << true;
-        bs << node->plane << node->left << node->right;
+        bs << node->plane << node->front << node->back;
     } else {
         bs << false;
     }
@@ -47,7 +58,7 @@ BinStream &operator>>(BinStream &bs, BSPNode *&node) {
     bs >> nodeExists;
     if (nodeExists) {
         node = new BSPNode();
-        bs >> node->plane >> node->left >> node->right;
+        bs >> node->plane >> node->front >> node->back;
     } else {
         node = nullptr;
     }
@@ -76,10 +87,12 @@ bool Box::Contains(const Sphere &s) const {
 
 bool Box::Contains(const Triangle &t) const {
     Vector3 v1 = t.origin;
-    Vector3 v2;
-    Add(t.origin, t.frame.x, v2);
-    Vector3 v3;
-    Add(t.origin, t.frame.y, v3);
+    Vector3 v2(
+        t.frame.x.x + t.origin.x, t.frame.x.y + t.origin.y, t.frame.x.z + t.origin.z
+    );
+    Vector3 v3(
+        t.frame.y.x + t.origin.x, t.frame.y.y + t.origin.y, t.frame.y.z + t.origin.z
+    );
     return Contains(v1) && Contains(v2) && Contains(v3);
 }
 
@@ -94,7 +107,16 @@ float Box::SurfaceArea() const {
 }
 
 float Box::Volume() const {
-    return (mMax.x - mMin.x) * (mMax.y - mMin.y) * (mMax.z - mMin.z);
+    return (mMax.z - mMin.z) * (mMax.y - mMin.y) * (mMax.x - mMin.x);
+}
+
+void Multiply(const Box &in, float scalar, Box &out) {
+    Vector3 midpoint;
+    Interp(in.mMin, in.mMax, 0.5, midpoint);
+    Subtract(in.mMax, midpoint, out.mMax);
+    Subtract(in.mMin, midpoint, out.mMin);
+    ScaleAdd(midpoint, out.mMax, scalar, out.mMax);
+    ScaleAdd(midpoint, out.mMin, scalar, out.mMin);
 }
 
 void Box::GrowToContain(const Vector3 &vec, bool b) {
@@ -128,13 +150,16 @@ void ClosestPoint(const Vector3 &v1, const Vector3 &v2, const Vector3 &v3, Vecto
     float f5 = Dot(diff31, diff21);
     if (f5 <= 0) {
         *vout = v1;
+        return;
     } else {
         float dot21 = Dot(diff21, diff21);
         if (f5 > dot21) {
             *vout = v2;
+            return;
         } else {
             Scale(diff21, f5 / dot21, diff21);
             Add(v1, diff21, *vout);
+            return;
         }
     }
 }
@@ -256,10 +281,118 @@ bool CheckBSPTree(const BSPNode *node, const Box &box) {
     // sixth and final intersect check
 }
 
+void BSPFace::Update() {
+    MILO_ASSERT(p.points.size() > 2, 1730);
+    // recalculate area
+    area = 0.0f;
+    const auto &points = p.points;
+    for (auto p1 = points.begin(), p2 = p1 + 1, p3 = p1 + 2; p3 != points.end();
+         p2 = p3++) {
+        float x2y1 = p2->x * p1->y, y3x1 = p3->y * p1->x;
+        float x3y2 = p3->x * p2->y;
+        float f10 = p2->y * p1->x - x2y1;
+        float f11 = p3->x * p1->y - y3x1;
+        float f13 = p3->y * p2->x - x3y2;
+        f13 += f10 + f11;
+        area += f13 * 0.5f;
+    }
+    // recalculate planes
+    planes.clear();
+    Plane p;
+    p.Set(t.v, t.m.z);
+    planes.push_back(p);
+    Vector3 basis(points.rbegin()->x, points.rbegin()->y, 0);
+    Multiply(basis, t, basis);
+    FOREACH_CONST (p, points)
+        ;
+}
+
 void MultiplyEq(BSPNode *n, const Transform &t) {
-    for (; n != nullptr; n = n->right) {
+    for (; n != nullptr; n = n->back) {
         Multiply(n->plane, t, n->plane);
         Normalize(n->plane, n->plane);
-        MultiplyEq(n->left, t);
+        MultiplyEq(n->front, t);
     }
+}
+
+void Intersect(const Hmx::Ray &ray1, const Hmx::Ray &ray2, Vector2 &vec) {
+    float dot = ray1.dir.y * ray2.dir.x - ray1.dir.x * ray2.dir.y;
+    if (dot != 0.0f) {
+        float s = ((ray2.base.y - ray1.base.y) * ray1.dir.x
+                   + (ray1.base.x - ray2.base.x) * ray1.dir.y)
+            / dot;
+        vec.Set(s * ray2.dir.x + ray2.base.x, s * ray2.dir.y + ray2.base.y);
+    } else {
+        vec = ray1.base;
+    }
+}
+
+void Intersect(const Transform &trans, const Plane &plane, Hmx::Ray &ray) {
+    Vector3 planeVec(plane.a, plane.b, plane.c);
+    float planeVecSquared =
+        planeVec.x * planeVec.x + planeVec.y * planeVec.y + planeVec.z * planeVec.z;
+    float scale = -(plane.d / planeVecSquared);
+    Vector3 scaledVec(planeVec.x * scale, planeVec.y * scale, planeVec.z * scale);
+    Vector3 point;
+    MultiplyTranspose(scaledVec, trans, point);
+    float dotX = trans.m.x.x * plane.a + trans.m.x.y * plane.b + trans.m.x.z * plane.c;
+    float dotY = trans.m.y.x * plane.a + trans.m.y.y * plane.b + trans.m.y.z * plane.c;
+    float dotZ = trans.m.z.x * plane.a + trans.m.z.y * plane.b + trans.m.z.z * plane.c;
+    ray.dir.Set(dotX, dotY);
+    if (std::fabs(dotY) > std::fabs(dotX)) {
+        ray.base.Set(point.x + (dotZ / dotX) * point.z, point.y);
+    } else {
+        ray.base.Set(point.x, point.y + (dotZ / dotY) * point.z);
+    }
+}
+
+bool Intersect(const Segment &seg, const Triangle &tri, bool b, float &out) {
+    Vector3 segDirection(
+        seg.end.x - seg.start.x, seg.end.y - seg.start.y, seg.end.z - seg.start.z
+    );
+    const Vector3 &triFrameZ = tri.frame.z;
+    float segDirDot = triFrameZ.x * segDirection.x + triFrameZ.y * segDirection.y
+        + triFrameZ.z * segDirection.z;
+    if (fabs(segDirDot) < 0.0001f || b && segDirDot > 0.0f) {
+        return false;
+    }
+
+    Vector3 vec3A(
+        seg.start.x - tri.origin.x, seg.start.y - tri.origin.y, seg.start.z - tri.origin.z
+    );
+    float tempDot = triFrameZ.x * vec3A.x + triFrameZ.y * vec3A.y + triFrameZ.z * vec3A.z;
+    float t = -(tempDot / segDirDot);
+    out = t;
+    if (t < 0.0f || t > 1.0f) {
+        return false;
+    }
+
+    Vector3 vec3B(
+        (seg.start.x + segDirection.x * t) - tri.origin.x,
+        (seg.start.y + segDirection.y * t) - tri.origin.y,
+        (seg.start.z + segDirection.z * t) - tri.origin.z
+    );
+
+    const Vector3 &triFrameX = tri.frame.x;
+    const Vector3 &triFrameY = tri.frame.y;
+
+    float dotXX =
+        triFrameX.x * triFrameX.x + triFrameX.y * triFrameX.y + triFrameX.z * triFrameX.z;
+    float dotYY =
+        triFrameY.x * triFrameY.x + triFrameY.y * triFrameY.y + triFrameY.z * triFrameY.z;
+    float dotXY =
+        triFrameX.x * triFrameY.x + triFrameX.y * triFrameY.y + triFrameX.z * triFrameY.z;
+    float dotX3B = triFrameX.x * vec3B.x + triFrameX.y * vec3B.y + triFrameX.z * vec3B.z;
+    float dotY3B = triFrameY.x * vec3B.x + triFrameY.y * vec3B.y + triFrameY.z * vec3B.z;
+
+    float inv = 1.0f / (dotXY * dotXY - dotYY * dotXX);
+    float k = (dotY3B * dotXY - dotX3B * dotYY) * inv;
+    if (k < 0.0f || k > 1.0f) {
+        return false;
+    }
+    float j = (dotX3B * dotXY - dotY3B * dotXX) * inv;
+    if (j < 0.0f || k + j > 1.0f) {
+        return false;
+    }
+    return true;
 }

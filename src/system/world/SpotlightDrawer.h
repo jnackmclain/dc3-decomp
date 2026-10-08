@@ -11,9 +11,7 @@ class Spotlight;
 class SpotlightDrawer;
 
 class SpotDrawParams {
-    friend class SpotlightDrawer;
-
-public:
+public: // according to RB2
     SpotDrawParams(SpotlightDrawer *);
     SpotDrawParams &operator=(const SpotDrawParams &);
     void Save(BinStream &);
@@ -34,21 +32,22 @@ public:
 class SpotlightDrawer : public RndDrawable, public PostProcessor {
 public:
     // size 0x50
-    class SpotMeshEntry { // from RB3 decomp
+    class SpotMeshEntry { // from RB2 DWARF
     public:
-        SpotMeshEntry() : unk0(0), unk4(0), unk8(0) {}
-        RndMesh *unk0;
-        RndMesh *unk4;
-        Spotlight *unk8;
-        int unkc;
-        Transform unk10;
+        SpotMeshEntry() : mMesh(0), mEnv(0), mLight(0) {}
+
+        RndMesh *mMesh; // 0x0
+        RndEnviron *mEnv; // 0x4
+        Spotlight *mLight; // 0x8
+        unsigned int mPACKING; // 0xc
+        Transform mXfm; // 0x10
     };
 
-    class SpotlightEntry { // from RB3 decomp
+    class SpotlightEntry { // from RB2 DWARF
     public:
-        SpotlightEntry() : unk0(0), unk4(0) {}
-        unsigned int unk0; // 0x0 - id?
-        Spotlight *unk4; // 0x4 - the spotlight
+        SpotlightEntry() : mPackedColor(0), mLight(0) {}
+        unsigned int mPackedColor; // 0x0
+        Spotlight *mLight; // 0x4
     };
 
     // Hmx::Object
@@ -61,7 +60,6 @@ public:
     virtual void Copy(const Hmx::Object *, Hmx::Object::CopyType);
     virtual void Load(BinStream &);
     // RndDrawable
-    virtual void DrawShowing();
     virtual void ListDrawChildren(std::list<RndDrawable *> &);
     // PostProcessor
     virtual void EndWorld();
@@ -71,8 +69,6 @@ public:
     OBJ_MEM_OVERLOAD(0x34)
     NEW_OBJ(SpotlightDrawer)
 
-    static RndEnviron *sEnviron;
-
     static void Init();
 
     void Select();
@@ -80,12 +76,17 @@ public:
     void ClearLights();
     void UpdateBoxMap();
     void ApplyLightingApprox(BoxMapLighting &, float) const;
+
     const SpotDrawParams &Params() const { return mParams; }
 
     static SpotlightDrawer *Current() { return sCurrent; }
     static bool DrawNGSpotlights();
+    static void DrawLight(Spotlight *);
+    static void RemoveFromLists(Spotlight *);
 
 protected:
+    // RndDrawable
+    virtual void DrawShowing();
     // SpotlightDrawer
     virtual void SetAmbientColor(const Hmx::Color &);
     virtual void SortLights();
@@ -103,6 +104,7 @@ protected:
 
     static SpotlightDrawer *sCurrent;
     static SpotlightDrawer *sDefault;
+    static RndEnviron *sEnviron;
     static bool sNeedDraw;
     static std::vector<SpotlightEntry> sLights;
     static std::vector<SpotMeshEntry> sCans;
@@ -111,6 +113,7 @@ protected:
     static bool sHaveAdditionals;
     static bool sHaveLenses;
     static bool sHaveFlares;
+    static bool sNoBeams;
 
     SpotDrawParams mParams; // 0x44
 };
@@ -121,7 +124,7 @@ public:
         const SpotlightDrawer::SpotlightEntry &e1,
         const SpotlightDrawer::SpotlightEntry &e2
     ) const {
-        return e1.unk0 < e2.unk0;
+        return e1.mPackedColor < e2.mPackedColor;
     }
 };
 
@@ -130,11 +133,11 @@ public:
     bool operator()(
         const SpotlightDrawer::SpotMeshEntry &e1, const SpotlightDrawer::SpotMeshEntry &e2
     ) const {
-        if (e1.unk4 < e2.unk4)
+        if (e1.mEnv < e2.mEnv)
             return true;
-        else if (e1.unk4 > e2.unk4)
+        else if (e1.mEnv > e2.mEnv)
             return false;
         else
-            return e1.unk0 < e2.unk0;
+            return e1.mMesh < e2.mMesh;
     }
 };

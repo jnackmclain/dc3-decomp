@@ -3,6 +3,7 @@
 #include "meta_ham/AccomplishmentConditional.h"
 #include "meta_ham/AccomplishmentProgress.h"
 #include "meta_ham/HamProfile.h"
+#include "meta_ham/MetaPerformer.h"
 #include "obj/Data.h"
 #include "os/Debug.h"
 #include "utl/Std.h"
@@ -23,21 +24,23 @@ bool AccomplishmentCountConditional::IsFulfilled(HamProfile *profile) const {
     static Symbol character("character");
     static Symbol stars("stars");
     static Symbol character_no_outfit("character_no_outfit");
-    Difficulty d = kDifficultyEasy;
+    int numStars = 0;
     FOREACH (it, m_lConditions) {
-        Symbol s = it->unk8;
-        if (s == character) {
+        Symbol condition = it->mCondition;
+        if (condition == character) {
             MILO_NOTIFY("Character-based achievements aren't supported in turbo (yet)");
-        } else if (s == stars) {
-            d = it->mDifficulty;
-        } else if (s == character_no_outfit) {
-            continue;
-        } else {
-            MILO_NOTIFY("Condition is not currently supported: %s ", s);
+        } else if (condition == stars) {
+            numStars = it->mValue;
+        } else if (condition != character_no_outfit) {
+            MILO_NOTIFY("Condition is not currently supported: %s ", condition);
             return false;
         }
     }
     AccomplishmentProgress &progress = profile->AccessAccomplishmentProgress();
-    // relies on MetaPerformer->unk38
-    return false;
+    progress.IncrementCount(GetName(), MetaPerformer::Current()->GetUnk38());
+    if (numStars <= progress.GetCount(GetName())) {
+        return true;
+    } else {
+        return false;
+    }
 }

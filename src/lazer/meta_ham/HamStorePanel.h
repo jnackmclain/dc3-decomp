@@ -1,0 +1,140 @@
+#pragma once
+#include "meta/Profile.h"
+#include "meta/StoreEnumeration.h"
+#include "meta/StoreOffer.h"
+#include "meta/StorePanel.h"
+#include "meta/StorePurchaser.h"
+#include "meta_ham/HamStoreFilterProvider.h"
+#include "meta_ham/HamStoreProvider.h"
+#include "net_ham/HamStoreCartJobs.h"
+#include "net_ham/RCJobDingo.h"
+#include "obj/Data.h"
+#include "obj/Object.h"
+#include "os/ContentMgr.h"
+#include "os/Timer.h"
+#include "os/User.h"
+#include "types.h"
+#include "utl/JobMgr.h"
+#include "utl/NetLoader.h"
+#include "utl/Str.h"
+#include "utl/Symbol.h"
+#include "xdk/win_types.h"
+#include <list>
+
+struct HamSpecialOffer {
+public:
+    Symbol unk4;
+    unsigned long long unk8;
+    Symbol unk10;
+    bool unk14;
+};
+
+class HamStorePanel : public StorePanel, public ContentMgr::Callback {
+public:
+    // Hmx::Object
+    virtual ~HamStorePanel();
+    OBJ_CLASSNAME(HamStorePanel)
+    OBJ_SET_TYPE(HamStorePanel)
+    virtual DataNode Handle(DataArray *, bool);
+    virtual bool SyncProperty(DataNode &, DataArray *, int, PropOp);
+
+    // UIPanel
+    virtual void Load();
+    virtual bool Exiting() const;
+    virtual void Poll();
+    virtual void Unload();
+    virtual bool IsSongInLibrary(int const &) const;
+    virtual void ExitStore(StoreError) const;
+    virtual Profile *StoreProfile() const;
+    virtual StoreOffer *MakeNewOffer(DataArray *);
+    virtual StoreOffer *FindOffer(Symbol) const;
+    virtual bool EnumerateSubsetOfOfferIDs() const { return 0; }
+    virtual void GetOfferIDsToEnumerate(std::vector<unsigned long long> &, bool) const;
+
+    // ContentMgr::Callback
+    virtual bool ContentDiscovered(Symbol);
+    virtual bool ContentTitleDiscovered(unsigned int, Symbol);
+    virtual void ContentMounted(char const *, char const *);
+
+    NEW_OBJ(HamStorePanel)
+
+    HamStorePanel();
+    void LockCart();
+    void UnlockCart();
+    void EmptyCart();
+    bool IsCurrFilterCart(int);
+    void SetFilterToCart();
+    int SetFilterToSongs();
+    void RemoveDLCFromCart(int);
+    void RemoveOfferFromCart(StoreOffer *);
+    void AddOfferToCart(StoreOffer *);
+
+    int GetUnk184() const { return unk184; }
+
+protected:
+    virtual StoreError UpdateOffers(std::list<EnumProduct> const &, bool);
+    virtual void StoreUserProfileSwappedToUser(LocalUser *);
+
+    void ReadLockData();
+    void DisableCart();
+    char const *GetIndexFile() const;
+    void RefreshSpecialOfferStatus();
+    void GetCart();
+    void RelockCart();
+    bool IsSpecialOfferOwned(Symbol) const;
+    bool BuySpecialOffer(Symbol);
+    void FinishSpecialOfferEnum(std::vector<bool> const &, bool);
+    void RemoveNextDLCFromCart();
+    void AddNextDLCToCart();
+    void AddDLCToCart(int);
+    void CreateCartUIs();
+    void ReadCartData();
+    void ResetCancelTimer();
+    DataNode OnMsg(RCJobCompleteMsg const &);
+
+    DataNetLoader *unka0;
+    DataArray *mMetadata; // 0xa4
+    HamStoreProvider *mOfferProvider; // 0xa8
+    std::vector<HamStoreFilter *> unkac;
+    String unkb8;
+    bool unkc0;
+    Timer unkc4;
+    Timer unkf8;
+    int unk128;
+    std::vector<CartRow> unk12c;
+    RCJob *unk138[7];
+    /*
+        0x138 - [0] - AddDLCToCartJob
+        0x13c - [1] - RemoveDLCFromCartJob
+        0x140 - [2] - EmptyCartJob
+        0x144 - [3] - GetCartJob
+        0x148 - [4] - LockCartJob
+        0x14c - [5] - UnlockCartJob
+        0x150 - [6] - LockCartJob (for Relocking?)
+    */
+    bool unk154;
+    bool unk155;
+    bool unk156;
+    bool unk157;
+    bool unk158;
+    bool unk159;
+    std::list<int> unk15c;
+    std::list<int> unk164;
+    std::vector<HamSpecialOffer> unk16c;
+    std::vector<unsigned long long> unk178;
+    int unk184;
+    XboxPurchaser *mXboxPurchaser; // 0x188
+};
+
+class SpecialOfferEnumJob : public MultipleItemsEnumJob {
+public:
+    SpecialOfferEnumJob(HamStorePanel *panel, int i, std::vector<QWORD> &vec);
+    virtual ~SpecialOfferEnumJob() {}
+    virtual void Start();
+    virtual bool IsFinished();
+    virtual void Cancel(Hmx::Object *);
+    virtual void OnCompletion(Hmx::Object *);
+
+protected:
+    HamStorePanel *unk5c;
+};

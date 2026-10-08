@@ -30,6 +30,8 @@ BEGIN_COPYS(FlowOnStop)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(0, 0)
+
 BEGIN_LOADS(FlowOnStop)
     LOAD_REVS(bs)
     ASSERT_REVS(0, 0)
@@ -39,7 +41,7 @@ END_LOADS
 
 bool FlowOnStop::Activate() {
     FLOW_LOG("Activate\n");
-    unk58 = false;
+    mRequestingStop = false;
     unk60 = true;
     return true;
 }
@@ -50,7 +52,7 @@ void FlowOnStop::Deactivate(bool b1) {
         if (mMode != kRequestStopOnly) {
             FOREACH (it, mChildNodes) {
                 ActivateChild(*it);
-                if (unk58)
+                if (mRequestingStop)
                     break;
             }
             FlowNode::Deactivate(b1);
@@ -64,13 +66,7 @@ void FlowOnStop::ChildFinished(FlowNode *n) {
     mRunningNodes.remove(n);
     if (mRunningNodes.empty()) {
         unk60 = false;
-        FLOW_LOG("Timed Release From Parent \n");
-        Timer timer;
-        timer.Reset();
-        timer.Start();
-        mFlowParent->ChildFinished(this);
-        timer.Stop();
-        TheFlowMgr->AddMs(timer.Ms());
+        FLOW_TIMED_RELEASE_FROM_PARENT;
     }
 }
 
@@ -78,7 +74,7 @@ void FlowOnStop::RequestStop() {
     FLOW_LOG("RequestStop\n");
     if (mRunningNodes.empty()) {
         if (mMode != kDeactivateOnly) {
-            unk58 = true;
+            mRequestingStop = true;
             TheFlowMgr->QueueCommand(this, kQueue);
         } else {
             unk60 = false;
@@ -95,18 +91,12 @@ void FlowOnStop::RequestStopCancel() {
 }
 
 void FlowOnStop::Execute(QueueState qs) {
-    if (qs == kQueue && unk58) {
-        unk58 = false;
+    if (qs == kQueue && mRequestingStop) {
+        mRequestingStop = false;
         unk60 = false;
         FlowNode::Activate();
         if (mRunningNodes.empty()) {
-            FLOW_LOG("Timed Release From Parent \n");
-            Timer timer;
-            timer.Reset();
-            timer.Start();
-            mFlowParent->ChildFinished(this);
-            timer.Stop();
-            TheFlowMgr->AddMs(timer.Ms());
+            FLOW_TIMED_RELEASE_FROM_PARENT;
         }
     }
 }

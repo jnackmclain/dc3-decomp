@@ -1,5 +1,6 @@
 #pragma once
 #include <cmath>
+#include "ppcintrinsics.h"
 
 #define kSmallFloat 0.0001f
 #define kHugeFloat 1.0e30f
@@ -48,10 +49,10 @@ inline int LowestBit(int num) {
 }
 
 inline int Round(float f) {
-    if (f > (float)0.0) {
-        return (int)((float)0.5 + f);
+    if (f > 0) {
+        return f + 0.5f;
     } else {
-        return (int)(f - (float)0.5);
+        return f - 0.5f;
     }
 }
 
@@ -132,7 +133,7 @@ template <>
 inline bool MinEq(float &x, const float &y) {
     float tmp = x;
     x = Min(x, y);
-    return tmp != x;
+    return x != tmp;
 }
 
 template <class T>
@@ -149,7 +150,7 @@ template <>
 inline bool MaxEq(float &x, const float &y) {
     float tmp = x;
     x = Max(x, y);
-    return tmp != x;
+    return x != tmp;
 }
 
 template <class T>
@@ -163,13 +164,14 @@ inline const T Abs(T x) {
 inline bool IsNaN(float f) { return !(f == f); }
 
 inline int Mod(int num, int modbase) {
-    if (modbase == 0)
+    if (modbase == 0) {
         return 0;
+    }
     int div = num % modbase;
-    if (div < 0)
-        return div + modbase;
-    else
-        return div;
+    if (div < 0) {
+        div += modbase;
+    }
+    return div;
 }
 
 inline bool NearlyOne(float f) { return fabs(f - 1.0f) < 0.0001f; }
@@ -185,6 +187,15 @@ inline float Mod(float f1, float f2) {
     return tmp;
 }
 
+inline float RecipSqrt(float f1) { return __frsqrte(f1); }
+
+inline float RecipSqrtAccurate(float f1) {
+    float inv = RecipSqrt(f1);
+    float mult = inv * inv;
+    mult = -(mult * f1 - 3);
+    return mult * inv / 2;
+}
+
 inline float ModRange(float f1, float f2, float f3) { return Mod(f3 - f1, f2 - f1) + f1; }
 
 inline float Interp(float a, float b, float t) { return t * (b - a) + a; }
@@ -192,8 +203,6 @@ inline float Interp(float a, float b, float t) { return t * (b - a) + a; }
 inline void Interp(float a, float b, float t, float &fres) { fres = t * (b - a) + a; }
 
 inline void Interp(bool a, bool b, float t, bool &bres) { bres = t < 1.0f ? a : b; }
-
-inline float InterpAng(float, float, float) {}
 
 inline float InverseLerp(float min, float max, float value) {
     // Prevent divide-by-zero from zero-sized range
@@ -215,14 +224,26 @@ inline bool PowerOf2(int num) {
 
 inline float Limit(float f1, float f2, float f3, int &i) {
     float fsub = f2 - f1;
-    int floored = floor((f3 - f1) / fsub);
+    float floored = floor((f3 - f1) / fsub);
     i = floored;
-    return -(floored * fsub - f3);
+    return -(i * fsub - f3);
 }
 
-inline float Sigmoid(float t) {
-    // MILO_ASSERT(t >= 0 && t <= 1, 0x1DB); FIXME: uncommenting this line results in a
-    // ton of circular dependencies surrounding Color.h and here, Utl.h
-    float tsq = t * t;
-    return Clamp<float>(0, 1, tsq * 3.0f - tsq * 2.0f * t);
+__forceinline unsigned short FloatToHalfFloat(float x) {
+    unsigned int fInt = *(unsigned int *)&x;
+    unsigned int abs = fInt & 0x7FFFFFFF;
+    unsigned int sign = (fInt >> 16) & 0x8000;
+
+    if (abs > 0x47FFEFFF) {
+        return sign | 0x7FFF;
+    }
+
+    unsigned int mant;
+
+    if (abs < 0x38800000) {
+        mant = ((abs & 0x7FFFFF) | 0x800000) >> ((113 - (abs >> 23)));
+    } else {
+        mant = abs - 0x38000000;
+    }
+    return sign | (unsigned short)(((((mant >> 13) & 1) + mant + 0xFFF) >> 13) & 0xFFFF);
 }

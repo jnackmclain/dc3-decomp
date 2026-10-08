@@ -49,6 +49,22 @@ public:
     void UpdateIP(unsigned int ip) { SetIPAddr(ip); }
     const char *GetBaseURL() const { return mBaseUrl.c_str(); }
     HttpReq *GetHttpReq() const { return mHttpReq; }
+    bool HasHttpReq() const { return mHttpReq; }
+    Hmx::Object *GetCallback() const { return mCallback; }
+    State GetState() const { return mState; }
+
+    void OnSuccess() {
+        MarkSuccess();
+        OnReqSucceeded();
+    }
+
+    void OnFailure() {
+        MarkFailure();
+        OnReqFailed();
+    }
+
+    void OnReset() { Reset(); }
+    bool MustFinish() { return MustFinishBeforeNext(); }
 
 protected:
     virtual void CleanUp(bool success);

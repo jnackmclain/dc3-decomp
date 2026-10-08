@@ -16,31 +16,33 @@
 #include "utl/Str.h"
 #include "utl/TextFileStream.h"
 
-static DataArray *sFileMsg;
-ModalCallbackFunc *sOldModalCallback;
-DataArray *sNotifyMsg;
-bool sOldNoModal;
+static DataArray *sFileMsg = nullptr;
+static ModalCallbackFunc *sOldModalCallback = nullptr;
+static DataArray *sNotifyMsg = nullptr;
+static bool sOldNotifyDisable = false;
+static bool sOldNoModal = false;
 std::map<Symbol, DataFunc *> gDataFuncs;
+DataThisPtr gDataThisPtr;
 
-bool SwitchMatch(const DataNode &n1, const DataNode &n2) {
-    if (n1.Type() == kDataArray) {
-        DataArray *arr = n1.UncheckedArray();
+bool SwitchMatch(const DataNode &tag, const DataNode &node) {
+    if (tag.Type() == kDataArray) {
+        DataArray *arr = tag.ArrayValue();
         for (int i = 0; i < arr->Size(); i++) {
             DataNode &cur = arr->Node(i);
-            if (cur.Equal(n2, nullptr, true)) {
+            if (cur.Equal(node, nullptr, true)) {
                 return true;
             }
         }
         return false;
     } else
-        return n1.Equal(n2, nullptr, true);
+        return tag.Equal(node, nullptr, true);
 }
 
-DataNode DataFuncObj::New(DataArray *arr) {
-    Hmx::Object *o = ObjectDir::Main()->Find<Hmx::Object>(arr->Str(1), false);
+DataNode DataFuncObj::New(DataArray *a) {
+    Hmx::Object *o = ObjectDir::Main()->Find<Hmx::Object>(a->Str(1), false);
     if (o)
         delete o;
-    return new DataFuncObj(arr);
+    return new DataFuncObj(a);
 }
 
 DEF_DATA_FUNC(DataSprintf) {
@@ -80,7 +82,7 @@ DEF_DATA_FUNC(DataSet) {
     DataNode ret(a->Evaluate(2));
     if (a->Type(1) == kDataProperty) {
         MILO_ASSERT(gDataThis, 0xA9);
-        gDataThis->SetProperty(a->Node(1).UncheckedArray(), ret);
+        gDataThis->SetProperty(a->Node(1).ArrayValue(), ret);
     } else
         *a->Var(1) = ret;
     return ret;
@@ -151,7 +153,7 @@ DEF_DATA_FUNC(DataFindElem) {
 }
 
 /** Verifies if two DataNodes are NOT equivalent. */
-DEF_DATA_FUNC(DataNe) { return DataEq(array).UncheckedInt() == 0; }
+DEF_DATA_FUNC(DataNe) { return DataEq(array).IntValue() == 0; }
 
 DEF_DATA_FUNC(DataLe) { return array->Float(1) <= array->Float(2); }
 
@@ -210,7 +212,7 @@ DEF_DATA_FUNC(DataAndEqual) {
     MILO_ASSERT(array->Size() == 3, 0x152);
     if (array->Type(1) == kDataProperty) {
         MILO_ASSERT(gDataThis, 0x157);
-        DataArray *arr = array->UncheckedArray(1);
+        DataArray *arr = array->Node(1).ArrayValue();
         int res = gDataThis->Property(arr, true)->Int() & array->Int(2);
         gDataThis->SetProperty(arr, res);
         return res;
@@ -225,7 +227,7 @@ DEF_DATA_FUNC(DataMaskEqual) {
     MILO_ASSERT(array->Size() == 3, 0x168);
     if (array->Type(1) == kDataProperty) {
         MILO_ASSERT(gDataThis, 0x16D);
-        DataArray *arr = array->UncheckedArray(1);
+        DataArray *arr = array->Node(1).ArrayValue();
         int res = gDataThis->Property(arr, true)->Int() & ~array->Int(2);
         gDataThis->SetProperty(arr, res);
         return res;
@@ -240,7 +242,7 @@ DEF_DATA_FUNC(DataOrEqual) {
     MILO_ASSERT(array->Size() == 3, 0x17F);
     if (array->Type(1) == kDataProperty) {
         MILO_ASSERT(gDataThis, 0x184);
-        DataArray *arr = array->UncheckedArray(1);
+        DataArray *arr = array->Node(1).ArrayValue();
         int res = gDataThis->Property(arr, true)->Int() | array->Int(2);
         gDataThis->SetProperty(arr, res);
         return res;
@@ -302,7 +304,7 @@ DEF_DATA_FUNC(DataDo) {
     int size = array->Size(); // this needs to be up here to match
     int i;
     for (i = 1; array->Type(i) == kDataArray; i++) {
-        DataArray *binding = array->UncheckedArray(i);
+        DataArray *binding = array->Node(i).ArrayValue();
         DataNode *n = binding->Var(0);
         DataPushVar(n);
         if (binding->Size() == 2) {
@@ -379,7 +381,7 @@ DEF_DATA_FUNC(DataAdd) {
             sum_f = sum_int + n.LiteralFloat(array);
             break;
         }
-        sum_int += n.UncheckedInt();
+        sum_int += n.IntValue();
     }
     if (i == cnt)
         return sum_int;
@@ -393,7 +395,7 @@ DEF_DATA_FUNC(DataAddEq) {
     DataNode ret = DataAdd(array);
     if (array->Type(1) == kDataProperty) {
         MILO_ASSERT(gDataThis, 0x24F);
-        gDataThis->SetProperty(array->UncheckedArray(1), ret);
+        gDataThis->SetProperty(array->Node(1).ArrayValue(), ret);
     } else
         *array->Var(1) = ret;
     return ret;
@@ -444,7 +446,7 @@ DEF_DATA_FUNC(DataSubEq) {
     DataNode ret = DataSub(array);
     if (array->Type(1) == kDataProperty) {
         MILO_ASSERT(gDataThis, 0x285);
-        gDataThis->SetProperty(array->UncheckedArray(1), ret);
+        gDataThis->SetProperty(array->Node(1).ArrayValue(), ret);
     } else
         *array->Var(1) = ret;
     return ret;
@@ -454,7 +456,7 @@ DEF_DATA_FUNC(DataClampEq) {
     DataNode ret = DataClamp(array);
     if (array->Type(1) == kDataProperty) {
         MILO_ASSERT(gDataThis, 0x28C);
-        gDataThis->SetProperty(array->UncheckedArray(1), ret);
+        gDataThis->SetProperty(array->Node(1).ArrayValue(), ret);
     } else
         *array->Var(1) = ret;
     return ret;
@@ -488,7 +490,7 @@ DEF_DATA_FUNC(DataMultiplyEq) {
     DataNode ret = DataMultiply(array);
     if (array->Type(1) == kDataProperty) {
         MILO_ASSERT(gDataThis, 0x2C3);
-        gDataThis->SetProperty(array->UncheckedArray(1), ret);
+        gDataThis->SetProperty(array->Node(1).ArrayValue(), ret);
     } else
         *array->Var(1) = ret;
     return ret;
@@ -500,7 +502,7 @@ DEF_DATA_FUNC(DataDivideEq) {
     DataNode ret = DataDivide(array);
     if (array->Type(1) == kDataProperty) {
         MILO_ASSERT(gDataThis, 0x2CF);
-        gDataThis->SetProperty(array->UncheckedArray(1), ret);
+        gDataThis->SetProperty(array->Node(1).ArrayValue(), ret);
     } else
         *array->Var(1) = ret;
     return ret;
@@ -555,7 +557,7 @@ DEF_DATA_FUNC(DataInt) {
     if (t == kDataSymbol || t == kDataString) {
         return atoi(n.Str());
     } else if (t == kDataObject || t == kDataInt) {
-        return n.UncheckedInt();
+        return n.IntValue();
     } else {
         return (int)n.LiteralFloat(array);
     }
@@ -621,7 +623,7 @@ DEF_DATA_FUNC(DataForEachInt) {
         for (int cnt = 4; cnt < array->Size(); cnt++) {
             array->Command(cnt)->Execute(true);
         }
-        cur = var->UncheckedInt();
+        cur = var->IntValue();
     }
 
     *var = save;
@@ -789,7 +791,7 @@ DEF_DATA_FUNC(DataCond) {
     for (int i = 1; i < array->Size(); i++) {
         DataNode &n = array->Node(i);
         if (n.Type() == kDataArray) {
-            DataArray *arr = n.UncheckedArray();
+            DataArray *arr = n.ArrayValue();
             if (arr->Node(0).NotNull()) {
                 return arr->ExecuteScript(1, gDataThis, nullptr, 1);
             }
@@ -805,7 +807,7 @@ DEF_DATA_FUNC(DataSwitch) {
     for (int i = 2; i < array->Size(); i++) {
         DataNode &n = array->Node(i);
         if (n.Type() == kDataArray) {
-            DataArray *arr = n.UncheckedArray();
+            DataArray *arr = n.ArrayValue();
             if (SwitchMatch(arr->Node(0), match)) {
                 return arr->ExecuteScript(1, gDataThis, nullptr, 1);
             }
@@ -845,7 +847,7 @@ DEF_DATA_FUNC(DataArrayToString) {
 DEF_DATA_FUNC(DataSize) {
     if (array->Type(1) == kDataProperty) {
         MILO_ASSERT(gDataThis, 0x54D);
-        return gDataThis->PropertySize(array->UncheckedArray(1));
+        return gDataThis->PropertySize(array->Node(1).ArrayValue());
     }
     return array->Array(1)->Size();
 }
@@ -900,7 +902,7 @@ DEF_DATA_FUNC(DataInterp) {
 DEF_DATA_FUNC(DataInc) {
     if (array->Type(1) == kDataProperty) {
         MILO_ASSERT(gDataThis, 0x596);
-        DataArray *a = array->UncheckedArray(1);
+        DataArray *a = array->Node(1).ArrayValue();
         int x = gDataThis->Property(a, true)->Int() + 1;
         gDataThis->SetProperty(a, x);
         return x;
@@ -915,7 +917,7 @@ DEF_DATA_FUNC(DataInc) {
 DEF_DATA_FUNC(DataDec) {
     if (array->Type(1) == kDataProperty) {
         MILO_ASSERT(gDataThis, 0x5A7);
-        DataArray *a = array->UncheckedArray(1);
+        DataArray *a = array->Node(1).ArrayValue();
         int x = gDataThis->Property(a, true)->Int() - 1;
         gDataThis->SetProperty(a, x);
         return x;
@@ -933,7 +935,7 @@ DEF_DATA_FUNC(DataHandleType) {
         const DataNode &n = arr->Evaluate(0);
         Hmx::Object *obj;
         if (n.Type() == kDataObject) {
-            obj = n.UncheckedObj();
+            obj = n.ObjectValue();
         } else {
             obj = gDataDir->FindObject(n.LiteralStr(array), true, true);
         }
@@ -948,7 +950,7 @@ DEF_DATA_FUNC(DataHandleTypeRet) {
     const DataNode &n = arr->Evaluate(0);
     Hmx::Object *obj;
     if (n.Type() == kDataObject) {
-        obj = n.UncheckedObj();
+        obj = n.ObjectValue();
     } else {
         obj = gDataDir->FindObject(n.LiteralStr(array), true, true);
     }
@@ -971,7 +973,7 @@ DEF_DATA_FUNC(DataExport) {
     const DataNode &n = a->Evaluate(0);
     Hmx::Object *obj;
     if (n.Type() == kDataObject)
-        obj = n.UncheckedObj();
+        obj = n.ObjectValue();
     else
         obj = gDataDir->FindObject(n.LiteralStr(array), true, true);
     if (obj)
@@ -985,7 +987,7 @@ DEF_DATA_FUNC(DataHandle) {
         const DataNode &n = handlo->Evaluate(0);
         Hmx::Object *obj;
         if (n.Type() == kDataObject)
-            obj = n.UncheckedObj();
+            obj = n.ObjectValue();
         else if (n.Type() == kDataInt)
             obj = nullptr;
         else
@@ -1001,7 +1003,7 @@ DEF_DATA_FUNC(DataHandleRet) {
     Hmx ::Object *o;
     const DataNode &n = a->Evaluate(0);
     if (n.Type() == kDataObject)
-        o = n.UncheckedObj();
+        o = n.ObjectValue();
     else
         o = gDataDir->FindObject(n.LiteralStr(array), true, true);
     if (!o) {
@@ -1067,9 +1069,9 @@ DEF_DATA_FUNC(DataExit) {
 DEF_DATA_FUNC(DataContains) {
     DataArray *w = array->Array(1);
     const DataNode &n = array->Evaluate(2);
-    bool b = !w->Contains(n.UncheckedInt());
+    bool b = !w->Contains(n.IntValue());
     if (b)
-        return DataNode(kDataUnhandled, 0);
+        return DATA_UNHANDLED;
     else
         return 1;
 }
@@ -1079,25 +1081,25 @@ DataNode DataFindExists(DataArray *array, bool fail) {
     for (int i = 2; i < array->Size(); i++) {
         const DataNode &n = array->Evaluate(i);
         if (n.Type() == kDataInt || n.Type() == kDataSymbol) {
-            arr = arr->FindArray(n.UncheckedInt(), false);
+            arr = arr->FindArray(n.IntValue(), false);
             if (!arr) {
                 if (fail) {
-                    String str;
-                    n.Print(str, true, 0);
+                    String s;
+                    n.Print(s, true, 0);
                     MILO_FAIL(
                         "Failed to find %s (file %s, line %d)",
-                        str.c_str(),
+                        s.c_str(),
                         array->File(),
                         array->Line()
                     );
                 }
-                return DataNode(kDataUnhandled, 0);
+                return DATA_UNHANDLED;
             }
         } else {
-            String str;
-            n.Print(str, true, 0);
+            String s;
+            n.Print(s, true, 0);
             MILO_FAIL(
-                "Bad key %s (file %s, line %d)", str.c_str(), array->File(), array->Line()
+                "Bad key %s (file %s, line %d)", s.c_str(), array->File(), array->Line()
             );
         }
     }
@@ -1182,7 +1184,8 @@ DEF_DATA_FUNC(DataStringFlags) {
             s += arr->Str(i);
         }
     }
-    return s;
+    DataNode ret(s);
+    return ret;
 }
 
 DEF_DATA_FUNC(DataStrToLower) {
@@ -1298,10 +1301,10 @@ DataNode Quasiquote(const DataNode &node) {
     static Symbol unquoteAbbrev(",");
     DataType nodeType = node.Type();
     if (nodeType == kDataArray || nodeType == kDataCommand) {
-        DataArray *nodeArr = node.UncheckedArray();
+        DataArray *nodeArr = node.ArrayValue();
 
         if (nodeType == kDataCommand && nodeArr->Type(0) == kDataSymbol) {
-            const char *str = nodeArr->UncheckedStr(0);
+            const char *str = nodeArr->Node(0).StringValue();
             Symbol sym = STR_TO_SYM(str);
             if (sym == unquote || sym == unquoteAbbrev) {
                 return nodeArr->Evaluate(1);
@@ -1399,7 +1402,7 @@ DEF_DATA_FUNC(DataDisableNotify) {
     return 0;
 }
 
-void ScriptDebugModal(Debug::ModalType &, FixedString &, bool) {}
+void ScriptDebugModal(Debug::ModalType &mt, FixedString &msg, bool wait) {}
 
 DEF_DATA_FUNC(DataFilterNotify) {
     if (array->Size() > 3) {
@@ -1451,11 +1454,11 @@ DEF_DATA_FUNC(DataMemoryAllocReport) {
     return 0;
 }
 
-void DataThisPtr::Replace(Hmx::Object *replace) {
+void DataThisPtr::Replace(Hmx::Object *to) {
     Hmx::Object *old = mObject;
-    SetObjConcrete(replace);
+    SetObjConcrete(to);
     if (gDataThis == old) {
-        DataSetThis(replace);
+        DataSetThis(to);
     }
 }
 
@@ -1479,16 +1482,16 @@ DEF_DATA_FUNC(DataExists) {
     return found;
 }
 
-DataMergeFilter::DataMergeFilter(const DataNode &node, Subdirs subs)
-    : MergeFilter((Action)0, subs), mType(node.Type()) {
+DataMergeFilter::DataMergeFilter(const DataNode &n, Subdirs s)
+    : MergeFilter((Action)0, s), mType(n.Type()) {
     if (mType == kDataInt)
-        mInt = node.Int();
+        mInt = n.Int();
     else if (mType == kDataFunc)
-        mFunc = node.Func();
+        mFunc = n.Func();
     else if (mType == kDataObject)
-        mObj = node.GetObj();
+        mObj = n.GetObj();
     else if (mType == kDataSymbol) {
-        const char *_name = node.UncheckedStr();
+        const char *_name = n.StringValue();
         Symbol name = STR_TO_SYM(_name);
         mObj = gDataDir->FindObject(name.Str(), true, true);
         if (!mObj) {
@@ -1502,7 +1505,7 @@ DataMergeFilter::DataMergeFilter(const DataNode &node, Subdirs subs)
 }
 
 MergeFilter::Action
-DataMergeFilter::Filter(Hmx::Object *from, Hmx::Object *to, class ObjectDir *dir) {
+DataMergeFilter::Filter(Hmx::Object *from, Hmx::Object *to, class ObjectDir *toDir) {
     if (mType == kDataInt) {
         return (MergeFilter::Action)mInt;
     } else {
@@ -1524,11 +1527,11 @@ DEF_DATA_FUNC(DataMergeDirs) {
 
 void DataTermFuncs() { gDataFuncs.clear(); }
 
-void DataRegisterFunc(Symbol s, DataFunc *func) {
-    const std::map<Symbol, DataFunc *>::iterator it = gDataFuncs.find(s);
+void DataRegisterFunc(Symbol sym, DataFunc *func) {
+    const std::map<Symbol, DataFunc *>::iterator it = gDataFuncs.find(sym);
     if (it != gDataFuncs.end() && it->second != func)
-        MILO_FAIL("Can't register different func %s", s);
-    gDataFuncs[s] = func;
+        MILO_FAIL("Can't register different func %s", sym);
+    gDataFuncs[sym] = func;
 }
 
 DEF_DATA_FUNC(DataNotifyOnce) {

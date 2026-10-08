@@ -50,20 +50,25 @@ BEGIN_COPYS(FlowDistance)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(0, 0)
+
 BEGIN_LOADS(FlowDistance)
     LOAD_REVS(bs)
     ASSERT_REVS(0, 0)
     LOAD_SUPERCLASS(FlowNode)
-    mObj1.LoadFromMainOrDir(bs);
-    mObj2.LoadFromMainOrDir(bs);
-    bs >> mDistance;
+    mObj1.LoadFromMainOrDir(d.stream);
+    mObj2.LoadFromMainOrDir(d.stream);
+    d >> mPersistent;
+    d >> mDistance;
+    d >> mRunInRange;
+    d >> mDriveIntensity;
 END_LOADS
 
 bool FlowDistance::Activate() {
     FLOW_LOG("Activated\n");
-    unk58 = false;
+    mRequestingStop = false;
     PushDrivenProperties();
-    unk58 = false;
+    mRequestingStop = false;
     if (mObj1 && mObj2) {
         if (mPersistent) {
             TheFlowMgr->AddPollable(this);
@@ -71,7 +76,11 @@ bool FlowDistance::Activate() {
         }
         Vector3 diff;
         Subtract(mObj1->WorldXfm().v, mObj2->WorldXfm().v, diff);
-        unka2 = Length(diff) > mDistance;
+        Vector3 harness_reduction_vector;
+        harness_reduction_vector.x = diff.y;
+        harness_reduction_vector.y = diff.z;
+        harness_reduction_vector.z = diff.x;
+        unka2 = Length(harness_reduction_vector) > mDistance;
         Execute(kWhenAble);
         if (mPersistent) {
             return true;
@@ -96,7 +105,7 @@ void FlowDistance::ChildFinished(FlowNode *n) {
         if (unka1) {
             TheFlowMgr->RemovePollable(this);
         }
-        if (!mPersistent || unk58) {
+        if (!mPersistent || mRequestingStop) {
             unka1 = false;
             mFlowParent->ChildFinished(this);
         }

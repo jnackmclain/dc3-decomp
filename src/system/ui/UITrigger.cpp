@@ -30,31 +30,65 @@ BEGIN_COPYS(UITrigger)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(1, 0)
+
 BEGIN_LOADS(UITrigger)
     LOAD_REVS(bs)
     ASSERT_REVS(1, 0)
     if (d.rev < 1) {
         UIComponent *uiCom = Hmx::Object::New<UIComponent>();
-        uiCom->Load(bs);
+        uiCom->Load(d.stream);
         delete uiCom;
         Symbol sym;
-        bs >> sym;
+        d >> sym;
         UnregisterEvents();
         mTriggerEvents.clear();
         mTriggerEvents.push_back(sym);
         RegisterEvents();
         ObjPtr<RndAnimatable> animPtr(this);
-        bs >> animPtr;
+        d >> animPtr;
         mAnims.clear();
         mAnims.push_back();
         EventTrigger::Anim &anim = mAnims.back();
         anim.mAnim = animPtr;
     } else
         LOAD_SUPERCLASS(EventTrigger);
-    bs >> mBlockTransition;
+    d >> mBlockTransition;
 END_LOADS
 
-void UITrigger::Trigger() {}
+void UITrigger::Trigger() {
+    EventTrigger::Trigger();
+    mStartTime = TheTaskMgr.UISeconds();
+    mEndTime = 0;
+    FOREACH (it, mAnims) {
+        if (it->mAnim) {
+            float f4;
+            if (it->mEnable) {
+                f4 = it->mPeriod * 30;
+                if (f4 == 0) {
+                    f4 = it->mScale;
+                    if (f4 == 0) {
+                        f4 = 1;
+                    }
+                    f4 = fabsf(it->mStart - it->mEnd) / f4;
+                }
+            } else {
+                f4 = fabsf(it->mAnim->StartFrame() - it->mAnim->EndFrame());
+            }
+            MaxEq(mEndTime, (it->mDelay * 30.0f + f4) / 30.0f);
+        }
+    }
+    if (mBlockTransition && mEndTime > 5.0f) {
+        MILO_NOTIFY(
+            "%s (%s) is blocking and really long! (%f seconds)",
+            Name(),
+            PathName(Dir()),
+            mEndTime
+        );
+    }
+    mEndTime += TheTaskMgr.UISeconds();
+    unk13c = false;
+}
 
 DataArray *UITrigger::SupportedEvents() {
     static DataArray *events =

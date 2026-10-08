@@ -1,3 +1,4 @@
+#include "flow/Flow.h"
 #include "flow/FlowLabel.h"
 #include "flow/FlowNode.h"
 #include "flow/FlowQueueable.h"
@@ -32,6 +33,8 @@ BEGIN_COPYS(FlowLabel)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(1, 0)
+
 BEGIN_LOADS(FlowLabel)
     LOAD_REVS(bs)
     ASSERT_REVS(1, 0)
@@ -41,11 +44,16 @@ BEGIN_LOADS(FlowLabel)
         ObjPtr<FlowNode> node(this);
         d >> node;
         if (mFlowParent != node) {
+            SetParent(node, true);
+        }
+        Flow *flow = dynamic_cast<Flow *>(node.Ptr());
+        if (flow) {
+            flow->RefreshPortLabelLists();
         }
     }
 END_LOADS
 
 bool FlowLabel::Activate(FlowNode *node) {
-    unk58 = false;
+    mRequestingStop = false;
     return FlowQueueable::Activate(node);
 }

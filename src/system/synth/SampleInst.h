@@ -9,7 +9,7 @@ class SampleInst : public Hmx::Object, public PlayableSample {
 public:
     SampleInst(SynthSample *);
     virtual ~SampleInst();
-    virtual bool IsPlaying() const = 0;
+    virtual bool IsPlaying() = 0;
     virtual void SetFXCore(FXCore) = 0;
     virtual float GetProgress() { return 0; }
     virtual void SetStartProgress(float) {}
@@ -50,7 +50,7 @@ protected:
 
     void UpdateVolume();
 
-    ObjPtr<SynthSample> unk38; // 0x38
+    ObjPtr<SynthSample> mSample; // 0x38
     float mVolume; // 0x4c
     float mBankVolume; // 0x50
     float mPan; // 0x54

@@ -11,7 +11,7 @@ struct Weight {
     float derivOut;
 };
 
-inline BinStreamRev &operator>>(BinStreamRev &bs, Weight &w) {
+inline BinStream &operator>>(BinStream &bs, Weight &w) {
     bs >> w.weight >> w.derivIn >> w.derivOut;
     return bs;
 }
@@ -47,9 +47,15 @@ BinStream &operator<<(BinStream &bs, const Key<T> &key) {
 }
 
 template <class T>
-BinStreamRev &operator>>(BinStreamRev &bs, Key<T> &key) {
+BinStream &operator>>(BinStream &bs, Key<T> &key) {
     bs >> key.value >> key.frame;
     return bs;
+}
+
+template <class T>
+BinStreamRev &operator>>(BinStreamRev &d, Key<T> &key) {
+    d >> key.value >> key.frame;
+    return d;
 }
 
 // Keys is a vector<Key<T>>
@@ -269,15 +275,13 @@ public:
         float diff = kHugeFloat;
         int idx = KeyLessEq(f1);
         if (idx >= 0 && idx < size()) {
-            diff = f1 - (*this)[idx].frame;
-            if (MaxEq(diff, kHugeFloat)) {
+            if (MinEq(diff, f1 - (*this)[idx].frame)) {
                 i4 = idx;
             }
         }
         int next = idx + 1;
         if (next >= 0 && next < size()) {
-            f1 = (*this)[next].frame - f1;
-            if (MaxEq(diff, f1)) {
+            if (MinEq(diff, (*this)[next].frame - f1)) {
                 i4 = next;
             }
         }
@@ -384,7 +388,23 @@ namespace Hmx {
 
 // math functions defined in math/Key.cpp:
 void SplineTangent(const Keys<Vector3, Vector3> &, int, Vector3 &);
-void InterpTangent(const Vector3 &, const Vector3 &, const Vector3 &, const Vector3 &, float, Vector3 &);
-void InterpVector(const Keys<Vector3, Vector3> &, const Key<Vector3> *, const Key<Vector3> *, float, bool, Vector3 &, Vector3 *);
+void InterpTangent(
+    const Vector3 &, const Vector3 &, const Vector3 &, const Vector3 &, float, Vector3 &
+);
+void InterpVector(
+    const Keys<Vector3, Vector3> &,
+    const Key<Vector3> *,
+    const Key<Vector3> *,
+    float,
+    bool,
+    Vector3 &,
+    Vector3 *
+);
 void InterpVector(const Keys<Vector3, Vector3> &, bool, float, Vector3 &, Vector3 *);
-void QuatSpline(const Keys<Hmx::Quat, Hmx::Quat> &, const Key<Hmx::Quat> *, const Key<Hmx::Quat> *, float, Hmx::Quat &);
+void QuatSpline(
+    const Keys<Hmx::Quat, Hmx::Quat> &,
+    const Key<Hmx::Quat> *,
+    const Key<Hmx::Quat> *,
+    float,
+    Hmx::Quat &
+);

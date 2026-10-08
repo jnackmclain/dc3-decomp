@@ -1,12 +1,20 @@
 #pragma once
+#include "math/Mtx.h"
+#include "math/Rot.h"
+#include "math/Vec.h"
 #include "obj/Object.h"
-#include "stl/_vector.h"
 #include "utl/MemMgr.h"
 #include "utl/Symbol.h"
 #include <vector>
 #include <list>
 
 class CharClip;
+
+inline short MakeShortAng(float f) {
+    f = f * 1638.4f + 0.5f;
+    MILO_ASSERT(f < 32768 && f > -32767, 0x60);
+    return floor(f);
+}
 
 class CharBones {
 public:
@@ -70,6 +78,13 @@ public:
     int TotalSize() const { return mTotalSize; }
     std::vector<Bone> GetBones() { return mBones; }
     Bone GetBonesAt(int index) { return mBones[index]; }
+    Vector3 *VecOffset() const { return (Vector3 *)mStart; }
+    Vector3 *ScaleOffset() const { return (Vector3 *)(mStart + mScaleOffset); }
+    Hmx::Quat *QuatOffset() const { return (Hmx::Quat *)(mStart + mQuatOffset); }
+    float *RotOffset() const { return (float *)(mStart + mRotXOffset); }
+    float *RotYOffset() const { return (float *)(mStart + mRotYOffset); }
+    float *RotZOffset() const { return (float *)(mStart + mRotZOffset); }
+    char *EndOffset() const { return mStart + mEndOffset; }
 
     static Type TypeOf(Symbol);
     static const char *SuffixOf(Type);
@@ -80,14 +95,39 @@ protected:
     virtual void ReallocateInternal() {}
 
     void RecomputeSizes();
+    void AddBoneInternal(const Bone &);
 
     CompressionType mCompression; // 0x4
     /** "Bones that are animated" */
     std::vector<Bone> mBones; // 0x8
     char *mStart; // 0x14
-    int mCounts[NUM_TYPES]; // 0x18 - 0x30
-    int mOffsets[NUM_TYPES]; // 0x34 - 0x4c
-    int mTotalSize; // 0x50
+    union {
+        struct {
+            int mPosCount; // 0x18
+            int mScaleCount; // 0x1c
+            int mQuatCount; // 0x20
+            int mRotXCount; // 0x24
+            int mRotYCount; // 0x28
+            int mRotZCount; // 0x2c
+            int mEndCount; // 0x30
+        };
+        int mCounts[NUM_TYPES]; // 0x18 - 0x30
+    };
+    struct {
+        union {
+            struct {
+                int mPosOffset; // 0x34
+                int mScaleOffset; // 0x38
+                int mQuatOffset; // 0x3c
+                int mRotXOffset; // 0x40
+                int mRotYOffset; // 0x44
+                int mRotZOffset; // 0x48
+                int mEndOffset; // 0x4c
+            };
+            int mOffsets[NUM_TYPES]; // 0x34 - 0x4c
+        };
+        int mTotalSize; // 0x50
+    };
 };
 
 /** "Holds state for a set of bones" */
@@ -108,9 +148,13 @@ public:
 
     MEM_OVERLOAD(CharBonesAlloc, 0x172);
 
+    friend class CharMirror;
+
 protected:
     virtual void ReallocateInternal();
 };
 
 BinStream &operator<<(BinStream &, const CharBones::Bone &);
 BinStream &operator>>(BinStream &, CharBones::Bone &);
+bool PropSync(CharBones ::Bone &o, DataNode &_val, DataArray *_prop, int _i, PropOp _op);
+extern CharBones *gPropBones;

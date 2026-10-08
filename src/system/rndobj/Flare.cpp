@@ -1,17 +1,19 @@
 #include "rndobj/Flare.h"
 #include "Rnd.h"
 #include "math/Geo.h"
+#include "math/Mtx.h"
 #include "math/Rot.h"
 #include "obj/Object.h"
 #include "os/Debug.h"
 #include "rndobj/Draw.h"
 #include "rndobj/Mat.h"
 #include "rndobj/Trans.h"
+#include "rndobj/Utl.h"
 
 RndFlare::RndFlare()
     : mPointTest(true), mAreaTest(true), mVisible(false), mSizes(0.1, 0.1), mMat(this),
-      mRange(0, 0), mOffset(0), mSteps(1), mStep(0), unk144(0), unk148(false),
-      unk149(false), unk17c(1, 1) {
+      mRange(0, 0), mOffset(0), mSteps(1), mStep(0), unk144(0), mTestDone(false),
+      mLastDone(false), unk17c(1, 1) {
     mMatrix.Identity();
 }
 
@@ -60,38 +62,40 @@ BEGIN_COPYS(RndFlare)
     COPY_MEMBER_FROM(f, mOffset)
     COPY_MEMBER_FROM(f, mSteps)
     COPY_MEMBER_FROM(f, mPointTest)
-    unk149 = false;
-    unk148 = false;
+    mLastDone = false;
+    mTestDone = false;
 END_COPYS
+
+INIT_REVS(7, 0)
 
 BEGIN_LOADS(RndFlare)
     LOAD_REVS(bs)
     ASSERT_REVS(7, 0)
     if (d.rev > 3) {
-        Hmx::Object::Load(bs);
+        LOAD_SUPERCLASS(Hmx::Object)
     }
-    RndTransformable::Load(bs);
-    RndDrawable::Load(bs);
+    LOAD_SUPERCLASS(RndTransformable)
+    LOAD_SUPERCLASS(RndDrawable)
     if (d.rev > 0) {
-        bs >> mMat;
+        d >> mMat;
     }
     if (d.rev > 2) {
-        bs >> mSizes;
+        d >> mSizes;
     } else {
-        bs >> mSizes.x;
+        d >> mSizes.x;
         mSizes.y = mSizes.x;
     }
     if (d.rev > 1) {
-        bs >> mRange >> mOffset;
+        d.stream >> mRange >> mSteps;
     }
     if (d.rev > 4) {
         d >> mPointTest;
     }
     if (d.rev > 6) {
-        bs >> mOffset;
+        d >> mOffset;
     }
-    unk149 = false;
-    unk148 = false;
+    mLastDone = false;
+    mTestDone = false;
     CalcScale();
 END_LOADS
 
@@ -102,6 +106,14 @@ void RndFlare::Print() {
     TheDebug << "   offset:" << mOffset << "\n";
     TheDebug << "   steps: " << mSteps << "\n";
     TheDebug << "   point test: " << mPointTest << "\n";
+}
+
+void RndFlare::Mats(std::list<RndMat *> &mats, bool b2) {
+    if (mMat) {
+        MatShaderOptions opts = GetDefaultMatShaderOpts(this, mMat);
+        mMat->SetShaderOpts(opts);
+        mats.push_back(mMat);
+    }
 }
 
 void RndFlare::SetMat(RndMat *mat) { mMat = mat; }
@@ -128,19 +140,20 @@ bool RndFlare::RectOffscreen(const Hmx::Rect &r) const {
 
 void RndFlare::CalcScale() {
     if (mMatrix != WorldXfm().m) {
-        Vector3 v28;
         mMatrix = WorldXfm().m;
         float len = Length(mMatrix.z);
-        Cross(mMatrix.x, mMatrix.y, v28);
-        unk17c.Set(Length(mMatrix.x), Dot(v28, mMatrix.z) > 0.0f ? len : -len);
+        Vector3 vtmp;
+        Cross(mMatrix.x, mMatrix.y, vtmp);
+        unk17c.Set(Length(mMatrix.x), Dot(vtmp, mMatrix.z) > 0.0f ? len : -len);
     }
 }
 
-void RndFlare::SetSteps(int i1) {
-    i1 = Max(i1, 1);
+void RndFlare::SetSteps(int steps) {
+    steps = Max(steps, 1);
     if (mStep == mSteps) {
-        mStep = i1;
-    } else
-        mStep *= ((float)i1 / mSteps);
-    mSteps = i1;
+        mStep = steps;
+    } else {
+        mStep *= ((float)steps / (float)mSteps);
+    }
+    mSteps = steps;
 }

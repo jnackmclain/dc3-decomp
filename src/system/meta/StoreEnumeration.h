@@ -1,8 +1,9 @@
 #pragma once
 #include "meta/StoreEnumeration.h"
-#include "stl/_vector.h"
 #include "types.h"
 #include "utl/Str.h"
+#include "xdk/win_types.h"
+#include "xdk/xapilibi/xbase.h"
 #include <list>
 
 enum StoreError {
@@ -19,10 +20,8 @@ enum StoreError {
 };
 
 struct EnumProduct {
-    u32 unk0;
-    u32 unk4;
-    u32 unk8;
-    u32 unkc;
+    String unk0;
+    QWORD unk8;
     int unk10;
     int unk14;
 };
@@ -44,7 +43,8 @@ public:
     virtual bool IsSuccess() const = 0;
     virtual void Poll() = 0;
 
-    std::list<EnumProduct> mContentList;
+protected:
+    std::list<EnumProduct> mContentList; // 0x4
 };
 
 class XboxEnumeration : public StoreEnumeration {
@@ -56,10 +56,16 @@ public:
     virtual bool IsSuccess() const;
     virtual void Poll();
 
-    XboxEnumeration(int, std::vector<unsigned long long> *);
+    XboxEnumeration(int, std::vector<QWORD> *);
 
-    std::list<int> unk4;
-    std::vector<unsigned long long> unkc;
-    int unk18;
-    bool unk1c;
+private:
+    int mOfferIDCount; // 0xc
+    QWORD *unk10; // 0x10 - offer IDs
+    QWORD *unk14; // 0x14 - offer ID iterator?
+    int unk18; // 0x18 - padnum?
+    bool mSuccess; // 0x1c
+    XOVERLAPPED mOverlapped; // 0x20
+    HANDLE mHandle; // 0x3c
+    DWORD mBufferSizeBytes; // 0x40
+    HANDLE *mCurOffers; // 0x44 - array of structs of size 0x68 each
 };

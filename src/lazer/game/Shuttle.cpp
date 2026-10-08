@@ -4,19 +4,20 @@
 #include "types.h"
 #include <cmath>
 
-Shuttle::Shuttle() : unk0(0.0f), unk4(0.0f), unk8(false), unkc(0) {}
+Shuttle::Shuttle() : mMs(0), mEndMs(0), mActive(0), mController(0) {}
+Shuttle::~Shuttle() {}
 
-void Shuttle::SetActive(bool b) { unk8 = b; }
+void Shuttle::SetActive(bool b) { mActive = b; }
 
 void Shuttle::Poll() {
-    if (unk8) {
-        JoypadData *data = JoypadGetPadData(unkc);
+    if (mActive) {
+        JoypadData *data = JoypadGetPadData(mController);
         if (data) {
             float sticks = data->mSticks[0][0];
             float powF = pow(sticks, 5);
             powF *= 1000.0f;
-            float f = unk0 + powF;
-            unk0 = Clamp<float>(0, unk4, f);
+            float f = mMs + powF;
+            mMs = Clamp<float>(0, mEndMs, f);
         }
     }
 }

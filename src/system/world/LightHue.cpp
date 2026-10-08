@@ -73,6 +73,8 @@ void LightHue::TranslateColor(const Hmx::Color &col, Hmx::Color &res) {
         res = col;
 }
 
+INIT_REVS(0, 0)
+
 void LightHue::PreLoad(BinStream &bs) {
     LOAD_REVS(bs);
     ASSERT_REVS(0, 0);
@@ -119,14 +121,10 @@ void LightHue::Sync() {
                         s,
                         l
                     );
-                    Key<Vector3> &curKey = mKeys[i];
-                    curKey.frame = (float)i / (float)bmap.Width();
-                    float &x = mKeys[i].value.x;
-                    x = h;
-                    float &y = mKeys[i].value.y;
-                    y = s;
-                    float &z = mKeys[i].value.z;
-                    z = l;
+                    mKeys[i].frame = (float)i / (float)bmap.Width();
+                    mKeys[i].value.x = h;
+                    mKeys[i].value.y = s;
+                    mKeys[i].value.z = l;
                 }
             }
             MemFree(buffer);

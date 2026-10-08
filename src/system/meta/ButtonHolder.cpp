@@ -40,7 +40,7 @@ void ButtonHolder::Poll() {
                     nullptr, kPad_L2, kAction_None, 0, false
                 );
                 PressRec &pressRec = it->GetPressRec(i);
-                if (curPadData->IsButtonInMask(pressRec.iRawButton)) {
+                if (curPadData->Pressed(pressRec.iRawButton)) {
                     if (pressRec.fPressTime > 0
                         && TheTaskMgr.UISeconds() - pressRec.fPressTime
                             >= it->mHoldTime) {
@@ -119,7 +119,7 @@ DataNode ButtonHolder::OnMsg(const ButtonDownMsg &msg) {
         pressRec.iPadNum = msg.GetPadNum();
         return 1;
     } else
-        return DataNode(kDataUnhandled, 0);
+        return DATA_UNHANDLED;
 }
 
 ActionRec::ActionRec(JoypadAction act, float f, UserMgr *umgr)

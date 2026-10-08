@@ -46,18 +46,22 @@ public:
     FlowPtr(Hmx::Object *owner, T *ptr = nullptr)
         : FlowPtrBase(ptr ? ptr->Name() : 0, dynamic_cast<FlowNode *>(owner)),
           mObjPtr(owner, ptr) {}
-    FlowPtr(const FlowPtr &);
     ~FlowPtr() {}
 
+    // see: merged_82401EF0
     void operator=(T *obj) {
-        mObjName = obj ? obj->Name() : 0;
-        mState = GetInitialState(obj);
+        int state = GetInitialState(obj);
+        mObjName = !obj ? 0 : obj->Name();
         mObjPtr = obj;
+        mState = state;
     }
 
     FlowPtr &operator=(const FlowPtr &ptr) {
-        mObjPtr = ptr.mObjPtr;
-        FlowPtrBase::operator=(ptr);
+        auto state = ptr.mState;
+        auto objname = ptr.mObjName;
+        mObjPtr = ptr.mObjPtr.Ptr();
+        mObjName = objname;
+        mState = state;
         return *this;
     }
 
@@ -67,6 +71,8 @@ public:
     }
 
     operator T *() { return Get(); }
+
+    T *Ptr() const { return mObjPtr; }
 
     T *operator->() {
         T *o = Get();
@@ -78,6 +84,16 @@ public:
         mObjPtr = dynamic_cast<T *>(LoadObject(bs));
         return mObjPtr;
     }
+
+    void Save(BinStream &bs) const {
+        if (mObjPtr && mState == -2) {
+            bs << mObjPtr;
+        } else {
+            bs << mObjName;
+        }
+    }
+
+    void Load(BinStream &bs) { mObjPtr = LoadObject(bs); }
 
 private:
     T *Get() {
@@ -91,10 +107,16 @@ private:
 };
 
 template <typename T>
-BinStream &operator<<(BinStream &, const FlowPtr<T> &);
+BinStream &operator<<(BinStream &bs, const FlowPtr<T> &ptr) {
+    ptr.Save(bs);
+    return bs;
+}
 
 template <typename T>
-BinStream &operator>>(BinStream &, FlowPtr<T> &);
+BinStream &operator>>(BinStream &bs, FlowPtr<T> &ptr) {
+    ptr.Load(bs);
+    return bs;
+}
 
 template <class T>
 bool PropSync(FlowPtr<T> &ptr, DataNode &node, DataArray *prop, int i, PropOp op) {

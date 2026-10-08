@@ -1,19 +1,26 @@
 #pragma once
 #include "flow/Flow.h"
+#include "gesture/GestureMgr.h"
 #include "hamobj/HamLabel.h"
 #include "math/DoubleExponentialSmoother.h"
+#include "math/Mtx.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
 #include "rndobj/Anim.h"
 #include "rndobj/Dir.h"
 #include "synth/Sound.h"
+#include "ui/UIListWidget.h"
 #include "utl/BinStream.h"
 #include "utl/MemMgr.h"
 
 struct HamListRibbonDrawState {
+    HamListRibbonDrawState()
+        : unk0(0, 10, 1), unk14(false), unk18(nullptr), unk1c(false), unk20(0),
+          unk24(false) {}
+
     DoubleExponentialSmoother unk0;
     bool unk14;
-    int unk18;
+    UIListElementDrawState *unk18;
     bool unk1c;
     float unk20;
     bool unk24;
@@ -75,19 +82,68 @@ public:
     void PlayHighlightSound(int);
     void PlaySelectSound(int);
     bool IsScrollable(int) const;
+    void Draw(const Transform &, const std::vector<HamListRibbonDrawState> &, bool, bool);
+    void SetDisengageFrame(float);
+
     Sound *SlideSound() const { return mSlideSound; }
     Sound *ScrollSound() const { return mScrollSound; }
     RndAnimatable *ScrollSoundAnim() const { return mScrollSoundAnim; }
+    RndAnimatable *SlideSoundAnim() const { return mSlideSoundAnim; }
     RndAnimatable *EnterAnim() const { return mEnterAnim; }
     void SetTestEntering(bool b) { mTestEntering = b; }
+    bool TestEntering() const { return mTestEntering; }
+    void SetMode(RibbonMode mode) { mMode = mode; }
+    void SetUnk26C(bool b) { unk26c = b; }
+
+    void PlayScrollSound() {
+        if (mScrollSound) {
+            mScrollSound->Play(0, 0, 0, nullptr, 0);
+        }
+    }
+    void StopScrollSound() {
+        if (mScrollSound) {
+            mScrollSound->Stop(nullptr, false);
+        }
+    }
+    void SetScrollSoundFrame(float frame) {
+        if (mScrollSoundAnim) {
+            mScrollSoundAnim->SetFrame(frame, 1);
+        }
+    }
+    void PlaySlideSound() {
+        if (mSlideSound) {
+            mSlideSound->Play(0, 0, 0, nullptr, 0);
+        }
+    }
+    void StopSlideSound() {
+        if (mSlideSound) {
+            mSlideSound->Stop(nullptr, false);
+        }
+    }
+    void SetSlideSoundFrame(float frame) {
+        if (mSlideSoundAnim) {
+            mSlideSoundAnim->SetFrame(frame, 1);
+        }
+    }
+    void SetScrollAnimFrame(float frame) { mScrollAnims.SetScrollFrame(frame); }
 
 private:
     void ResetAnims(bool);
-
+    void SetAnims(bool, float);
+    float GetLabelTotalAlpha() const;
+    void DrawRibbon(
+        int,
+        const Transform &,
+        const Transform &,
+        const HamListRibbonDrawState &,
+        int,
+        int,
+        int,
+        bool
+    );
     DataNode OnEnterBlacklightMode(const DataArray *);
     DataNode OnExitBlacklightMode(const DataArray *);
 
-protected:
     ScrollAnims mScrollAnims; // 0x1fc
     /** "(Milo only) Draw as a test list?" */
     bool mTestMode; // 0x24c

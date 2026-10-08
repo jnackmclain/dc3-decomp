@@ -17,6 +17,8 @@
 class Sound : public virtual Hmx::Object, public SynthPollable {
 public:
     struct DelayArgs {
+        DelayArgs(float v, float p, float t, Hmx::Object *o, float ms)
+            : unk0(v), unk4(p), unk8(t), unkc(o), unk10(ms) {}
         float unk0;
         float unk4;
         float unk8;
@@ -55,6 +57,13 @@ public:
     int NumMarkers() const;
     bool IsMoggReady() const;
     SynthSample *Sample();
+
+    void SetSoundEventReceiver(Hmx::Object *rcvr) { unkb8 = rcvr; }
+    float GetVolume() const { return mVolume; }
+    bool ReverbEnabled() const { return mReverbEnable; }
+    bool Loop() const { return mLoop; }
+
+    bool SoundEmpty() const { return !mSamples.empty() || !mDelayArgs.empty(); }
 
     OBJ_MEM_OVERLOAD(0x16)
     NEW_OBJ(Sound)

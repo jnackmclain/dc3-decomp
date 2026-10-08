@@ -3,13 +3,12 @@
 #include "meta/SongMetadata.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
-#include "stl/_vector.h"
 #include "utl/BinStream.h"
 #include "utl/Symbol.h"
 
 struct PronunciationsLoc {
-    Symbol unk0; // 0x0 - language
-    std::vector<String> unk4; // 0x4 - different possible pronunciations
+    Symbol mLanguage; // 0x0 - language
+    std::vector<String> mPronunciations; // 0x4 - different possible pronunciations
 };
 
 class HamSongMetadata : public SongMetadata {
@@ -26,6 +25,8 @@ public:
 
     bool IsCover() const;
     bool IsMedley() const;
+    bool IsFake() const { return mIsFake; }
+    bool IsComplete() const { return mIsComplete; }
     float Rank() const;
     Symbol DefaultCharacter() const;
     int Bpm() const;
@@ -43,6 +44,8 @@ public:
     const std::vector<PronunciationsLoc> &PronunciationsLocalized() const;
     const char *Album() const;
     const char *Title() const;
+    int YearReleased() const { return mYearReleased; }
+    int DJIntensityRank() const { return mDJIntensityRank; }
 
 private:
     void InitHamSongMetadata();

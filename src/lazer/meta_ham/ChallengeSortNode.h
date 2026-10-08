@@ -1,0 +1,64 @@
+#pragma once
+#include "ChallengeSortMgr.h"
+#include "NavListNode.h"
+#include "hamobj/Difficulty.h"
+#include "obj/Data.h"
+
+class ChallengeHeaderNode : public NavListHeaderNode {
+public:
+    ChallengeHeaderNode(NavListItemSortCmp *, Symbol, bool);
+    virtual ~ChallengeHeaderNode() {}
+    virtual void Text(UIListLabel *, UILabel *) const;
+    virtual DataNode Handle(DataArray *, bool);
+    virtual Symbol OnSelect();
+    virtual Symbol Select();
+    virtual Symbol OnSelectDone();
+    virtual void OnHighlight();
+    virtual NavListSortNode *GetFirstActive();
+    virtual bool IsActive() const;
+    virtual const char *GetAlbumArtPath();
+    virtual void SetCollapseStateIcon(bool) const;
+    virtual void Renumber(stlpmtx_std::vector<NavListSortNode *> &);
+
+    int GetChallengeExp();
+    int GetPotentialChallengeExp(NavListSortNode *);
+    int GetTotalEarnedExp(int);
+    int GetSongID();
+    Symbol GetSongShortName();
+    String GetSongShortTitle();
+
+protected:
+    int mChallengeCount; // 0x58
+};
+
+class ChallengeSortNode : public NavListItemNode {
+public:
+    ChallengeSortNode(NavListItemSortCmp *cmp, ChallengeRecord *record)
+        : NavListItemNode(cmp), mChallengeRecord(record) {}
+    virtual DataNode Handle(DataArray *, bool);
+    virtual Symbol GetToken() const;
+    virtual Symbol OnSelect();
+    virtual Symbol Select();
+    virtual void OnContentMounted(const char *, const char *);
+    virtual void Text(UIListLabel *, UILabel *) const;
+    virtual void Custom(UIListCustom *, Hmx::Object *) const;
+    virtual char const *GetAlbumArtPath();
+
+    int GetChallengeExp();
+    const char *GetChallengerGamertag();
+    int GetChallengeScore();
+    int GetSongID();
+    int GetChallengerXp();
+    int GetDifficulty();
+    void SetMedalIcon(UILabel *) const;
+    void SetNewIcon(UILabel *) const;
+    void SetBuyIcon(UILabel *) const;
+
+    ChallengeRecord *GetChallengeRecord() { return mChallengeRecord; };
+
+private:
+    int GetPlayerSide() const;
+
+protected:
+    ChallengeRecord *mChallengeRecord; // 0x48
+};

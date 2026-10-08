@@ -50,6 +50,27 @@ protected:
     void SetRotzBoneValue(String, float);
     void SetPosBoneValue(String, Vector3);
     void RotateTowards(const Vector3 &, const Vector3 &, float, Vector3 &);
+    void ScaleBone(
+        SkeletonJoint,
+        SkeletonJoint,
+        SkeletonCoordSys,
+        const Vector3 &,
+        const Vector3 &,
+        const Vector3 &,
+        Vector3 &
+    );
+    void CalcRotzBone(SkeletonJoint, SkeletonJoint, SkeletonJoint);
+    void CalcQuatBone(SkeletonJoint, SkeletonJoint, SkeletonJoint);
+    void SetArm(SkeletonJoint, SkeletonJoint, SkeletonJoint, SkeletonJoint);
+    void SetLeg(
+        SkeletonJoint,
+        SkeletonJoint,
+        SkeletonJoint,
+        SkeletonJoint,
+        SkeletonJoint,
+        const BaseSkeleton *,
+        int
+    );
 
     /** "The CharBones object to add into." */
     ObjPtr<CharBonesObject> mBones; // 0x14
@@ -61,10 +82,8 @@ protected:
     std::vector<RndTransformable *> unk6c0; // 0x6c0
     RndTransformable *unk6cc; // 0x6cc
     Transform unk6d0; // 0x6d0
-    Vector3 unk710; // 0x710
-    Vector3 unk720;
-    Vector3 unk730;
-    Vector3 unk740;
+    Vector3 unk710[2]; // 0x710
+    Vector3 unk730[2]; // 0x730
     bool unk750;
     bool unk751;
     float unk754;

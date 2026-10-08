@@ -1,17 +1,28 @@
 #include "lazer/meta_ham/HamSongMgr.h"
+#include "HamProfile.h"
 #include "HamSongMetadata.h"
+#include "SaveLoadManager.h"
+#include "hamobj/Difficulty.h"
+#include "hamobj/HamGameData.h"
+#include "hamobj/HamPlayerData.h"
 #include "lazer/meta_ham/Playlist.h"
 #include "macros.h"
+#include "math/Utl.h"
 #include "meta/DataArraySongInfo.h"
 #include "meta/Jukebox.h"
 #include "meta/SongMgr.h"
 #include "meta_ham/ProfileMgr.h"
+#include "meta_ham/SongStatusMgr.h"
+#include "net_ham/PartyModeJobs.h"
+#include "net_ham/PlaylistJobs.h"
+#include "net_ham/RockCentral.h"
 #include "obj/Data.h"
 #include "obj/Dir.h"
 #include "obj/Object.h"
 #include "os/ContentMgr.h"
 #include "os/Debug.h"
 #include "os/File.h"
+#include "os/PlatformMgr.h"
 #include "os/System.h"
 #include "utl/BinStream.h"
 #include "utl/FakeSongMgr.h"
@@ -20,6 +31,9 @@
 #include "utl/SongInfoCopy.h"
 #include "utl/Std.h"
 #include "utl/Symbol.h"
+#include <cstring>
+#include <cstdio>
+#include <map>
 #include <vector>
 
 HamSongMgr TheHamSongMgr;
@@ -57,7 +71,15 @@ END_HANDLERS
 
 struct SongRankCmp {
     SongRankCmp(HamSongMgr *h) : mMgr(h) {}
-    bool operator()(int, int) const;
+    bool operator()(int i1, int i2) const {
+        float rank1 = mMgr->Data(i1)->Rank();
+        float rank2 = mMgr->Data(i2)->Rank();
+        if (rank1 == rank2) {
+            return i1 < i2;
+        } else {
+            return rank1 < rank2;
+        }
+    }
 
     HamSongMgr *mMgr;
 };
@@ -80,6 +102,9 @@ void HamSongMgr::ContentDone() {
     }
     InitializePlaylists();
     UploadSongLibraryToServer();
+    if (TheSaveLoadMgr) {
+        TheSaveLoadMgr->AutoSave();
+    }
 }
 
 void HamSongMgr::Init() {
@@ -104,9 +129,12 @@ void HamSongMgr::Init() {
     DataArray *tierArr = cfg->FindArray(tier_ranges);
     int numTiers = tierArr->Size() - 1;
     mRankTiers.reserve(numTiers);
-    for (int i = 1; i < numTiers; i++) {
+    for (int i = 0; i < numTiers; i++) {
+        int arrIdx = i + 1;
         mRankTiers.push_back(
-            std::make_pair(tierArr->Array(i)->Int(0), tierArr->Array(i)->Int(1))
+            stlpmtx_std::make_pair(
+                tierArr->Array(arrIdx)->Int(0), tierArr->Array(arrIdx)->Int(1)
+            )
         );
     }
 }
@@ -293,20 +321,20 @@ const char *HamSongMgr::MidiFile(Symbol shortname) const {
     return info ? FakeSongMgr::MidiFile(info) : gNullStr;
 }
 
-char const *HamSongMgr::GetAlbumArtPath(Symbol s) const {
-    if (SongMgr::HasSong(s, true)) {
-        return SongMgr::SongFilePath(s, "_keep.png", 0);
+char const *HamSongMgr::GetAlbumArtPath(Symbol shortname) const {
+    if (SongMgr::HasSong(shortname)) {
+        return SongMgr::SongFilePath(shortname, "_keep.png", 0);
     }
     return gNullStr;
 }
 
-void HamSongMgr::AddRecentSong(Symbol s) {
-    int id = GetSongIDFromShortName(s, true);
+void HamSongMgr::AddRecentSong(Symbol shortname) {
+    int id = GetSongIDFromShortName(shortname, true);
     mJukebox.Play(id);
 }
 
-Symbol HamSongMgr::GetArtistNameFromShortName(Symbol s) {
-    int id = GetSongIDFromShortName(s, true);
+Symbol HamSongMgr::GetArtistNameFromShortName(Symbol shortname) {
+    int id = GetSongIDFromShortName(shortname, true);
     const HamSongMetadata *meta = Data(id);
     char const *artist = meta->Artist(); // so what was the point of this
     return meta->Artist();
@@ -332,8 +360,7 @@ Playlist *HamSongMgr::GetPlaylistWithLocalizedName(String p) {
     FOREACH (it, mPlaylists) {
         Playlist *playlist = *it;
         MILO_ASSERT(playlist, 0xb5);
-        const char *l = Localize(playlist->GetName(), nullptr, TheLocale);
-        if (p == l) {
+        if (p == Localize(playlist->GetName(), nullptr, TheLocale)) {
             return playlist;
         }
     }
@@ -389,42 +416,83 @@ void HamSongMgr::InitializePlaylists() {
     static Symbol songs("songs");
     DataArray *playlistArray = SystemConfig(playlists);
     MILO_ASSERT(playlistArray, 0xd9);
+    for (int i = 1; i < playlistArray->Size(); i++) {
+        DataArray *playlistEntry = playlistArray->Array(i);
+        MILO_ASSERT(playlistEntry, 0xdf);
 
-    if (1 < playlistArray->Size()) {
-        for (int i = 1; i < playlistArray->Size(); i++) {
-            DataArray *playlistEntry = playlistArray->Node(i).Array();
-            MILO_ASSERT(playlistEntry, 0xdf);
+        Symbol playlistName = playlistEntry->Sym(0);
+        Playlist *p = new Playlist();
 
-            Symbol s = playlistEntry->Sym(0);
-            Playlist *p = new Playlist();
-
-            static Symbol is_fitness("is_fitness");
-            p->SetName(s);
-            p->SetUnk8(false);
-            DataArray *songArray = playlistEntry->FindArray(songs, true);
-            MILO_ASSERT(songArray, 0xed);
-
-            if (1 < songArray->Size()) {
-                for (int i = 1; i < songArray->Size(); i++) {
-                    Symbol sym = songArray->Sym(i);
-                    int songID = GetSongIDFromShortName(sym, 0);
-                    if (songID == 0) {
-                        MILO_NOTIFY(
-                            "HMX Playlist: %s is referring to unknown song: %s",
-                            sym,
-                            songID
-                        );
-                    } else {
-                        p->AddSong(songID);
-                    }
-                }
+        static Symbol is_fitness("is_fitness");
+        bool isFitness = false;
+        playlistEntry->FindData(is_fitness, isFitness, false);
+        p->SetName(playlistName);
+        p->SetFitness(isFitness);
+        DataArray *songArray = playlistEntry->FindArray(songs);
+        MILO_ASSERT(songArray, 0xed);
+        for (int j = 1; j < songArray->Size(); j++) {
+            Symbol curSong = songArray->Sym(j);
+            int songID = GetSongIDFromShortName(curSong, false);
+            if (songID != 0) {
+                p->AddSong(songID);
+            } else {
+                MILO_NOTIFY(
+                    "HMX Playlist: %s is referring to unknown song: %s",
+                    playlistName.Str(),
+                    curSong.Str()
+                );
             }
-            if (!p->IsEmpty()) {
-                mPlaylists.push_back(p);
+        }
+        if (!p->IsEmpty()) {
+            mPlaylists.push_back(p);
+        }
+    }
+    std::map<Symbol, Playlist *> playlistMap;
+    char buffer[64];
+    FOREACH (it, TheHamSongMgr.unk11c) {
+        const HamSongMetadata *data = TheHamSongMgr.Data(*it);
+        if (data->IsComplete() && !data->IsFake()
+            && TheProfileMgr.IsContentUnlocked(data->ShortName())) {
+            Symbol crewSym = GetCrewForCharacter(GetOutfitCharacter(data->Outfit()));
+            sprintf(buffer, "%d0s", data->YearReleased() / 10);
+            Symbol decadeSym = buffer;
+            char playlistBuffer[64];
+            if (playlistMap.find(crewSym) == playlistMap.end()) {
+                playlistMap[crewSym] = new Playlist();
+                sprintf(playlistBuffer, "%s_dynamic_playlist", crewSym.Str());
+                playlistMap[crewSym]->SetName(playlistBuffer);
+            }
+            if (playlistMap.find(decadeSym) == playlistMap.end()) {
+                playlistMap[decadeSym] = new Playlist();
+                sprintf(playlistBuffer, "%s_dynamic_playlist", decadeSym.Str());
+                playlistMap[decadeSym]->SetName(playlistBuffer);
+                playlistMap[decadeSym]->SetUnk9(true);
+            }
+            playlistMap[crewSym]->AddSong(*it);
+            playlistMap[decadeSym]->AddSong(*it);
+        }
+    }
+    FOREACH (it, playlistMap) {
+        mPlaylists.push_back(it->second);
+    }
+    int mask = 0;
+    FOREACH (it, playlistMap) {
+        mask |= GetDynamicPlaylistID(it->second->GetName());
+    }
+    for (int i = 0; i < 2; i++) {
+        HamPlayerData *playerData = TheGameData->Player(i);
+        MILO_ASSERT(playerData, 0x139);
+        int padnum = playerData->PadNum();
+        HamProfile *profile = TheProfileMgr.GetProfileFromPad(padnum);
+        if (profile) {
+            profile->UpdateOnlineID();
+            if (profile->IsSignedIn() && ThePlatformMgr.IsSignedIntoLive(padnum)) {
+                TheRockCentral.ManageJob(new SyncAvailableDynamicPlaylistsJob(
+                    nullptr, profile->GetOnlineID()->ToString(), mask
+                ));
             }
         }
     }
-    char buffer[16] = {};
 }
 
 void HamSongMgr::ClearPlaylists() {
@@ -440,8 +508,8 @@ const std::vector<int> &HamSongMgr::RankedSongs(SongType s) const {
     return s == 1 ? unk128 : unk11c;
 }
 
-bool HamSongMgr::IsDummySong(Symbol s) const {
-    return strcmp(SongPath(s, 0), "dummy") == 0;
+bool HamSongMgr::IsDummySong(Symbol shortname) const {
+    return strcmp(SongPath(shortname, 0), "dummy") == 0;
 }
 
 void HamSongMgr::AddSongs(DataArray *a) {
@@ -449,18 +517,18 @@ void HamSongMgr::AddSongs(DataArray *a) {
     ContentDone();
 }
 
-int HamSongMgr::RankTier(int i1) const {
-    int size = mRankTiers.size();
-    for (int i = 0; i < size; i++) {
-        if (i1 <= mRankTiers[i].second) {
+int HamSongMgr::RankTier(int rank) const {
+    int i = 0;
+    for (; i < mRankTiers.size(); i++) {
+        if (rank <= mRankTiers[i].second) {
             return i;
         }
     }
-    return size - 1;
+    return i - 1;
 }
 
-int HamSongMgr::RankTier(Symbol s1) const {
-    int songID = GetSongIDFromShortName(s1);
+int HamSongMgr::RankTier(Symbol shortname) const {
+    int songID = GetSongIDFromShortName(shortname);
     return RankTier(Data(songID)->Rank());
 }
 
@@ -468,7 +536,7 @@ int HamSongMgr::GetTotalNumLibrarySongs() const {
     int num = 0;
     FOREACH (it, mAvailableSongs) {
         const HamSongMetadata *data = Data(*it);
-        if (data->IsVersionOK() && data->IsRanked()
+        if (data->IsVersionOK() && data->IsRanked() && !data->IsFake()
             && TheProfileMgr.IsContentUnlocked(data->ShortName())) {
             num++;
         }
@@ -505,4 +573,179 @@ Symbol HamSongMgr::GetRandomSong() {
     const HamSongMetadata *data = Data(songID);
     MILO_ASSERT(!data->IsPrivate(), 0x326);
     return ret;
+}
+
+void HamSongMgr::UploadSongLibraryToServer() {
+    String str = gNullStr;
+    FOREACH (it, mAvailableSongs) {
+        const HamSongMetadata *data = Data(*it);
+        if (data->IsVersionOK() && data->IsRanked() && !data->IsFake()
+            && TheProfileMgr.IsContentUnlocked(data->ShortName())) {
+            if (str == gNullStr) {
+                str = MakeString("%i", *it);
+            } else {
+                str += MakeString(",%i", *it);
+            }
+        }
+    }
+
+    if (str == gNullStr) {
+        return;
+    } else {
+        for (int i = 0; i < 2; i++) {
+            HamPlayerData *playerData = TheGameData->Player(i);
+            MILO_ASSERT(playerData, 0x41a);
+            int padNum = playerData->PadNum();
+            HamProfile *profileFromPad = TheProfileMgr.GetProfileFromPad(padNum);
+            if (profileFromPad) {
+                profileFromPad->UpdateOnlineID();
+                if (profileFromPad->IsSignedIn()
+                    && ThePlatformMgr.IsSignedIntoLive(padNum)) {
+                    TheRockCentral.ManageJob(new SyncPlayerSongsJob(
+                        nullptr, profileFromPad->GetOnlineID()->ToString(), str
+                    ));
+                }
+            }
+        }
+    }
+}
+
+void HamSongMgr::GetRandomlySelectableRankedSongs(std::vector<int> &songIDs) const {
+    songIDs.clear();
+    FOREACH (it, mAvailableSongs) {
+        const HamSongMetadata *data = Data(*it);
+        if (data->IsRanked() && data->IsComplete() && !data->IsFake()
+            && TheProfileMgr.IsContentUnlocked(data->ShortName())) {
+            songIDs.push_back(*it);
+        }
+    }
+}
+
+void HamSongMgr::GetCoreStarsForDifficulty(
+    HamProfile const *profile, Difficulty diff, int &i1, int &i2
+) const {
+    i1 = 0;
+    i2 = 0;
+    if (profile) {
+        const auto &songSet = GetAvailableSongSet();
+        SongStatusMgr *mgr = profile->GetSongStatusMgr();
+        auto begin = songSet.begin();
+        auto it = begin;
+        if (begin != songSet.end()) {
+            for (it; it != (songSet).end(); (++it)) {
+                int songID = *it;
+                const HamSongMetadata *data = TheHamSongMgr.Data(songID);
+                bool b = false;
+                static Symbol ham3("ham3");
+                if (!data->IsFake() && data->GameOrigin() == ham3
+                    && TheProfileMgr.IsContentUnlocked(data->ShortName())) {
+                    i1 += Clamp(0, 5, mgr->GetStarsForDifficulty(songID, diff, b));
+                    i2 += 5;
+                }
+            }
+        }
+    }
+}
+
+void HamSongMgr::GetCharacterStars(
+    HamProfile const *profile, Symbol character, int &i1, int &i2
+) const {
+    i1 = 0;
+    i2 = 0;
+    if (profile) {
+        const std::set<int> &songSet = GetAvailableSongSet();
+        SongStatusMgr *mgr = profile->GetSongStatusMgr();
+        auto begin = songSet.begin();
+        auto it = begin;
+        if (begin != songSet.end()) {
+            for (it; it != (songSet).end(); (++it)) {
+                int songID = *it;
+                const HamSongMetadata *data = TheHamSongMgr.Data(songID);
+                bool b = false;
+                static Symbol ham3("ham3");
+                if (!data->IsFake() && data->GameOrigin() == ham3
+                    && data->Character() == character
+                    && TheProfileMgr.IsContentUnlocked(data->ShortName())) {
+                    i1 += Clamp(0, 5, mgr->GetStars(songID, b));
+                    i2 += 5;
+                }
+            }
+        }
+    }
+}
+
+void HamSongMgr::GetCrewStars(
+    HamProfile const *profile, Symbol crew, int &i1, int &i2
+) const {
+    i1 = 0;
+    i2 = 0;
+    if (profile) {
+        const std::set<int> &songSet = GetAvailableSongSet();
+        SongStatusMgr *mgr = profile->GetSongStatusMgr();
+        auto begin = songSet.begin();
+        auto it = begin;
+        if (begin != songSet.end()) {
+            for (it; it != (songSet).end(); (++it)) {
+                int songID = *it;
+                const HamSongMetadata *data = TheHamSongMgr.Data(songID);
+                bool b = false;
+                Symbol crewForChar =
+                    GetCrewForCharacter(GetOutfitCharacter(data->Outfit()));
+                static Symbol ham3("ham3");
+                if (!data->IsFake() && data->GameOrigin() == ham3 && crewForChar == crew
+                    && TheProfileMgr.IsContentUnlocked(data->ShortName())) {
+                    i1 += Clamp(0, 5, mgr->GetBestStars(songID, b, kDifficultyBeginner));
+                    i2 += 5;
+                }
+            }
+        }
+    }
+}
+
+void HamSongMgr::GetCrewStarsForDifficulty(
+    HamProfile const *profile, Symbol crew, Difficulty diff, int &i1, int &i2
+) const {
+    i1 = 0;
+    i2 = 0;
+    if (profile) {
+        const std::set<int> &songSet = GetAvailableSongSet();
+        SongStatusMgr *mgr = profile->GetSongStatusMgr();
+        auto begin = songSet.begin();
+        auto it = begin;
+        if (begin != songSet.end()) {
+            for (it; it != (songSet).end(); (++it)) {
+                int songID = *it;
+                const HamSongMetadata *data = TheHamSongMgr.Data(songID);
+                bool b = false;
+                Symbol crewForChar =
+                    GetCrewForCharacter(GetOutfitCharacter(data->Outfit()));
+                static Symbol ham3("ham3");
+                if (!data->IsFake() && data->GameOrigin() == ham3 && crewForChar == crew
+                    && TheProfileMgr.IsContentUnlocked(data->ShortName())) {
+                    i1 += Clamp(0, 5, mgr->GetStarsForDifficulty(songID, diff, b));
+                    i2 += 5;
+                }
+            }
+        }
+    }
+}
+
+void HamSongMgr::GetValidSongs(
+    MetaPerformer const &performer, std::vector<Symbol> &songs
+) const {
+    songs.clear();
+    std::vector<int> songIDs;
+    GetRankedSongs(songIDs);
+    static Symbol band("band");
+    FOREACH (it, songIDs) {
+        int songID = *it;
+        Symbol shortName = GetShortNameFromSongID(songID);
+        const HamSongMetadata *data = Data(songID);
+        if (data->IsVersionOK() && !performer.SongInSet(shortName)) {
+            char const *title = data->Title();
+            if (title[0] != 'x' && title[0] != '_' && strstr(title, "test") == nullptr) {
+                songs.push_back(shortName);
+            }
+        }
+    }
 }

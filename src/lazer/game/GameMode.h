@@ -11,7 +11,7 @@ public:
     virtual ~GameMode() {}
     virtual DataNode Handle(DataArray *, bool);
 
-    bool InMode(Symbol, bool);
+    bool InMode(Symbol, bool = true);
     int RequiresTwoPlayers(Symbol);
     int MinPlayers(Symbol);
     int MaxPlayers(Symbol);
@@ -20,10 +20,17 @@ public:
 
     void SetInPartyMode(bool mode) { mInPartyMode = mode; }
     bool InPartyMode() const { return mInPartyMode; }
-    bool IsInfinite() const { return mInfinite; }
+    int Infinite() const { return mInfinite; }
 
     Symbol GameplayMode() const { return mGameplayMode; }
-    bool IsGameplayModePerform() const;
+    bool IsGameplayModePerform() const {
+        static Symbol perform("perform");
+        return mGameplayMode == perform;
+    }
+    bool IsGameplayModePractice() const {
+        static Symbol practice("practice");
+        return mGameplayMode == practice;
+    }
     bool IsGameplayModeBustamove() const {
         static Symbol bustamove("bustamove");
         return mGameplayMode == bustamove;
@@ -31,6 +38,10 @@ public:
     bool IsGameplayModeRhythmBattle() const {
         static Symbol rhythm_battle("rhythm_battle");
         return mGameplayMode == rhythm_battle;
+    }
+    bool IsGameplayModeDanceBattle() const {
+        static Symbol dance_battle("dance_battle");
+        return mGameplayMode == dance_battle;
     }
     Symbol Mode() const { return mMode; }
 
@@ -65,3 +76,4 @@ void GameModeTerminate();
 bool IsInLoaderMode(const Symbol &);
 
 extern GameMode *TheGameMode;
+extern bool (*g_LoaderModeCallback)(const Symbol &);

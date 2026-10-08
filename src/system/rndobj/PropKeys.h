@@ -2,6 +2,7 @@
 #include "math/Key.h"
 #include "math/Color.h"
 #include "math/Mtx.h"
+#include "math/Rot.h"
 #include "math/Vec.h"
 #include "obj/Data.h"
 #include "obj/Msg.h"
@@ -16,15 +17,16 @@ public:
     Hmx::Object *mOwner; // 0x8
 
     void operator=(const ObjKeys &keys) {
-        Hmx::Object *oldowner = ObjectStage::sOwner;
         if (this != &keys) {
+            Hmx::Object *oldowner = ObjectStage::sOwner;
+            ObjectStage::sOwner = mOwner;
             resize(keys.size());
             ObjKeys::const_iterator keysit = keys.begin();
             for (ObjKeys::iterator it = begin(); it != end(); it++, keysit++) {
                 *it = *keysit;
             }
+            ObjectStage::sOwner = oldowner;
         }
-        ObjectStage::sOwner = oldowner;
     }
 
     int Add(Hmx::Object *obj, float f, bool b) {
@@ -456,7 +458,7 @@ public:
 class QuatKeys : public PropKeys, public Keys<Hmx::Quat, Hmx::Quat> {
 public:
     QuatKeys(Hmx::Object *targetOwner, Hmx::Object *target)
-        : PropKeys(targetOwner, target), mVec(Vector3::ZeroVec()) {
+        : PropKeys(targetOwner, target), mVec(Vector3::GetZero()) {
         mKeysType = kQuat;
     }
     virtual ~QuatKeys() {}

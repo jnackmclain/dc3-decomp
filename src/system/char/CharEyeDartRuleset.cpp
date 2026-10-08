@@ -70,6 +70,8 @@ BEGIN_COPYS(CharEyeDartRuleset)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(1, 0)
+
 BEGIN_LOADS(CharEyeDartRuleset)
     LOAD_REVS(bs)
     ASSERT_REVS(1, 0)
@@ -78,6 +80,6 @@ BEGIN_LOADS(CharEyeDartRuleset)
         >> mData.mMinDartsPerSequence >> mData.mMaxDartsPerSequence
         >> mData.mMinSecsBetweenDarts >> mData.mMaxSecsBetweenDarts
         >> mData.mMinSecsBetweenSequences >> mData.mMaxSecsBetweenSequences;
-    d.stream >> mData.mScaleWithDistance;
+    d >> mData.mScaleWithDistance;
     d >> mData.mReferenceDistance;
 END_LOADS

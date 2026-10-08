@@ -2,11 +2,14 @@
 #include "Overshell.h"
 #include "flow/PropertyEventProvider.h"
 #include "gesture/GestureMgr.h"
+#include "gesture/Skeleton.h"
 #include "hamobj/HamGameData.h"
 #include "hamobj/HamPlayerData.h"
+#include "meta_ham/HamUI.h"
 #include "obj/Dir.h"
 #include "obj/Msg.h"
 #include "obj/Object.h"
+#include "utl/Symbol.h"
 
 OvershellSlot::OvershellSlot(HamPlayerData &data)
     : mPlayerData(data), mState((OvershellSlotState)0), unk38(0), unk3c(-1) {}
@@ -41,6 +44,27 @@ void OvershellSlot::SetState(OvershellSlotState state) {
     }
 }
 
+void OvershellSlot::Poll(const Skeleton *const (&skeletons)[6]) {
+    int trackingID = mPlayerData.GetSkeletonTrackingID();
+    Skeleton *skel = TheGestureMgr->GetSkeletonByTrackingID(trackingID);
+    if (mState == 3 && trackingID > 0 && !skel) {
+        return;
+    } else if (mState == 0 || (skel && skel->IsValid())) {
+        if (mState == 0) {
+            if (mPlayerData.Autoplay().Null()) {
+                SkeletonChooser *chooser = TheHamUI.GetShellInput()->mSkelChooser;
+                MILO_ASSERT(chooser, 0x99);
+                HamPlayerData *playerData = TheGameData->Player(mPlayerNum);
+                if (playerData->GetSkeletonTrackingID() <= 0)
+                    return;
+            }
+            SetState((OvershellSlotState)3);
+        }
+    } else if (mPlayerData.Autoplay().Null()) {
+        SetState((OvershellSlotState)0);
+    }
+}
+
 Overshell::Overshell() {
     for (int i = 0; i < 2; i++) {
         mSlots[i] = new OvershellSlot(*TheGameData->Player(i));
@@ -71,5 +95,32 @@ void Overshell::Init() {
 void Overshell::Poll(const Skeleton *const (&skeletons)[6]) {
     for (int i = 0; i < 2; i++) {
         mSlots[i]->Poll(skeletons);
+    }
+}
+
+void Overshell::ResolveSkeletons() {
+    if (TheGestureMgr) {
+        for (int i = 0; i < 2; i++) {
+            HamPlayerData *playerData = TheGameData->Player(i);
+            if (!playerData->IsPlaying()) {
+                mSlots[i]->SetState((OvershellSlotState)0);
+                continue;
+            }
+            playerData = TheGameData->Player(i);
+            Skeleton *skel = TheGestureMgr->GetSkeletonByTrackingID(
+                playerData->GetSkeletonTrackingID()
+            );
+
+            playerData = TheGameData->Player(i);
+            Symbol autoplay = playerData->Autoplay();
+            if (skel || !autoplay.Null() || TheGestureMgr->Unk425C() == 1) {
+                mSlots[i]->SetState((OvershellSlotState)3);
+            } else {
+                playerData = TheGameData->Player(i);
+                if (playerData->GetSkeletonTrackingID() <= 0) {
+                    mSlots[i]->SetState((OvershellSlotState)0);
+                }
+            }
+        }
     }
 }

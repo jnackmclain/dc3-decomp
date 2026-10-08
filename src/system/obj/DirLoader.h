@@ -1,4 +1,5 @@
 #pragma once
+#include "obj/Dir.h"
 #include "obj/Object.h"
 #include "utl/BinStream.h"
 #include "utl/FilePath.h"
@@ -7,18 +8,29 @@
 #include "utl/PoolAlloc.h"
 #include "utl/TextFileStream.h"
 
+typedef bool PathEvalFunc(const char *);
+
 class DirLoader : public Loader, public ObjRefOwner {
     typedef void (DirLoader::*DirLoaderStateFunc)(void);
 
 public:
     struct ClassAndNameSort {
+        ClassAndNameSort() {}
         bool operator()(Hmx::Object *, Hmx::Object *);
 
     protected:
         int ClassIndex(Hmx::Object *);
     };
 
-    DirLoader(const FilePath &, LoaderPos, Loader::Callback *, BinStream *, class ObjectDir *, bool, class ObjectDir *);
+    DirLoader(
+        const FilePath &,
+        LoaderPos,
+        Loader::Callback *,
+        BinStream *,
+        class ObjectDir *,
+        bool,
+        class ObjectDir *
+    );
     virtual ~DirLoader();
     virtual Hmx::Object *RefOwner() const { return nullptr; }
     virtual bool Replace(ObjRef *, Hmx::Object *);
@@ -32,6 +44,7 @@ public:
     const char *ProxyName() const { return mProxyName; }
     ObjectDir *ProxyDir() const { return mProxyDir; }
     void SetDeleteSelf(bool set) { mDeleteSelf = set; }
+    void SetUnk99(bool b1) { unk99 = b1; }
 
     POOL_OVERLOAD(DirLoader, 0x2A);
 
@@ -44,10 +57,14 @@ public:
     static bool SaveObjects(const char *, ObjectDir *, bool);
     static void SaveObjects(BinStream &, ObjectDir *);
     static void WriteTypeMemDump(TextFileStream *);
-    static Loader *New(const FilePath &, LoaderPos);
+    static Loader *New(const FilePath &path, LoaderPos pos) {
+        return new DirLoader(path, pos, nullptr, nullptr, nullptr, false, nullptr);
+    }
     static DirLoader *Find(const FilePath &);
     static DirLoader *FindLast(const FilePath &);
     static ObjectDir *LoadObjects(const FilePath &, Callback *, BinStream *);
+    static void SetPathEvalFunc(PathEvalFunc *func) { sPathEval = func; }
+    static ObjectDir *TopSaveDir() { return sTopSaveDir; }
 
 private:
     virtual void PollLoading() { (this->*mState)(); }
@@ -88,7 +105,7 @@ private:
     ObjOwnerPtr<ObjectDir> mProxyDir; // 0xa0
 
     static bool sCacheMode;
-    static bool (*sPathEval)(const char *);
+    static PathEvalFunc *sPathEval;
     static ObjectDir *sTopSaveDir;
     static TextFileStream *sObjectMemDumpFile;
     static TextFileStream *sTypeMemDumpFile;

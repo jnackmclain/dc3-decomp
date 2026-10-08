@@ -1,4 +1,46 @@
 #include "rndobj/BoxMap.h"
+#include "rndobj/Lit.h"
+
+BoxMapLighting::BoxMapLighting() { Clear(); }
+
+void BoxMapLighting::Clear() {
+    mQueued_Directional.Clear();
+    mQueued_Point.Clear();
+    mQueued_Spot.Clear();
+}
+
+bool BoxMapLighting::QueueLight(RndLight *light, float colorScale) {
+    if (light->Showing()) {
+        Hmx::Color lightColor(light->GetColor());
+        lightColor.red *= colorScale;
+        lightColor.green *= colorScale;
+        lightColor.blue *= colorScale;
+        switch (light->GetType()) {
+        case RndLight::kDirectional:
+        case RndLight::kFakeSpot:
+            LightParams_Directional *paramsDirectional;
+            if (ParamsAt(paramsDirectional)) {
+                paramsDirectional->mColor = lightColor;
+                Negate(light->WorldXfm().m.y, paramsDirectional->mDirection);
+                return true;
+            }
+            break;
+        case RndLight::kPoint:
+            LightParams_Point *paramsPoint;
+            if (ParamsAt(paramsPoint)) {
+                paramsPoint->unk0 = light->WorldXfm().v;
+                paramsPoint->mColor = lightColor;
+                paramsPoint->mRange = light->Range();
+                paramsPoint->mFalloffStart = light->FalloffStart();
+                return true;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    return false;
+}
 
 bool BoxMapLighting::CacheData(LightParams_Spot &spot) {
     if (spot.unk50 > 0 && spot.unk58 >= spot.unk54
@@ -9,9 +51,9 @@ bool BoxMapLighting::CacheData(LightParams_Spot &spot) {
         Scale(spot.unk0, f3, v58);
         Vector3 v4c;
         Subtract(spot.unk40, v58, v4c);
-        float f1 = spot.unk58 / (spot.unk54 + f3);
+        float f1 = spot.unk58 / (spot.unk50 + f3);
         f1 *= f1;
-        float f2 = 1.0f / (spot.unk54 * 2.0f);
+        float f2 = 1.0f / (spot.unk50 * 2.0f);
         f1 = (1.0f - f1) / (f1 + 1.0f);
         spot.unk20 = v4c;
         spot.unk30 = f1;
@@ -25,10 +67,37 @@ bool BoxMapLighting::CacheData(LightParams_Spot &spot) {
     }
 }
 
-BoxMapLighting::BoxMapLighting() { Clear(); }
+static int s278 = 0;
+static Vector3 sDirections[150];
+static Hmx::Color sColors[150];
 
-void BoxMapLighting::Clear() {
-    mQueued_Directional.Clear();
-    mQueued_Point.Clear();
-    mQueued_Spot.Clear();
+void BoxMapLighting::ApplyLight(
+    const BoxLightArray<BoxMapLighting::LightParams_Directional, 50> &boxArray
+) const {
+    for (int i = 0; i < boxArray.NumElements(); i++) {
+        sDirections[s278] = boxArray[i].mDirection;
+        sColors[s278++] = boxArray[i].mColor;
+    }
+}
+
+void BoxMapLighting::ApplyLight(
+    const BoxLightArray<BoxMapLighting::LightParams_Point, 50> &boxArray,
+    const Vector3 &vec
+) const {
+    for (int i = 0; i < boxArray.NumElements(); i++) {
+        if (boxArray[i].mRange > boxArray[i].mFalloffStart) {
+            Subtract(boxArray[i].unk0, vec, sDirections[s278]);
+            float lensq = LengthSquared(sDirections[s278]);
+            if (lensq > 0) {
+                float inv = __frsqrte(lensq);
+                float f3 = Min(0.0f, inv * lensq - boxArray[i].mFalloffStart);
+                float f4 =
+                    Min(0.0f, 1 - f3 / (boxArray[i].mRange - boxArray[i].mFalloffStart));
+                sColors[s278].red = boxArray[i].mColor.red * f4;
+                sColors[s278].green = boxArray[i].mColor.green * f4;
+                sColors[s278].blue = boxArray[i].mColor.blue * f4;
+                sDirections[s278++] *= inv;
+            }
+        }
+    }
 }

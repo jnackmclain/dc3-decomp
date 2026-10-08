@@ -1,18 +1,21 @@
 #pragma once
 #include "obj/Object.h"
-#include "stl/_vector.h"
 #include "ui/UIListProvider.h"
 #include "utl/Symbol.h"
 
 class VenueProvider : public UIListProvider, public Hmx::Object {
 public:
-    virtual Symbol DataSymbol(int) const;
+    VenueProvider();
+    virtual ~VenueProvider();
     virtual void Text(int, int, UIListLabel *, UILabel *) const;
+    virtual Symbol DataSymbol(int) const;
     virtual int NumData() const;
 
-    VenueProvider();
     void UpdateList();
 
-    int unk30;
+    void SetPlayer(int i) { mPlayer = i; }
+
+private:
+    int mPlayer; // 0x30
     std::vector<Symbol> mVenues; // 0x34
 };

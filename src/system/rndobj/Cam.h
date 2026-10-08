@@ -1,4 +1,5 @@
 #pragma once
+#include "math/Frustum.h"
 #include "math/Mtx.h"
 #include "math/Sphere.h"
 #include "math/Utl.h"
@@ -23,6 +24,7 @@ public:
     virtual void Load(BinStream &);
     virtual void UpdatedWorldXfm();
     virtual void Select();
+    virtual unsigned int ProjectZ(float) { return 0; }
 
     float NearPlane() const { return mNearPlane; }
     float FarPlane() const { return mFarPlane; }
@@ -46,8 +48,9 @@ public:
         mScreenRect = rect;
         UpdateLocal();
     }
+    const Hmx::Rect &GetScreenRect() const { return mScreenRect; }
     float CalcScreenHeight(const Sphere &s) {
-        float r = mLocalProjectXfm.m.z.y * s.GetRadius();
+        float r = mLocalProjectXfm.m.z.y * s.radius;
         float dist = CalcDistTo(s.center);
         if (dist != 0) {
             return fabsf(r / dist) * mScreenRect.h;
@@ -65,6 +68,9 @@ public:
     static RndCam *Current() { return sCurrent; }
     static float DefaultNearPlane() { return sDefaultNearPlane; }
     static float MaxFarNearPlaneRatio() { return sMaxFarNearPlaneRatio; }
+    const Hmx::Matrix4 &GetMatrix300() const { return unk300; }
+    const Hmx::Matrix4 &GetMatrix340() const { return unk340; }
+    const Vector2 &GetZRange() const { return mZRange; }
 
 protected:
     RndCam();

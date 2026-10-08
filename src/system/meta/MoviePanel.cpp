@@ -6,6 +6,7 @@
 #include "obj/Data.h"
 #include "obj/DataFile.h"
 #include "obj/Object.h"
+#include "obj/PropSync.h"
 #include "obj/Task.h"
 #include "os/Debug.h"
 #include "os/File.h"
@@ -41,7 +42,10 @@ BEGIN_HANDLERS(MoviePanel)
 END_HANDLERS
 
 BEGIN_PROPSYNCS(MoviePanel)
-    SYNC_PROP(show_menu, mShowMenu)
+    static Symbol show_menu("show_menu");
+    if (sym == show_menu) {
+        return PropSync(mShowMenu, _val, _prop, _i + 1, _op) != false;
+    }
     SYNC_SUPERCLASS(Hmx::Object)
 END_PROPSYNCS
 
@@ -117,7 +121,7 @@ void MoviePanel::Poll() {
     if (!mMovie.Poll() && !TheUI->InTransition()) {
         static Message movie_done("movie_done");
         DataNode handled = HandleType(movie_done);
-        if (handled.Equal(DataNode(kDataUnhandled, 0), nullptr, true)) {
+        if (handled.Equal(DATA_UNHANDLED, nullptr, true)) {
             mMovie.End();
             PlayMovie();
         }
@@ -125,22 +129,18 @@ void MoviePanel::Poll() {
         if (mSubtitles && mSubtitleLabel) {
             int frame = mMovie.GetFrame();
             DataArray *arr = mSubtitles->Array(mCurrentSubtitleIndex);
-            if (mSubtitleCleared) {
-                if (arr->Int(0) <= frame) {
-                    mSubtitleLabel->SetSubtitle(arr);
-                    mSubtitleCleared = false;
-                }
+            if (mSubtitleCleared && arr->Int(0) <= frame) {
+                mSubtitleLabel->SetSubtitle(arr);
+                mSubtitleCleared = false;
             }
             if (arr->Int(1) < frame) {
                 if (mSubtitles->Size() > mCurrentSubtitleIndex + 1) {
-                    DataArray *a2 = arr->Array(mCurrentSubtitleIndex + 1);
-                    if (a2) {
-                        if (a2->Int(0) <= frame) {
-                            mSubtitleLabel->SetSubtitle(a2);
-                            mSubtitleCleared = false;
-                            mCurrentSubtitleIndex++;
-                            goto lol;
-                        }
+                    DataArray *a2 = mSubtitles->Array(mCurrentSubtitleIndex + 1);
+                    if (a2 && a2->Int(0) <= frame) {
+                        mSubtitleLabel->SetSubtitle(a2);
+                        mSubtitleCleared = false;
+                        mCurrentSubtitleIndex++;
+                        goto lol;
                     }
                 }
                 if (!mSubtitleCleared) {

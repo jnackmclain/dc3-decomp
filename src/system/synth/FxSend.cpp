@@ -41,7 +41,7 @@ BEGIN_PROPSYNCS(FxSend)
 END_PROPSYNCS
 
 BEGIN_SAVES(FxSend)
-    SAVE_REVS(8, 7)
+    SAVE_REVS(7, 8)
     SAVE_SUPERCLASS(Hmx::Object)
     bs << mNextSend;
     bs << mStage;
@@ -70,12 +70,14 @@ BEGIN_COPYS(FxSend)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(7, 8)
+
 BEGIN_LOADS(FxSend)
     LOAD_REVS(bs)
-    ASSERT_REVS(7, 0)
-    Hmx::Object::Load(bs);
-    bs >> mNextSend;
-    bs >> mStage;
+    ASSERT_REVS(7, 8)
+    LOAD_SUPERCLASS(Hmx::Object)
+    d >> mNextSend;
+    d >> mStage;
     if (d.rev < 5) {
         if (d.rev >= 2) {
             float x;
@@ -123,7 +125,7 @@ void FxSend::RebuildChain() {
 
 void FxSend::BuildChainVector(std::vector<FxSend *> &sends) {
     sends.push_back(this);
-    FOREACH (it, Refs()) {
+    FOREACH_OBJREF (it, this) {
         FxSend *send = dynamic_cast<FxSend *>(it->RefOwner());
         if (send && send->mNextSend == this) {
             send->BuildChainVector(sends);
@@ -164,7 +166,7 @@ bool FxSend::CheckChain(FxSend *send, int i) {
         );
         return false;
     } else {
-        for (ObjRef::iterator it = mRefs.begin(); it != mRefs.end(); ++it) {
+        FOREACH_OBJREF (it, this) {
             FxSend *rsend = dynamic_cast<FxSend *>((*it).RefOwner());
             if (rsend && rsend->NextSend() == this && rsend->Stage() >= i) {
                 MILO_NOTIFY(

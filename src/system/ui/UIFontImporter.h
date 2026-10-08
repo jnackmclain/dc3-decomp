@@ -1,6 +1,8 @@
 #pragma once
 #include "obj/Object.h"
 #include "rndobj/Font.h"
+#include "rndobj/FontBase.h"
+#include "rndobj/Mat.h"
 #include "rndobj/Text.h"
 #include "utl/MemMgr.h"
 #include "utl/Str.h"
@@ -34,7 +36,7 @@ public:
 
     void ImportSettingsFromFont(RndFontBase *);
     Symbol GetMatVariationName(unsigned int) const;
-    char const *GetMatVariationName(RndFontBase *) const;
+    const char *GetMatVariationName(RndFontBase *) const;
     int GetMatVariationIdx(Symbol) const;
     RndFontBase *GetGennedFont(Symbol) const;
     void AttachImporterToFont(RndFontBase *);
@@ -52,6 +54,10 @@ protected:
     void SyncWithGennedFonts();
     void HandmadeFontChanged();
     RndFontBase *FindFontForMat(RndMat *) const;
+    DataNode OnShowFontPicker(DataArray *);
+    DataNode OnGenerate(DataArray *);
+    DataNode OnGenerateOG(DataArray *);
+    DataNode OnGenerate3d(DataArray *);
     DataNode OnGetGennedBitmapPath(DataArray *);
     DataNode OnImportSettings(DataArray *);
     DataNode OnForgetGened(DataArray *);

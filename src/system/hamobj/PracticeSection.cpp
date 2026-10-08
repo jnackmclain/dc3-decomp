@@ -30,7 +30,7 @@ BEGIN_PROPSYNCS(PracticeSection)
     SYNC_PROP_MODIFY(
         test_step_sequence,
         mTestStepSequence,
-        MinEq<int>(mTestStepSequence, mSeqs.size() - 1)
+        mTestStepSequence = Clamp<int>(0, mSeqs.size() - 1, mTestStepSequence)
     )
     SYNC_SUPERCLASS(RndAnimatable)
     SYNC_SUPERCLASS(Hmx::Object)
@@ -93,6 +93,8 @@ BinStreamRev &operator>>(BinStreamRev &bs, PracticeStep &step) {
     }
     return bs;
 }
+
+INIT_REVS(3, 0)
 
 BEGIN_LOADS(PracticeSection)
     LOAD_REVS(bs)
@@ -168,8 +170,7 @@ void PracticeSection::AddStep(PracticeStep step) { mSteps.push_back(step); }
 
 DancerSequence *PracticeSection::SequenceForDetection(Symbol start, Symbol end) {
     int idx = 0;
-    for (std::vector<PracticeStep>::iterator it = mSteps.begin(); it != mSteps.end();
-         ++it, ++idx) {
+    FOREACH (it, mSteps) {
         if (!it->mStart.Null() && !it->mEnd.Null()) {
             if (it->mStart == start && it->mEnd == end) {
                 if (idx < mSeqs.size()) {
@@ -177,6 +178,7 @@ DancerSequence *PracticeSection::SequenceForDetection(Symbol start, Symbol end) 
                 } else
                     return nullptr;
             }
+            ++idx;
         }
     }
     return nullptr;

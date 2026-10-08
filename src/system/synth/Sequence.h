@@ -2,6 +2,7 @@
 #include "obj/Object.h"
 #include "synth/Pollable.h"
 #include "synth/Faders.h"
+#include "utl/PoolAlloc.h"
 
 class SeqInst;
 
@@ -163,6 +164,10 @@ public:
     NEW_OBJ(RandomIntervalGroupSeq)
     static void Init() { REGISTER_OBJ_FACTORY(RandomIntervalGroupSeq) }
 
+    float AvgIntervalSecs() const { return mAvgIntervalSecs; }
+    float IntervalSpread() const { return mIntervalSpread; }
+    int MaxSimultaneous() const { return mMaxSimultaneous; }
+
 protected:
     /** "the number of seconds on average we wait to play a child cue again" */
     float mAvgIntervalSecs; // 0x94
@@ -226,6 +231,8 @@ public:
     virtual void SetTranspose(float) = 0;
     virtual void Poll() {}
     virtual void StartImpl() = 0;
+
+    POOL_OVERLOAD(SeqInst, 0x11f)
 
     void Start();
     void SetVolume(float);

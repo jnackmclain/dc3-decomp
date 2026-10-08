@@ -3,6 +3,7 @@
 #include "char/CharClip.h"
 #include "gesture/BaseSkeleton.h"
 #include "gesture/Skeleton.h"
+#include "gesture/SkeletonViz.h"
 #include "hamobj/HamLabel.h"
 #include "obj/Dir.h"
 #include "obj/Object.h"
@@ -78,6 +79,6 @@ private:
     RndAnimatable *mPoseBeatAnims[kNumSkeletonSides]; // 0x1758
     float unk1760;
     float unk1764;
-    int unk1768; // 0x1768 - flags/mask
+    unsigned int unk1768; // 0x1768 - flags/mask
     float unk176c;
 };

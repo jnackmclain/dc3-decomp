@@ -6,10 +6,11 @@
 #include "rndobj/Dir.h"
 #include "rndobj/Draw.h"
 #include "rndobj/Trans.h"
+#include "synth/Sfx.h"
 #include "utl/Loader.h"
 
 namespace {
-    RndDir *gIconDir;
+    RndDir *gIconDir = nullptr;
 }
 
 SynthEmitter::SynthEmitter()
@@ -63,6 +64,8 @@ BEGIN_COPYS(SynthEmitter)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(3, 0)
+
 BEGIN_LOADS(SynthEmitter)
     LOAD_REVS(bs)
     ASSERT_REVS(3, 0)
@@ -108,6 +111,37 @@ int SynthEmitter::CollidePlane(const Plane &plane) {
         return gIconDir->CollidePlane(plane);
     } else
         return 0;
+}
+
+void SynthEmitter::Poll() {
+    if (mSfx && mListener && mEnabled) {
+        Transform tf70;
+        Invert(mListener->WorldXfm(), tf70);
+        Vector3 v80;
+        Multiply(WorldXfm().v, tf70, v80);
+        float len = Length(v80);
+        if (len > mRadOuter) {
+            delete mInst;
+        } else {
+            if (mInst) {
+                mInst = dynamic_cast<SfxInst *>(mSfx->MakeInst());
+                if (!mInst) {
+                    return;
+                }
+            }
+            if (len > mRadInner) {
+                float vol = (mVolOuter - mVolInner) / (mRadOuter - mRadInner);
+                vol = vol * len + -(vol * mRadInner - mVolInner);
+                mInst->SetVolume(vol);
+            } else {
+                mInst->SetVolume(mVolInner);
+            }
+            mInst->SetTranspose(atan2f(v80.x, v80.y) * 1.2732395f);
+            if (mInst) {
+                mInst->Start();
+            }
+        }
+    }
 }
 
 void SynthEmitter::CheckLoadResources() {

@@ -1,5 +1,6 @@
 #pragma once
 #include "meta_ham/HamPanel.h"
+#include "obj/Object.h"
 #include "os/ContentMgr.h"
 #include "rndobj/Mat.h"
 #include "rndobj/Tex.h"
@@ -34,6 +35,7 @@ public:
 
 class TexLoadPanel : public HamPanel, public ContentMgr::Callback {
 public:
+    TexLoadPanel();
     // Hmx::Object
     virtual ~TexLoadPanel();
     OBJ_CLASSNAME(TexLoadPanel);
@@ -46,26 +48,25 @@ public:
     virtual void Poll();
     virtual bool IsLoaded() const;
     virtual void Unload();
-    virtual void PollForLoading();
     virtual void FinishLoad();
 
     // ContentMgr::Callback
     virtual void ContentMounted(const char *, const char *);
     virtual void ContentFailed(const char *);
 
-    TexLoadPanel();
+    NEW_OBJ(TexLoadPanel)
+
     void FinalizeTexturesChunk();
     DynamicTex *AddTex(const char *, const char *, bool);
     void LoadMoggClip(char const *);
-
-protected:
-    std::vector<DynamicTex *> mTexs; // 0x40
-    MoggClip *mMoggClip; // 0x4c
-    Fader *mFader; // 0x50
 
 protected:
     void FinalizeTextures();
     DLCTex *NextDLCTex();
     bool RegisterForContent() const;
     bool TexturesLoaded() const;
+
+    std::vector<DynamicTex *> mTexs; // 0x40
+    MoggClip *mMoggClip; // 0x4c
+    Fader *mFader; // 0x50
 };

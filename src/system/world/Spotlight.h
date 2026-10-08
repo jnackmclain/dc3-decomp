@@ -1,6 +1,7 @@
 #pragma once
 #include "math/Color.h"
 #include "math/Mtx.h"
+#include "math/Rot.h"
 #include "obj/Object.h"
 #include "rndobj/Draw.h"
 #include "rndobj/Env.h"
@@ -109,9 +110,11 @@ public:
 
     const Hmx::Color &Color() const { return mColorOwner->mColor; }
     float Intensity() const { return mColorOwner->mIntensity; }
-    BeamDef GetBeam() const { return mBeam; }
+    BeamDef &GetBeam() { return mBeam; }
     RndFlare *GetFlare() const { return mFlare; }
-    ObjPtrList<RndDrawable> GetAdditionalObjects() const { return mAdditionalObjects; }
+    const ObjPtrList<RndDrawable> &GetAdditionalObjects() const {
+        return mAdditionalObjects;
+    }
     void SetFlareIsBillboard(bool);
     void SetIntensity(float);
     void SetColorIntensity(const Hmx::Color &c, float f);
@@ -120,9 +123,28 @@ public:
     RndTransformable *GetFloorSpotTarget() const {
         return mSpotTarget ? mSpotTarget : mTarget;
     }
+    RndTransformable *GetTarget() const { return mTarget; }
+    void SetTarget(RndTransformable *trans) { mTarget = trans; }
+    RndMat *LensMesh() const { return mLensMaterial; }
+    bool GetCastShadow() const { return mTargetShadow; }
+    bool FlareEnabled() const { return mFlareEnabled; }
+    void SetUnk2F0(bool b) { unk2f0 = b; }
+    void SetUnk36E(bool b) { unk36e = b; }
+    RndTransformable *ResolveTarget();
     void SetFlareEnabled(bool);
-
+    Hmx::Color IntensifiedColor() const {
+        const Hmx::Color &c = Color();
+        float intensity = Intensity();
+        return Hmx::Color(c.red * intensity, c.green * intensity, c.blue * intensity, 1);
+    }
+    bool GetAnimateFromPreset() const {
+        return mAnimateColorFromPreset || mAnimateOrientationFromPreset;
+    }
+    bool AnimateColorFromPreset() const { return mAnimateColorFromPreset; }
+    bool AnimateOrientationFromPreset() const { return mAnimateOrientationFromPreset; }
+    Hmx::Quat &GetUnk370() { return unk370; }
     static void RemoveFromLists(Spotlight *);
+    static RndMesh *GetDiskMesh() { return sDiskMesh; }
 
 protected:
     Spotlight();
@@ -162,7 +184,7 @@ protected:
     /** "Height offset of the floor disc" */
     float mSpotHeight; // 0x12c
     Transform mFloorSpotXfm; // 0x130
-    Transform unk170; // 0x170
+    Transform mLensXfm; // 0x170
     /** "Color of the spotlight" */
     Hmx::Color mColor; // 0x1b0
     /** "Intensity of the spotlight" */

@@ -1,6 +1,7 @@
 #include "ui/LabelShrinkWrapper.h"
 #include "UIComponent.h"
 #include "macros.h"
+#include "math/Geo.h"
 #include "obj/Data.h"
 #include "obj/Dir.h"
 #include "obj/Object.h"
@@ -19,22 +20,25 @@ LabelShrinkWrapper::LabelShrinkWrapper()
 
 LabelShrinkWrapper::~LabelShrinkWrapper() {}
 
+BEGIN_HANDLERS(LabelShrinkWrapper)
+    HANDLE_SUPERCLASS(UIComponent)
+END_HANDLERS
+
 BEGIN_PROPSYNCS(LabelShrinkWrapper)
     SYNC_PROP_MODIFY(resource, mResourceDir, Update())
-    SYNC_PROP_SET(
-        label, m_pLabel.Ptr(), m_pLabel = dynamic_cast<UILabel *>(_val.GetObj())
-    ) // somethings wrong with this line for some reason
+    SYNC_PROP_SET(label, Label(), m_pLabel = _val.Obj<UILabel>())
     SYNC_PROP_SET(show, m_pShow, m_pShow = _val.Int())
-    SYNC_PROP(left_border, mLeftBorder)
-    SYNC_PROP(right_border, mRightBorder)
-    SYNC_PROP(top_border, mTopBorder)
-    SYNC_PROP(bottom_border, mBottomBorder)
+    SYNC_PROP_MODIFY(left_border, mLeftBorder, Update())
+    SYNC_PROP_MODIFY(right_border, mRightBorder, Update())
+    SYNC_PROP_MODIFY(top_border, mTopBorder, Update())
+    SYNC_PROP_MODIFY(bottom_border, mBottomBorder, Update())
     SYNC_SUPERCLASS(UIComponent)
 END_PROPSYNCS
 
 BEGIN_SAVES(LabelShrinkWrapper)
     SAVE_REVS(2, 0)
-    bs << m_pLabel;
+    bs << m_pLabel << m_pShow;
+    bs << mResourceDir;
     bs << mLeftBorder;
     bs << mRightBorder;
     bs << mTopBorder;
@@ -62,36 +66,47 @@ BEGIN_LOADS(LabelShrinkWrapper)
     PostLoad(bs);
 END_LOADS
 
-void LabelShrinkWrapper::PreLoad(BinStream &bs) {
-    LOAD_REVS(bs)
-    ASSERT_REVS(2, 0)
-    bs >> m_pLabel;
-    bs >> m_pShow;
-    if (d.rev >= 1)
-        bs >> mResourceDir;
-    if (2 <= d.rev) {
-        bs >> mLeftBorder;
-        bs >> mRightBorder;
-        bs >> mTopBorder;
-        bs >> mBottomBorder;
-    }
-    UIComponent::PreLoad(bs);
-    bs.PushRev(packRevs(d.altRev, d.rev), this);
-}
-
-void LabelShrinkWrapper::PostLoad(BinStream &bs) {
-    bs.PopRev(this);
-    // mResourceDir->PostLoad(bs);  fix this line later ig
-    UIComponent::PostLoad(bs);
-    Update();
-}
-
-void LabelShrinkWrapper::Enter() { UIComponent::Enter(); }
-
 void LabelShrinkWrapper::SetTypeDef(DataArray *d) {
     Hmx::Object::SetTypeDef(d);
     Update();
 }
+
+INIT_REVS(2, 0)
+
+void LabelShrinkWrapper::PreLoad(BinStream &bs) {
+    LOAD_REVS(bs)
+    ASSERT_REVS(2, 0)
+    d.stream >> m_pLabel;
+    d.stream >> m_pShow;
+    if (d.rev >= 1)
+        d >> mResourceDir;
+    if (d.rev >= 2) {
+        d >> mLeftBorder;
+        d >> mRightBorder;
+        d >> mTopBorder;
+        d >> mBottomBorder;
+    }
+    UIComponent::PreLoad(d.stream);
+    d.PushRev(this);
+}
+
+void LabelShrinkWrapper::PostLoad(BinStream &bs) {
+    bs.PopRev(this);
+    mResourceDir.PostLoad(nullptr);
+    UIComponent::PostLoad(bs);
+    Update();
+}
+
+void LabelShrinkWrapper::DrawShowing() {
+    if (m_pLabel && m_pShow) {
+        MILO_ASSERT(mResourceDir, 0xa7);
+        UpdateAndDrawWrapper();
+        mResourceDir->SetWorldXfm(WorldXfm());
+        mResourceDir->Draw();
+    }
+}
+
+void LabelShrinkWrapper::Enter() { UIComponent::Enter(); }
 
 void LabelShrinkWrapper::Update() {
     const DataArray *pTypeDef = TypeDef();
@@ -122,13 +137,20 @@ void LabelShrinkWrapper::Update() {
 
 void LabelShrinkWrapper::Init() { REGISTER_OBJ_FACTORY(LabelShrinkWrapper) }
 
-void LabelShrinkWrapper::DrawShowing() {
-    if (m_pLabel && m_pShow) {
-        MILO_ASSERT(mResourceDir, 0xa7);
-        UpdateAndDrawWrapper();
-    }
+void LabelShrinkWrapper::UpdateAndDrawWrapper() {
+    MILO_ASSERT(m_pLabel, 0x86);
+    const Hmx::Rect &r = m_pLabel->DrawRect();
+    float left = r.x - mLeftBorder;
+    float bottom = r.y - mBottomBorder;
+    float right = mRightBorder + r.w + r.x;
+    float top = mTopBorder + r.h + r.y;
+    SetWorldXfm(m_pLabel->WorldXfm());
+    Vector3 v1(left, 0, top);
+    Vector3 v2(right, 0, top);
+    Vector3 v3(left, 0, bottom);
+    Vector3 v4(right, 0, bottom);
+    m_pTopLeftBone->SetLocalPos(v1);
+    m_pTopRightBone->SetLocalPos(v2);
+    m_pBottomLeftBone->SetLocalPos(v3);
+    m_pBottomRightBone->SetLocalPos(v4);
 }
-
-BEGIN_HANDLERS(LabelShrinkWrapper)
-    HANDLE_SUPERCLASS(UIComponent)
-END_HANDLERS

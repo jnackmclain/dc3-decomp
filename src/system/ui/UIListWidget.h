@@ -11,8 +11,6 @@
 class UIList;
 class UIListProvider;
 
-struct UIListWidgetDrawState {};
-
 enum UIListWidgetState {
     kUIListWidgetActive,
     kUIListWidgetHighlight,
@@ -23,6 +21,7 @@ enum UIListWidgetState {
 enum UIListWidgetDrawType {
     kUIListWidgetDrawAlways,
     kUIListWidgetDrawOnlyFocused,
+    kUIListWidgetDrawNever,
     kUIListWidgetDrawFocusedOrManual,
     kNumUIListWidgetDrawTypes
 };
@@ -31,6 +30,28 @@ enum DrawCommand {
     kDrawAll,
     kDrawFirst,
     kExcludeFirst
+};
+
+// size 0x3c
+struct UIListElementDrawState {
+    bool mDraw; // 0x0
+    Vector3 mPos; // 0x4
+    Vector3 unk14; // 0x14
+    float mAlpha; // 0x24
+    UIListWidgetState mElementState; // 0x28
+    UIComponent::State mComponentState; // 0x2c
+    int mDisplay; // 0x30
+    int mShowing; // 0x34
+    int mData; // 0x38
+};
+
+struct UIListWidgetDrawState {
+    Vector3 mFirstPos; // 0x0
+    Vector3 mLastPos; // 0x10
+    Vector3 mHighlightPos; // 0x20
+    int mHighlightDisplay; // 0x30
+    UIListWidgetState mHighlightElementState; // 0x34
+    std::vector<UIListElementDrawState> mElements; // 0x38
 };
 
 class UIListWidget : public Hmx::Object {
@@ -45,7 +66,7 @@ public:
     virtual void Load(BinStream &);
     // UIListWidget
     virtual UIList *SubList(int) { return nullptr; }
-    virtual void ResourceCopy(const UIListWidget *w) { Copy(w, kCopyShallow); }
+    virtual void ResourceCopy(const UIListWidget *w);
     virtual void CreateElements(UIList *, int) {}
     virtual void Draw(
         const UIListWidgetDrawState &,
@@ -63,6 +84,10 @@ public:
     float DrawOrder() const;
     void SetParentList(UIList *);
     void SetColor(UIListWidgetState, UIComponent::State, UIColor *);
+    UIList *ParentList();
+
+    UIListWidgetDrawType DrawType() const;
+    float DisabledAlphaScale() const;
 
     NEW_OBJ(UIListWidget)
     OBJ_MEM_OVERLOAD(0x48)

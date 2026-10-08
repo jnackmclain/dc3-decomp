@@ -8,18 +8,32 @@
 #include "xdk/XAPILIB.h"
 
 namespace {
+    static XINPUT_STATE tXInputStates[kNumJoypads] = { 0 };
     BreedData tBreed[kNumJoypads];
-    HANDLE tThread;
-    bool tNoHandle;
-    XINPUT_STATE tInputStates[kNumJoypads];
+    static HANDLE tThread = nullptr;
+    static bool tNoHandle = false;
+    static unsigned int unkc8[4] = { 0 };
+    static unsigned int unkd8[4] = { 0 };
     CriticalSection tCritSection;
+
+    void InitXinputJoypadThreadData();
+    void RunXinputJoypadLoop();
+
+    DWORD XinputJoypadThreadEntry(HANDLE) {
+        InitXinputJoypadThreadData();
+        RunXinputJoypadLoop();
+        return 0;
+    }
 }
 
 void GetXinputSinceLastFrame(int pad, XINPUT_STATE *state, unsigned int *ui3) {
     CritSecTracker tracker(&tCritSection);
-    *state = tInputStates[pad];
+    *state = tXInputStates[pad];
     unsigned int x;
-    TranslateButtons(&x, tInputStates[pad].Gamepad.wButtons);
+    TranslateButtons(&x, tXInputStates[pad].Gamepad.wButtons);
+    *ui3 = x | unkc8[pad];
+    unkd8[pad] = unkc8[pad];
+    unkc8[pad] = 0;
 }
 
 void XinputJoypadThreadDestruction() {
@@ -67,15 +81,15 @@ void ReceiveUpstreamBreedDataResponse(int pad, unsigned char *data) {
             data[10]
         );
     }
-    tBreed[pad].mVendor = data[1];
-    tBreed[pad].mProject = data[2];
-    tBreed[pad].mPeripheralType = data[3];
-    tBreed[pad].mPlatform = data[4];
-    tBreed[pad].mFactory = data[5];
-    tBreed[pad].mDesignIter = data[6];
-    tBreed[pad].mManuDate = data[8] * 0x100 + data[7];
-    tBreed[pad].mIdent = data[10] * 0x100 + data[9];
-    tBreed[pad].unka = 0;
+    tBreed[pad].bVendor = data[1];
+    tBreed[pad].bProject = data[2];
+    tBreed[pad].bPeriphType = data[3];
+    tBreed[pad].bPlatform = data[4];
+    tBreed[pad].bFactory = data[5];
+    tBreed[pad].bDesignIter = data[6];
+    tBreed[pad].uManuDate = data[8] * 0x100 + data[7];
+    tBreed[pad].uUnique = data[10] * 0x100 + data[9];
+    tBreed[pad].bUninitialized = false;
     JoypadHandleBreedDataResponse(pad);
 }
 
@@ -163,7 +177,7 @@ void SendRawData(
 );
 
 BreedData *GetBreedData(int pad) {
-    if (tBreed[pad].unka) {
+    if (tBreed[pad].bUninitialized) {
         SendRawData(pad, 0x81, 0, 0, 0, 0, 0, 0);
         return nullptr;
     } else {
@@ -187,7 +201,7 @@ bool requestBreedWrite(int pad, unsigned char *pBreedWritePacket) {
 }
 
 JoypadType SetupHXRealGuitar(int pad, const XINPUT_CAPABILITIES &c) {
-    short us = c.Gamepad.sThumbLY;
+    unsigned short us = c.Gamepad.sThumbLY & 0xfffffff0;
     bool u1 = us == 0x1530;
     bool u2 = us == 0x1430;
     if (!u1 && !u2)
@@ -206,8 +220,8 @@ JoypadType SetupHXGuitar(int pad, const XINPUT_CAPABILITIES &c) {
     bool u5 = c.Flags & 0x2;
     bool u1 = c.Flags & 1;
     bool u4 = u5 && (u1 || c.Gamepad.sThumbRX >= 0x100);
-    JoypadGetPadData(pad)->unk4b = u5; // wireless?
-    JoypadGetPadData(pad)->unk4a = u1;
+    JoypadGetPadData(pad)->SetWireless(u5);
+    JoypadGetPadData(pad)->SetCanForceFeedback(u1);
     if (c.Gamepad.sThumbLX == 0x1BAD) {
         GetBreedData(pad);
         return kJoypadXboxCoreGuitar;
@@ -220,8 +234,8 @@ JoypadType SetupHXDrums(int pad, const XINPUT_CAPABILITIES &c) {
     bool u1 = c.Flags & 1;
     bool u4 = u5 && (u1 || c.Gamepad.sThumbRX >= 0x100);
     bool u2 = u5 && u1;
-    JoypadGetPadData(pad)->unk4b = u5; // wireless?
-    JoypadGetPadData(pad)->unk4a = u1;
+    JoypadGetPadData(pad)->SetWireless(u5);
+    JoypadGetPadData(pad)->SetCanForceFeedback(u1);
     if (c.Gamepad.sThumbLX == 0x1BAD) {
         GetBreedData(pad);
         return kJoypadXboxMidiBoxDrums;
@@ -261,18 +275,6 @@ bool ReceiveUpstreamResponse(int pad, unsigned char *data) {
         return false;
     }
     return true;
-}
-
-namespace {
-    void InitXinputJoypadThreadData();
-
-    void RunXinputJoypadLoop();
-
-    DWORD XinputJoypadThreadEntry(HANDLE) {
-        InitXinputJoypadThreadData();
-        RunXinputJoypadLoop();
-        return 0;
-    }
 }
 
 void XinputJoypadThreadStart() {

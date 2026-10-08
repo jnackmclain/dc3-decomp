@@ -1,5 +1,6 @@
 #include "meta/MetaMusicManager.h"
 #include "obj/Dir.h"
+#include "utl/Symbol.h"
 
 MetaMusicManager *TheMetaMusicManager;
 
@@ -34,15 +35,15 @@ void MetaMusicManager::ConfigureMetaMusicSceneData(DataArray *da) {
         MetaMusicScene *pScene = new MetaMusicScene(pSceneArray);
         MILO_ASSERT(pScene, 0x42);
         Symbol scene_name = pScene->GetName();
-        if (SceneExists(scene_name)) {
-            MILO_NOTIFY("%s scene already exists, skipping", scene_name.Str());
+        Symbol scene = scene_name;
+        if (SceneExists(scene)) {
+            Symbol s = scene;
+            MILO_NOTIFY("%s scene already exists, skipping", s.Str());
             delete pScene;
         } else {
             m_mapScenes[scene_name] = pScene;
             const std::list<Symbol> &screenlist = pScene->GetScreenList();
-            for (std::list<Symbol>::const_iterator it = screenlist.begin();
-                 it != screenlist.end();
-                 it++) {
+            FOREACH (it, screenlist) {
                 Symbol theSymbol = *it;
                 if (IsScreenInSceneMap(theSymbol)) {
                     MILO_NOTIFY(
@@ -59,4 +60,19 @@ void MetaMusicManager::ConfigureMetaMusicSceneData(DataArray *da) {
 
 void MetaMusicManager::Init(DataArray *da) {
     ConfigureMetaMusicSceneData(da->FindArray("scenes"));
+}
+
+Symbol MetaMusicManager::GetSceneForScreen(Symbol sym) const {
+    auto s = m_mapScreenToScene.find(sym);
+    if (s != m_mapScreenToScene.end()) {
+        return s->second;
+    }
+    return gNullStr;
+}
+
+bool MetaMusicManager::IsScreenInSceneMap(Symbol sym) const {
+    if (GetSceneForScreen(sym) == gNullStr) {
+        return false;
+    }
+    return true;
 }

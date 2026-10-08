@@ -70,9 +70,19 @@ void XboxContent::Poll() {
         if (pad == 4 || pad == 5) {
             pad = 0xFF;
         }
-        mOverlapped = new XOVERLAPPED();
+        mOverlapped = new XOVERLAPPED;
+        memset(mOverlapped, 0, sizeof(XOVERLAPPED));
+        ULARGE_INTEGER contentSize = { 0 };
         if (XContentCrossTitleCreate(
-                pad, mRoot.c_str(), &mXData, 3, nullptr, &mLicenseBits, 0, 0, mOverlapped
+                pad,
+                mRoot.c_str(),
+                &mXData,
+                3,
+                nullptr,
+                &mLicenseBits,
+                0,
+                contentSize,
+                mOverlapped
             )
             != 0x3E5) {
             RELEASE(mOverlapped);
@@ -102,7 +112,7 @@ void XboxContent::Poll() {
         DWORD res = XGetOverlappedResult(mOverlapped, nullptr, false);
         if (res != 0x3E4) {
             RELEASE(mOverlapped);
-            mState = (State)(res == 7);
+            mState = res == 0 ? (State)7 : (State)8;
         }
     }
 }
@@ -118,7 +128,8 @@ void XboxContent::Mount() {
 
 void XboxContent::Unmount() {
     if (mState == kMounted) {
-        mOverlapped = new XOVERLAPPED();
+        mOverlapped = new XOVERLAPPED;
+        memset(mOverlapped, 0, sizeof(XOVERLAPPED));
         if (XContentClose(mRoot.c_str(), mOverlapped) != 0x3E5) {
             RELEASE(mOverlapped);
             mState = kContentDeleting;
@@ -135,7 +146,8 @@ void XboxContent::Delete() {
     if (mState == 4 || mState == 1) {
         Unmount();
     } else if (mState == 0) {
-        mOverlapped = new XOVERLAPPED();
+        mOverlapped = new XOVERLAPPED;
+        memset(mOverlapped, 0, sizeof(XOVERLAPPED));
         if (XContentCrossTitleDelete(0xFF, &mXData, mOverlapped) != 0x3E5) {
             RELEASE(mOverlapped);
             mState = kContentDeleting;
@@ -182,7 +194,7 @@ void XboxContentMgr::StartRefresh() {
                 if (mOverlappeds[i]) {
                     XCancelOverlapped(mOverlappeds[i]);
                     RELEASE(mOverlappeds[i]);
-                    CloseHandle(unk74[i]);
+                    CloseHandle(mEnumerators[i]);
                 }
             }
         } else if (mState != 1 && mState != 0) {
@@ -211,12 +223,188 @@ void XboxContentMgr::StartRefresh() {
             (*it)->ContentStarted();
         }
         for (int i = 0; i < kNumberOfBuffers; i++) {
-            if (i >= 4
-                || ThePlatformMgr.IsSignedIn(i)
-                    && (i != 5 || mEnumerateSaveGameExports)) {
+            if ((i >= 4 || ThePlatformMgr.IsSignedIn(i))
+                && (i != 5 || mEnumerateSaveGameExports)) {
+                DWORD res;
+                if (i == 4) {
+                    res = XContentCreateCrossTitleEnumerator(
+                        0xFF, 0, 2, 0, 1, nullptr, &mEnumerators[i]
+                    );
+                } else if (i == 5) {
+                    res = XContentCreateCrossTitleEnumerator(
+                        0xFF, 0, 1, 0, 1, nullptr, &mEnumerators[i]
+                    );
+                } else if (i == 6) {
+                    res = XContentCreateCrossTitleEnumerator(
+                        0xFF, 0, 0x7000, 0, 1, nullptr, &mEnumerators[i]
+                    );
+                } else {
+                    res = XContentCreateCrossTitleEnumerator(
+                        i, 0, 2, 0, 1, nullptr, &mEnumerators[i]
+                    );
+                }
+                if (res == 0) {
+                    mOverlappeds[i] = new XOVERLAPPED;
+                    memset(mOverlappeds[i], 0, sizeof(XOVERLAPPED));
+                    if (XEnumerateCrossTitle(
+                            mEnumerators[i], &mXDatas[i], 0x138, nullptr, mOverlappeds[i]
+                        )
+                        != 0x3E5) {
+                        RELEASE(mOverlappeds[i]);
+                        CloseHandle(mEnumerators[i]);
+                    }
+                }
             }
         }
     }
+}
+
+void XboxContentMgr::PollRefresh() {
+    if (mState == 2) {
+        mState = kDiscoveryLoading;
+        for (int i = 0; i < kNumberOfBuffers; i++) {
+            if (mOverlappeds[i]) {
+                DWORD dwResult;
+                DWORD res = XGetOverlappedResult(mOverlappeds[i], &dwResult, false);
+                if (res != 0x3E4) {
+                    if (res == 0) {
+                        for (int j = 0; j < dwResult; j++) {
+                            auto &curXData = mXDatas[i + j];
+                            if (std::find(
+                                    gIgnoredContent.begin(),
+                                    gIgnoredContent.end(),
+                                    curXData.szFileName
+                                )
+                                == gIgnoredContent.end()) {
+                                bool b3 = false;
+                                if (curXData.dwContentType == 0x7000) {
+                                    FOREACH (it, mCallbacks) {
+                                        bool cntRes =
+                                            !(*it)->ContentTitleDiscovered(
+                                                curXData.dwTitleId, curXData.szFileName
+                                            )
+                                            || b3;
+                                        b3 = cntRes;
+                                    }
+                                } else {
+                                    FOREACH (it, mCallbacks) {
+                                        bool cntRes =
+                                            !(*it)->ContentDiscovered(curXData.szFileName)
+                                            || b3;
+                                        b3 = cntRes;
+                                    }
+                                }
+                                if (b3) {
+                                    unk938++;
+                                }
+                                mContents.push_back(
+                                    new XboxContent(curXData, unk934++, i, b3)
+                                );
+                            } else {
+                                break;
+                            }
+                        }
+                        memset(mOverlappeds[i], 0, sizeof(XOVERLAPPED));
+                        if (XEnumerateCrossTitle(
+                                mEnumerators[i],
+                                &mXDatas[i],
+                                0x138,
+                                nullptr,
+                                mOverlappeds[i]
+                            )
+                            == 0x3e5) {
+                            mState = kDiscoveryMounting;
+                            return;
+                        }
+                    } else {
+                        DWORD err = XGetOverlappedExtendedError(mOverlappeds[i]);
+                        if ((WORD)err != 0x12) {
+                            MILO_NOTIFY("XEnumerateCrossTitle (%d) error: %d", i, err);
+                        }
+                    }
+                    RELEASE(mOverlappeds[i]);
+                    CloseHandle(mEnumerators[i]);
+                } else {
+                    mState = kDiscoveryMounting;
+                    return;
+                }
+            }
+        }
+        FOREACH (it, mCallbacks) {
+            (*it)->ContentMountBegun(unk938);
+        }
+    } else if (mState == 3) {
+        int count = 0;
+        FOREACH (it, mContents) {
+            if ((*it)->GetState() == 4) {
+                count++;
+            }
+        }
+        if (count >= 6) {
+            mState = kDiscoveryCheckIfDone;
+        }
+    } else if (mState == 5) {
+        bool b3 = true;
+        FOREACH (it, mContents) {
+            Content::State cState = (*it)->GetState();
+            if (cState == 4) {
+                (*it)->Unmount();
+                b3 = false;
+            } else {
+                b3 = (cState != 1) ? b3 : false;
+            }
+        }
+        if (!b3) {
+            mState = kDiscoveryLoading;
+        }
+    }
+    ContentMgr::PollRefresh();
+}
+
+bool XboxContentMgr::MountContent(Symbol name) {
+    bool ret = false;
+    bool found = false;
+    FOREACH (it, mContents) {
+        if (name == (*it)->FileName()) {
+            found = true;
+            (*it)->Mount();
+            mState = kContentMgrState7;
+            if ((*it)->GetState() == 4) {
+                ret = true;
+            }
+            break;
+        }
+    }
+    if (!found) {
+        MILO_NOTIFY("\"%s\" not found to mount.", name.Str());
+    }
+    int i11 = 0;
+    int i4 = 0;
+    bool cond = false;
+    while (!cond) {
+        Content *cnt = nullptr;
+        unsigned int i9 = -1;
+        FOREACH (it, mContents) {
+            Content::State cState = (*it)->GetState();
+            if (cState == 4 || cState == 2 || cState == 1) {
+                i11++;
+                if (name != (*it)->FileName() && (*it)->GetLRM() < i9
+                    && (*it)->GetState() != 2) {
+                    cnt = *it;
+                    i9 = cnt->GetLRM();
+                }
+            }
+        }
+        if (i11 == i4) {
+            cond = true;
+        } else if (i11 > 6 && cnt) {
+            cnt->Unmount();
+            mState = kContentMgrState7;
+        }
+        i4 = i11;
+        i11 = 0;
+    }
+    return ret;
 }
 
 bool XboxContentMgr::IsMounted(Symbol name) {
@@ -317,7 +505,7 @@ void XboxContentMgr::NotifyFailed(Content *c) {
 
 DataNode XboxContentMgr::OnMsg(const SigninChangedMsg &msg) {
     for (int i = 0; i < 4; i++) {
-        if ((msg.GetChangedMask() >> i) & 1) {
+        if (((unsigned int)msg.GetChangedMask() >> i) & 1) {
             if (ThePlatformMgr.IsSignedIn(i)) {
                 unk70 = true;
             }

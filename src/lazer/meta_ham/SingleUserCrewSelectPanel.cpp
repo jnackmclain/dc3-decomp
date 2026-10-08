@@ -1,25 +1,34 @@
 #include "meta_ham/SingleUserCrewSelectPanel.h"
 #include "HamPanel.h"
+#include "HamUI.h"
+#include "SkeletonChooser.h"
+#include "flow/PropertyEventProvider.h"
+#include "game/GameMode.h"
+#include "gesture/BaseSkeleton.h"
 #include "hamobj/HamGameData.h"
 #include "hamobj/HamPlayerData.h"
 #include "meta_ham/CharacterProvider.h"
 #include "meta_ham/CrewProvider.h"
 #include "meta_ham/MetaPerformer.h"
 #include "meta_ham/OutfitProvider.h"
+#include "meta_ham/ProfileMgr.h"
 #include "meta_ham/TexLoadPanel.h"
 #include "obj/Data.h"
 #include "obj/Msg.h"
 #include "obj/Object.h"
 #include "os/Debug.h"
+#include "rndobj/Mat.h"
 #include "rndobj/Mesh.h"
+#include "rndobj/Tex.h"
 #include "ui/UI.h"
+#include "utl/MakeString.h"
 #include "utl/Symbol.h"
 
 SingleUserCrewSelectPanel::SingleUserCrewSelectPanel() {
     for (int i = 0; i < 2; i++) {
-        mCrewProviders[i].unk30 = i;
-        mCharProviders[i].unk30 = i;
-        mOutfitProviders[i].unk30 = i;
+        mCrewProviders[i].SetPlayer(i);
+        mCharProviders[i].SetPlayer(i);
+        mOutfitProviders[i].SetPlayer(i);
     }
 }
 
@@ -62,8 +71,9 @@ void SingleUserCrewSelectPanel::UpdateProviders() {
 void SingleUserCrewSelectPanel::UpdateProviderPlayerIndices() {
     for (int i = 0; i < 2; i++) {
         int playerIndex = GetPlayerIndex(i);
-        mCharProviders[i].unk30 = playerIndex;
-        mOutfitProviders[i].unk30 = playerIndex;
+        mCrewProviders[i].SetPlayer(playerIndex);
+        mCharProviders[i].SetPlayer(playerIndex);
+        mOutfitProviders[i].SetPlayer(playerIndex);
     }
 }
 
@@ -92,10 +102,12 @@ void SingleUserCrewSelectPanel::SetRandomOutfit(int index) {
 }
 
 void SingleUserCrewSelectPanel::SetCrew(Symbol crew, int index) {
-    HamPlayerData *pPlayerData = TheGameData->Player(GetPlayerIndex(index));
+    int idx = GetPlayerIndex(index);
+    int otherindex = idx == 0;
+    HamPlayerData *pPlayerData = TheGameData->Player(idx);
     MILO_ASSERT(pPlayerData, 0x9e);
-    HamPlayerData *pOtherPlayerData = TheGameData->Player(GetPlayerIndex(index));
-    MILO_ASSERT(pPlayerData, 0xa0);
+    HamPlayerData *pOtherPlayerData = TheGameData->Player(otherindex);
+    MILO_ASSERT(pOtherPlayerData, 0xa0);
     if (pOtherPlayerData->Crew() == crew) {
         pOtherPlayerData->SetCrew(pPlayerData->Crew());
         pOtherPlayerData->SetCharacter(pPlayerData->Char());
@@ -107,6 +119,8 @@ void SingleUserCrewSelectPanel::SetCrew(Symbol crew, int index) {
     pPlayerData->SetCrew(crew);
     const CharacterProvider *pCharacterProvider = GetCharProvider(index);
     MILO_ASSERT(pCharacterProvider, 0xb2);
+    const_cast<CharacterProvider *>(pCharacterProvider)->UpdateList();
+    SetRandomCharacter(index);
 }
 
 bool SingleUserCrewSelectPanel::IsCrewAvailable(Symbol crew, int i) {
@@ -116,8 +130,93 @@ bool SingleUserCrewSelectPanel::IsCrewAvailable(Symbol crew, int i) {
 }
 
 void SingleUserCrewSelectPanel::RefreshUI() {
-    static Message refresh_ui("refresh_ui");
-    TheUI->Handle(refresh_ui, false);
+    static Message cRefreshUIMsg("refresh_ui");
+    TheUI->Handle(cRefreshUIMsg, false);
+}
+
+void SingleUserCrewSelectPanel::SetRandomCharacter(int idx) {
+    int index = GetPlayerIndex(idx);
+    int otherindex = index == 0;
+    HamPlayerData *pPlayerData = TheGameData->Player(index);
+    MILO_ASSERT(pPlayerData, 0xfc);
+    HamPlayerData *pOtherPlayerData = TheGameData->Player(otherindex);
+    MILO_ASSERT(pOtherPlayerData, 0xfe);
+    const CharacterProvider *pCharProvider = GetCharProvider(idx);
+    MILO_ASSERT(pCharProvider, 0x101);
+    Symbol symRandomCharacter = pCharProvider->GetRandomAvailableCharacter();
+    MILO_ASSERT(symRandomCharacter != gNullStr, 0x104);
+    Symbol crewForChar = GetCrewForCharacter(symRandomCharacter);
+    pPlayerData->SetCharacter(symRandomCharacter);
+    pPlayerData->SetCrew(crewForChar);
+    if (!TheGameMode->InMode("dance_battle", true)) {
+        if (!TheGameMode->InMode("campaign", true)) {
+            pPlayerData->SetUnk48(gNullStr);
+            pPlayerData->SetPreferredOutfit(gNullStr);
+        }
+    }
+    if (TheGameMode->InMode("dance_battle", true)) {
+        pPlayerData->SetOutfit(GetCharacterOutfit(symRandomCharacter, 0));
+    } else {
+        const OutfitProvider *pOutfitProvider = GetOutfitProvider(idx);
+        MILO_ASSERT(pOutfitProvider, 0x129);
+        const_cast<OutfitProvider *>(pOutfitProvider)->UpdateList();
+        SetRandomOutfit(idx);
+    }
+}
+
+void SingleUserCrewSelectPanel::SetRandomCrew(int idx) {
+    static Symbol random_crew("random_crew");
+    int index = GetPlayerIndex(idx);
+    int otherindex = index == 0;
+    HamPlayerData *pPlayerData = TheGameData->Player(index);
+    MILO_ASSERT(pPlayerData, 0xe3);
+    HamPlayerData *pOtherPlayerData = TheGameData->Player(otherindex);
+    MILO_ASSERT(pOtherPlayerData, 0xe5);
+    const CrewProvider *pCrewProvider = GetCrewProvider(idx);
+    MILO_ASSERT(pCrewProvider, 0xe8);
+    Symbol symRandomCrew = pCrewProvider->GetRandomAvailableCrew();
+    MILO_ASSERT(symRandomCrew != gNullStr, 0xeb);
+    pPlayerData->SetCrew(symRandomCrew);
+    const CharacterProvider *pCharacterProvider = GetCharProvider(idx);
+    MILO_ASSERT(pCharacterProvider, 0xf0);
+    const_cast<CharacterProvider *>(pCharacterProvider)->UpdateList();
+    SetRandomCharacter(idx);
+}
+
+int SingleUserCrewSelectPanel::GetPlayerIndex(int i) const {
+    SkeletonChooser *pSkeletonChooser = TheHamUI.GetShellInput()->GetSkeletonChooser();
+    MILO_ASSERT(pSkeletonChooser, 0x52);
+    SkeletonSide skelSide = pSkeletonChooser->GetPlayerSide(0);
+    if (TheHamProvider->Property("is_in_party_mode", true)->Int() != 0) {
+        return i == 0;
+    }
+    if (i == 0) {
+        return (skelSide - 1) != 0;
+    }
+    return (skelSide - 1) == 0;
+}
+
+void SingleUserCrewSelectPanel::UpdateCrewMesh(RndMesh *i_pMesh, int i_iSide, Symbol s) {
+    MILO_ASSERT(i_pMesh, 0xba);
+    MILO_ASSERT_RANGE(i_iSide, 0, 2, 0xbb);
+    const CrewProvider *pProvider = GetCrewProvider(i_iSide);
+    MILO_ASSERT(pProvider, 0xbe);
+    String texFile;
+    if (!TheProfileMgr.IsContentUnlocked(s)) {
+        texFile = MakeString("%s_locked.tex", s.Str());
+    } else if (!pProvider->IsCrewAvailable(s)) {
+        texFile = MakeString("%s_locked.tex", s.Str());
+    } else {
+        texFile = MakeString("%s.tex", s.Str());
+    }
+
+    RndMat *pMat = mDir->Find<RndMat>("crew_p1.mat", false);
+    MILO_ASSERT(pMat, 0xd1);
+    RndTex *pTex = mDir->Find<RndTex>(texFile.c_str(), false);
+    if (pTex) {
+        pMat->SetDiffuseTex(pTex);
+        i_pMesh->SetMat(pMat);
+    }
 }
 
 BEGIN_HANDLERS(SingleUserCrewSelectPanel)

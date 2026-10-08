@@ -44,6 +44,8 @@ public:
 
     static Timer &SlowFrameTimer() { return sSlowFrameTimer; }
     static float SlowFrameWaiver() { return sSlowFrameWaiver; }
+    static void AddToSlowFrameWaiver(float val) { sSlowFrameWaiver += val; }
+    static void SetSlowFrameReason(const char *reason) { sSlowFrameReason = reason; }
 
     Timer();
     Timer(DataArray *);
@@ -124,7 +126,7 @@ public:
 #define MAX_TOP_VALS 128
 
 class TimerStats {
-private:
+public:
     int mCount; // 0x0
     float mAvgMs; // 0x4
     float mStdDevMs; // 0x8
@@ -135,10 +137,8 @@ private:
     int mNumCritOverBudget; // 0x1c
     float mAvgMsInCrit; // 0x20
     float mTopValues[MAX_TOP_VALS]; // 0x24
-public:
-    TimerStats(DataArray *);
 
-    bool Critical() const { return mCritical; }
+    TimerStats(DataArray *);
 
     void CollectStats(float, bool, int);
     void PrintPctile(float);
@@ -150,24 +150,82 @@ typedef void (*AutoTimerCallback)(float elapsed, void *context);
 
 class AutoSlowFrame {
 public:
-    static int sDepth;
+    AutoSlowFrame(const char *reason, float waiver)
+        : mStartTime(0), mReason(reason), mWaiver(waiver) {
+        if (MainThread()) {
+            sDepth++;
+            mStartTime = Timer::SlowFrameTimer().Ms();
+            Timer::AddToSlowFrameWaiver(waiver);
+            Timer::SlowFrameTimer().Start();
+        } else {
+            mStartTime = 0;
+        }
+    }
 
-    AutoSlowFrame(const char *reason, float);
-    ~AutoSlowFrame();
+    ~AutoSlowFrame() {
+        if (MainThread()) {
+            sDepth--;
+            Timer::SlowFrameTimer().Stop();
+            if (Timer::SlowFrameTimer().Ms() - mStartTime > mWaiver) {
+                Timer::SetSlowFrameReason(mReason);
+            }
+        }
+    }
+
+private:
+    float mStartTime; // 0x0
+    const char *mReason; // 0x4
+    float mWaiver; // 0x8
+
+    static int sDepth;
 };
 
 class AutoGlitchReport {
 public:
-    AutoGlitchReport(float, const char *);
-    AutoGlitchReport(float, AutoTimerCallback, void *);
-    ~AutoGlitchReport();
+    AutoGlitchReport(float f1, const char *func) {
+        if (MainThread()) {
+            unk3c = f1;
+            mFunc = func;
+            unk38 = 0;
+            mCallback = nullptr;
+            sDepth++;
+            mTimer.Start();
+        }
+    }
+    AutoGlitchReport(float f1, AutoTimerCallback cb, void *v3) {
+        if (MainThread()) {
+            unk3c = f1;
+            unk38 = v3;
+            mCallback = cb;
+            mFunc = nullptr;
+            sDepth++;
+            mTimer.Start();
+        }
+    }
+
+    ~AutoGlitchReport() {
+        if (MainThread()) {
+            sDepth--;
+            SendCallback(mTimer.SplitMs(), unk3c, mFunc, mCallback, unk38);
+        }
+    }
     static void EnableCallback();
-    static void EndExternal(float, float, const char *, AutoTimerCallback, void *);
+    static void
+    EndExternal(float f1, float f2, const char *c3, AutoTimerCallback cb, void *v) {
+        if (MainThread()) {
+            sDepth--;
+            SendCallback(f1, f2, c3, cb, v);
+        }
+    }
     static void SendCallback(float, float, const char *, AutoTimerCallback, void *);
     static int sDepth;
 
 private:
-    Timer unk0;
+    Timer mTimer; // 0x0
+    const char *mFunc; // 0x30
+    AutoTimerCallback mCallback; // 0x34
+    void *unk38; // 0x38 - context?
+    float unk3c; // 0x3c - limit?
 };
 
 class AutoTimer {
@@ -187,8 +245,9 @@ public:
 
     ~AutoTimer() {
         if (mTimer) {
+            unsigned long long cycles = mTimer->Stop();
             AutoGlitchReport::EndExternal(
-                Timer::CyclesToMs(mTimer->Stop()),
+                Timer::CyclesToMs(cycles),
                 mTimeLimit,
                 mTimer->Name().Str(),
                 mCallback,
@@ -205,7 +264,12 @@ public:
     static void CollectTimerStats();
     static void PrintTimers(bool);
     static void Init();
-    static void ResetTimers();
+    static void ResetTimers() {
+        FOREACH (it, sTimers) {
+            it->first.Reset();
+        }
+    }
+    static std::list<std::pair<Timer, TimerStats> > &Timers() { return sTimers; }
 
 private:
     Timer *mTimer; // 0x0

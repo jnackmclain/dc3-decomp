@@ -58,20 +58,22 @@ BEGIN_COPYS(WorldReflection)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(3, 0)
+
 BEGIN_LOADS(WorldReflection)
     LOAD_REVS(bs)
     ASSERT_REVS(3, 0)
     LOAD_SUPERCLASS(Hmx::Object)
     LOAD_SUPERCLASS(RndTransformable)
     LOAD_SUPERCLASS(RndDrawable)
-    bs >> mVerticalStretch;
-    bs >> mDraws;
+    d >> mVerticalStretch;
+    d >> mDraws;
     if (d.rev > 1) {
-        bs >> mHideList;
-        bs >> mShowList;
+        d >> mHideList;
+        d >> mShowList;
     }
     if (d.rev > 2) {
-        bs >> mLodChars;
+        d >> mLodChars;
     }
 END_LOADS
 
@@ -120,9 +122,11 @@ void WorldReflection::DoLOD(int i) {
 void WorldReflection::DrawShowing() {
     START_AUTO_TIMER("world_reflect");
     if (unk138) {
+        return;
+    } else {
         unk138 = true;
         RndCam *cur = RndCam::Current();
-        unk134->Copy(RndCam::Current(), kCopyDeep);
+        unk134->Copy(cur, kCopyDeep);
         Transform tf48(WorldXfm());
         Transform tf78;
         Invert(tf48, tf78);
@@ -133,8 +137,8 @@ void WorldReflection::DrawShowing() {
         Multiply(tfa8, tf48, tfa8);
         Multiply(cur->WorldXfm(), tfa8, unk134->DirtyLocalXfm());
         unk134->Select();
-        Rnd::DrawMode oldMode = TheRnd.GetDrawMode();
-        TheRnd.SetDrawMode((Rnd::DrawMode)8);
+        Rnd::Mode oldMode = TheRnd.DrawMode();
+        TheRnd.SetDrawMode((Rnd::Mode)8);
         DoHide();
         DoLOD(1);
         FOREACH (it, mDraws) {

@@ -5,14 +5,18 @@
 #include "os/Debug.h"
 #include "obj/Data.h"
 #include "utl/TextStream.h"
+#include "utl/Std.h"
+#include <cstdio>
 
-int gBigHunk = 0xC800;
-bool gPoolAllocInitted;
-int gPoolCapacity;
-ChunkAllocator *gChunkAlloc;
+static int gHunkSize = 0xC800;
+static int gSmallHunkSize = 0xC800;
+
+static int gTotalChunksSize = 0;
+static bool gPoolAllocInitted = 0;
+ChunkAllocator *gChunkAlloc = nullptr;
 
 void PoolAllocInit(DataArray *a) {
-    a->FindData("big_hunk", gBigHunk, true);
+    a->FindData("big_hunk", gHunkSize);
     gPoolAllocInitted = true;
 }
 
@@ -42,9 +46,11 @@ void PoolReport(TextStream &ts) {
     gChunkAlloc->Print(ts);
 }
 
-FixedSizeAlloc::FixedSizeAlloc(int x, int y)
-    : mAllocSizeWords(x), mNumAllocs(0), mMaxAllocs(0), mNumChunks(0), mFreeList(nullptr),
-      mNodesPerChunk(y) {
+#pragma region FixedSizeAlloc
+
+FixedSizeAlloc::FixedSizeAlloc(int allocSizeWords, int nodesPerChunk)
+    : mAllocSizeWords(allocSizeWords), mNumAllocs(0), mMaxAllocs(0), mNumChunks(0),
+      mFreeList(nullptr), mNodesPerChunk(nodesPerChunk) {
     MILO_ASSERT(mAllocSizeWords != 0, 0x9D);
 }
 
@@ -52,20 +58,46 @@ void *FixedSizeAlloc::Alloc() {
     if (!mFreeList) {
         Refill();
     }
-    int *old = mFreeList;
-    mNumAllocs++;
-    mFreeList = old;
-    if (mMaxAllocs < mNumAllocs) {
-        mMaxAllocs = mNumAllocs;
+    int *ret = mFreeList;
+    int numAllocs = mNumAllocs + 1;
+    int *next = (int *)*ret;
+    mNumAllocs = numAllocs;
+    mFreeList = next;
+    if (numAllocs > mMaxAllocs) {
+        mMaxAllocs = numAllocs;
     }
-    return old;
+    return ret;
 }
 
 void FixedSizeAlloc::Free(void *v) {
-    v = mFreeList;
+    *(int **)v = mFreeList;
     mFreeList = (int *)v;
     MILO_ASSERT_FMT(mNumAllocs > 0, "mNumAllocs is %d", mNumAllocs);
     mNumAllocs--;
+}
+
+int *FixedSizeAlloc::RawAlloc(int size) {
+    static int *gPoolEnd = nullptr;
+    static int *gPoolStart = nullptr;
+    gTotalChunksSize += size;
+    if (gPoolStart + (size >> 2) > gPoolEnd) {
+        if (MemNumHeaps() > 0) {
+            if (gHunkSize == gSmallHunkSize) {
+                printf("PoolAlloc warning: allocating small pool chunk\n");
+            }
+            MemPushHeap(0);
+        }
+        gPoolStart = (int *)_MemAllocTemp(gHunkSize, __FILE__, 0x71, "PoolChunk", 0);
+        if (MemNumHeaps() > 0) {
+            MemPopHeap();
+        }
+        gPoolEnd = gPoolStart + (gHunkSize >> 2);
+        gHunkSize = gSmallHunkSize;
+        gPoolStart += 0x10;
+    }
+    int *ret = gPoolStart;
+    gPoolStart += (size >> 2);
+    return ret;
 }
 
 void FixedSizeAlloc::Refill() {
@@ -75,14 +107,18 @@ void FixedSizeAlloc::Refill() {
     mNumChunks++;
 
     int *it = mFreeList;
-    for (; it < mFreeList + (allocSize - mAllocSizeWords); ++it) {
+    int *itEnd = mFreeList + (allocSize - mAllocSizeWords);
+    for (; it < itEnd; it += mAllocSizeWords) {
         *it += mAllocSizeWords;
     }
     *it = 0;
 }
 
+#pragma endregion
+#pragma region ChunkAllocator
+
 ChunkAllocator::ChunkAllocator() {
-    for (int i = 0; i < 64; i++) {
+    for (int i = 0; i < MAX_FIXED_ALLOCS; i++) {
         mAllocs[i] = new FixedSizeAlloc((i + 1) * 4, 20);
     }
 }
@@ -101,7 +137,7 @@ void ChunkAllocator::Free(void *v, int idx) {
 }
 
 void ChunkAllocator::Print(TextStream &ts) {
-    ts << MakeString("\n*** POOL REPORT (Total Capacity: %d)***\n", gPoolCapacity);
+    ts << MakeString("\n*** POOL REPORT (Total Capacity: %d)***\n", gTotalChunksSize);
     ts << MakeString("   NodeSize   NumAllocs  MaxAllocs  Capacity  Wasted\n");
     int wasted = 0;
     for (int i = 0; i < 64; i++) {
@@ -126,8 +162,11 @@ void ChunkAllocator::Print(TextStream &ts) {
     ts << MakeString("                             Total Waste = %8d\n", wasted);
 }
 
+#pragma endregion
+#pragma region ReclaimableAlloc
+
 ReclaimableAlloc::ReclaimableAlloc(int x, const char *name)
-    : FixedSizeAlloc((x + 15) / 4, 0x2800 / x), mName(name) {}
+    : FixedSizeAlloc(((x + 15) >> 2) & ~3, 0x2800 / x), mName(name) {}
 
 int *ReclaimableAlloc::RawAlloc(int num) {
     void *alloced = MemAlloc(num, __FILE__, 0x196, mName);
@@ -149,7 +188,7 @@ void ReclaimableAlloc::CustFree(void *mem) {
 
 void ReclaimableAlloc::DeallocAll() {
     MILO_ASSERT(mNumAllocs == 0, 0x19D);
-    for (std::vector<void *>::iterator it = mChunks.begin(); it != mChunks.end(); ++it) {
+    FOREACH (it, mChunks) {
         MemFree(*it);
     }
     mChunks.clear();

@@ -19,18 +19,16 @@ NoteVoiceInst::NoteVoiceInst(
     float fineTune
 )
     : mSample(nullptr), mVolume(0), mStartProgress(0), mTriggerNote(trigger),
-      mCenterNote(zone->CenterNote()), mStarted(false), mStopped(false),
-      mGlideID(glideID), mGlideFrames(0), mGlideToNote(0), mGlideFromNote(0),
-      mGlideFramesLeft(-1), mFineTune(fineTune), mDurationFramesLeft(durFramesLeft),
-      mOwner(owner) {
-    if (zone->Sample()) {
-        mSample = zone->Sample()->NewInst(false, 0, -1);
-        float db = RatioToDb(ratio / 127.0f);
-        mSample->SetBankVolume(zone->Volume() + db);
-        mSample->SetBankPan(zone->Pan());
+      mCenterNote(zone->mCenterNote), mStarted(false), mStopped(false), mGlideID(glideID),
+      mGlideFrames(0), mGlideToNote(0), mGlideFromNote(0), mGlideFramesLeft(-1),
+      mFineTune(fineTune), mDurationFramesLeft(durFramesLeft), mOwner(owner) {
+    if (zone->mSample) {
+        mSample = zone->mSample->NewInst(false, 0, -1);
+        mSample->SetBankVolume(zone->mVolume + RatioToDb(ratio / 127.0f));
+        mSample->SetBankPan(zone->mPan);
         mSample->SetBankSpeed(getCalculatedSpeed(mTriggerNote));
-        mSample->SetFXCore(zone->GetFXCore());
-        mSample->SetADSR(zone->ADSR());
+        mSample->SetFXCore(zone->mFXCore);
+        mSample->SetADSR(zone->mADSR);
         mSample->SetSend(owner->GetSend());
     }
 }
@@ -78,6 +76,26 @@ float NoteVoiceInst::getCalculatedSpeed(float f1) {
     return CalcSpeedFromTranspose(mFineTune / 100.0f + (f1 - mCenterNote));
 }
 
+void NoteVoiceInst::Poll() {
+    if (mDurationFramesLeft == 0) {
+        Stop();
+    } else {
+        if (mDurationFramesLeft > 0) {
+            mDurationFramesLeft--;
+        }
+        if (mGlideFramesLeft >= 0) {
+            float interped = Interp(
+                mGlideFromNote,
+                mGlideToNote,
+                (float)(mGlideFrames - mGlideFramesLeft--) / (float)mGlideFrames
+            );
+            mSample->SetBankSpeed(
+                CalcSpeedFromTranspose(mFineTune / 100.0f + (interped - mCenterNote))
+            );
+        }
+    }
+}
+
 #pragma endregion
 #pragma region MidiInstrument
 
@@ -90,9 +108,13 @@ MidiInstrument::MidiInstrument()
 
 MidiInstrument::~MidiInstrument() { mActiveVoices.DeleteAll(); }
 
+void MidiInstrument::PlayNote(unsigned char note, unsigned char vel, int durFramesLeft) {
+    StartSample(note, vel, durFramesLeft, -1);
+}
+
 BEGIN_HANDLERS(MidiInstrument)
     HANDLE_ACTION(add_map, mMultiSampleMap.push_back())
-    HANDLE_ACTION(play_note, StartSample(_msg->Int(2), _msg->Int(3), _msg->Int(4), -1))
+    HANDLE_ACTION(play_note, PlayNote(_msg->Int(2), _msg->Int(3), _msg->Int(4)))
     HANDLE_SUPERCLASS(Hmx::Object)
 END_HANDLERS
 
@@ -143,6 +165,8 @@ BEGIN_COPYS(MidiInstrument)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(3, 0)
+
 BEGIN_LOADS(MidiInstrument)
     LOAD_REVS(bs)
     ASSERT_REVS(3, 0)
@@ -157,6 +181,24 @@ BEGIN_LOADS(MidiInstrument)
     }
     StartPolling();
 END_LOADS
+
+void MidiInstrument::SynthPoll() {
+    if (!mActiveVoices.empty()) {
+        for (auto it = mActiveVoices.begin(); it != mActiveVoices.end();) {
+            NoteVoiceInst *cur = *it++;
+            cur->Poll();
+            if (cur->Started() && !cur->IsRunning()) {
+                delete cur;
+            }
+        }
+        if (mFaders.Dirty()) {
+            FOREACH (it, mActiveVoices) {
+                (*it)->UpdateVolume();
+                (*it)->UpdatePan();
+            }
+        }
+    }
+}
 
 NoteVoiceInst *MidiInstrument::MakeNoteInst(
     SampleZone *zone,

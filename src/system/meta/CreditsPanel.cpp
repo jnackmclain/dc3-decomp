@@ -52,11 +52,12 @@ RndMat *CreditsPanel::Mat(int i, int j, UIListMesh *mesh) const {
     static Symbol blank("blank");
     DataArray *array = mNames->Array(j);
     Symbol imgSym = blank;
-    if (array->Size() != 0) {
+
+    if (0 != array->Size()) {
         imgSym = array->Sym(0);
     }
     if (imgSym == image) {
-        return mDir->Find<RndMat>(array->Str(1), true);
+        return mDir->Find<RndMat>(array->Str(1));
     } else {
         return nullptr;
     }
@@ -178,7 +179,7 @@ void CreditsPanel::DebugToggleAutoScroll() {
 
 DataNode CreditsPanel::OnMsg(const ButtonDownMsg &msg) {
     if (mAutoScroll)
-        return DataNode(kDataUnhandled, 0);
+        return DATA_UNHANDLED;
     if (msg.GetButton() == kPad_DDown || msg.GetButton() == kPad_LStickDown) {
         mList->Scroll(1);
     } else if (msg.GetButton() == kPad_DUp || msg.GetButton() == kPad_LStickUp) {

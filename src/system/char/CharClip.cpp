@@ -13,6 +13,7 @@
 #include "os/System.h"
 #include "utl/BinStream.h"
 #include "utl/MemMgr.h"
+#include <cstring>
 
 const float CharClip::kBeatAccuracy = 0.02;
 CharClip::FacingSet::FacingBones CharClip::FacingSet::sFacingPos;
@@ -21,7 +22,10 @@ CharClip::FacingSet::FacingBones CharClip::FacingSet::sFacingRotAndPos;
 #pragma region Transitions
 
 bool CharClip::Transitions::Replace(ObjRef *from, Hmx::Object *to) {
-    NodeVector *vector = reinterpret_cast<NodeVector *>(from); // i guess?
+    // the first member of NodeVector is an ObjOwnerPtr<CharClip>, which is also an ObjRef
+    // i guess they were making the assumption that `from`
+    // will always be an ObjOwnerPtr<CharClip> member of the greater NodeVector class?
+    NodeVector *vector = reinterpret_cast<NodeVector *>(from);
     if (!vector->clip.SetObj(to)) {
         RemoveNodes(vector);
     }
@@ -30,7 +34,7 @@ bool CharClip::Transitions::Replace(ObjRef *from, Hmx::Object *to) {
 
 void CharClip::Transitions::Clear() {
     for (NodeVector *it = mNodeStart; it < mNodeEnd; it = it->Next()) {
-        it->clip->~CharClip(); // scalar deleting dtor gets called here
+        it->~NodeVector();
     }
     Resize(0, nullptr);
 }
@@ -46,7 +50,7 @@ int CharClip::Transitions::Size() const {
 CharClip::NodeVector *CharClip::Transitions::Resize(int size, const NodeVector *old) {
     static int _x = MemFindHeap("char");
     MemHeapTracker temp(_x);
-    int n = (int)old - (int)mNodeStart;
+    int n = (char *)old - (char *)mNodeStart;
     MILO_ASSERT((old == NULL) || (n >= 0), 0x9B);
     if (size != BytesInMemory()) {
         if (size == 0) {
@@ -61,8 +65,8 @@ CharClip::NodeVector *CharClip::Transitions::Resize(int size, const NodeVector *
             );
         }
     }
-    mNodeEnd = mNodeStart + size;
-    return mNodeStart + n;
+    mNodeEnd = (NodeVector *)((char *)mNodeStart + size);
+    return (NodeVector *)((char *)mNodeStart + n);
 }
 
 CharClip::NodeVector *CharClip::Transitions::GetNodes(int idx) const {
@@ -81,25 +85,50 @@ CharClip::NodeVector *CharClip::Transitions::FindNodes(CharClip *clip) const {
 }
 
 void CharClip::Transitions::RemoveClip(CharClip *clip) {
+    NodeVector *it = FindNodes(clip);
+    if (it) {
+        RemoveNodes(it);
+    }
+}
+
+void CharClip::Transitions::AddNode(CharClip *clip, const CharGraphNode &node) {
+    NodeVector *found = FindNodes(clip);
     NodeVector *it;
-    for (it = mNodeStart; it < mNodeEnd; it = it->Next()) {
-        if (it->clip == clip) {
-            goto uhm_ackshually;
+    if (found) {
+        int n = (int)mNodeEnd - (int)found->Next();
+        it = Resize(BytesInMemory() + 8, found);
+        memmove((void *)((char *)(it->Next()) + 8), it->Next(), n);
+    } else {
+        it = Resize(BytesInMemory() + 0x20, mNodeEnd);
+        it = new (it) NodeVector(this);
+        it->clip = clip;
+        it->size = 0;
+    }
+    int size = it->size;
+    int i;
+    for (i = 0; i < size; i++) {
+        if (node.curBeat < it->nodes[i].curBeat) {
+            break;
         }
     }
-    it = nullptr;
-uhm_ackshually:
-    if (it)
-        RemoveNodes(it);
+    for (; i < size; size--) {
+        it->nodes[size << 3] = it->nodes[size - 1];
+    }
+    it->nodes[size] = node;
+    it->size++;
+    for (NodeVector *n = mNodeStart; n < mNodeEnd; n = n->Next()) {
+        n->clip.AddSelf();
+    }
 }
 
 void CharClip::Transitions::RemoveNodes(NodeVector *n) {
     MILO_ASSERT(n, 0xEC);
     NodeVector *next = n->Next();
+    n->~NodeVector();
     memmove(n, next, (int)mNodeEnd - (int)next);
     Resize(BytesInMemory() - ((int)next - (int)n), nullptr);
     for (NodeVector *it = mNodeStart; it < mNodeEnd; it = it->Next()) {
-        it->clip->Release(nullptr);
+        it->clip.AddSelf();
     }
 }
 
@@ -124,23 +153,23 @@ void CharClip::Transitions::Save(BinStream &bs) {
 
 void CharClip::Transitions::Load(BinStreamRev &d, int oldRev) {
     Clear();
-    static ObjectDir *sDir;
+    static ObjectDir *sDir = nullptr;
+    char buf[0x100];
+    char buf2[0x100];
     if (oldRev < 8) {
-        int num;
-        d >> num;
-        if (num > 0 && mOwner->Dir() != sDir) {
+        int num_nodes, num_node_vectors;
+        d >> num_nodes;
+        if (num_nodes > 0 && mOwner->Dir() != sDir) {
             MILO_LOG(
                 "NOTIFY: %s has old clip format, should resave\n", PathName(mOwner->Dir())
             );
             sDir = mOwner->Dir();
         }
-        for (int i = 0; i < num; i++) {
-            char buf[0x100];
+        for (int i = 0; i < num_nodes; i++) {
             d.stream.ReadString(buf, 0x100);
             CharClip *clip = mOwner->Dir()->Find<CharClip>(buf, false);
-            int num2;
-            d >> num2;
-            for (int j = 0; j < num2; j++) {
+            d >> num_node_vectors;
+            for (int j = 0; j < num_node_vectors; j++) {
                 CharGraphNode node;
                 d >> node.curBeat;
                 d >> node.nextBeat;
@@ -150,21 +179,27 @@ void CharClip::Transitions::Load(BinStreamRev &d, int oldRev) {
             }
         }
     } else {
-        int temp, numNodes;
-        d >> temp;
-        d >> numNodes;
+        int num_nodes, num_node_vectors;
+        d >> num_nodes;
+        d >> num_node_vectors;
         if (d.rev < 0x14) {
-            temp /= 8;
+            num_nodes = ((num_nodes - (num_node_vectors * 8)) / 8) - num_node_vectors;
+        } else {
+            num_nodes = num_nodes - num_node_vectors;
         }
-        NodeVector *start =
-            (NodeVector *)_MemAllocTemp(temp, __FILE__, 0x4CB, "CharGraphNode", 0);
+        NodeVector *start = (NodeVector *)_MemAllocTemp(
+            num_nodes * sizeof(CharGraphNode) + num_node_vectors * sizeof(NodeVector),
+            __FILE__,
+            0x4CB,
+            "CharGraphNode",
+            0
+        );
         NodeVector *it = start;
-
-        for (int i = 0; i < numNodes; i++) {
-            char buf[0x100];
-            d.stream.ReadString(buf, 0x100);
-            CharClip *clip = mOwner->Dir()->Find<CharClip>(buf, false);
+        for (int i = 0; i < num_node_vectors; i++) {
+            d.stream.ReadString(buf2, 0x100);
+            CharClip *clip = mOwner->Dir()->Find<CharClip>(buf2, false);
             if (clip) {
+                it = new (it) NodeVector(this); // placement new yea boi
                 it->clip = clip;
                 d >> it->size;
                 for (int j = 0; j < it->size; j++) {
@@ -176,16 +211,15 @@ void CharClip::Transitions::Load(BinStreamRev &d, int oldRev) {
                 int count;
                 d >> count;
                 for (int j = 0; j < count; j++) {
-                    int x, y;
-                    d >> x;
-                    d >> y;
+                    CharGraphNode node;
+                    d >> node.curBeat >> node.nextBeat;
                 }
             }
         }
         Resize((int)it - (int)start, nullptr);
         memcpy(mNodeStart, start, BytesInMemory());
         for (NodeVector *it = mNodeStart; it < mNodeEnd; it = it->Next()) {
-            it->clip->Release(nullptr);
+            it->clip.AddSelf();
         }
         MemFree(start);
     }
@@ -429,22 +463,25 @@ BEGIN_COPYS(CharClip)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(0x16, 0)
+
 BEGIN_LOADS(CharClip)
     static int _x = MemFindHeap("char");
     MemHeapTracker temp(_x);
     LOAD_REVS(bs)
     ASSERT_REVS(0x16, 0)
     int oldRev = 0;
-    if (d.rev < 0x10)
+    if (d.rev < 0x10) {
         d >> oldRev;
-    else
+    } else {
         oldRev = 0xD;
+    }
     MILO_ASSERT(oldRev > 1, 0x531);
     LOAD_SUPERCLASS(Hmx::Object)
+    float start, end;
     if (d.rev < 0x12) {
-        int x, y;
-        d >> x;
-        d >> y;
+        d >> start;
+        d >> end;
     }
     d >> mFramesPerSec;
     d >> mFlags;
@@ -453,17 +490,131 @@ BEGIN_LOADS(CharClip)
         int x;
         d >> x;
     }
-    if (oldRev > 3)
+    if (oldRev > 3) {
         d >> mRange;
+    }
     if (oldRev > 5) {
         mRelative.Load(d.stream, false, nullptr);
     } else if (oldRev > 4) {
         bool b117;
         d >> b117;
         mRelative = b117 ? this : nullptr;
-    } else
+    } else {
         mRelative = nullptr;
-    // there's more, the usage of both BinStream and BinStreamRev is weird
+    }
+    if (oldRev > 8 && oldRev < 0xB) {
+        bool b118;
+        d >> b118;
+    }
+    if (oldRev > 9) {
+        d >> mOldVer;
+    }
+    if (oldRev > 0xB) {
+        d >> mDoNotCompress;
+    }
+    mTransitions.Load(d, oldRev);
+    if (oldRev < 3) {
+        int count;
+        d >> count;
+        String str;
+        for (int i = 0; i < count; i++) {
+            d >> str;
+        }
+    }
+    if (oldRev > 6) {
+        int count;
+        d >> count;
+        mBeatEvents.resize(count);
+        for (int i = 0; i < mBeatEvents.size(); i++) {
+            mBeatEvents[i].Load(d.stream);
+        }
+    } else {
+        String str;
+        d >> str;
+        if (!str.empty()) {
+            MILO_NOTIFY("%s has old enter event %s, must port", PathName(this), str);
+        }
+        d >> str;
+        if (!str.empty()) {
+            MILO_NOTIFY("%s has old exit event %s, must port", PathName(this), str);
+        }
+        float f1 = -kHugeFloat;
+        int count;
+        d >> count;
+        for (int i = 0; i < count; i++) {
+            float x;
+            d >> x;
+            d >> str;
+            if (!str.empty()) {
+                MILO_NOTIFY(
+                    "%s has old frame %.2f event %s, must port", PathName(this), x, str
+                );
+            }
+            if (x < f1) {
+                MILO_NOTIFY("Keyframes in %s are out of order.", Name());
+            }
+            f1 = x;
+        }
+    }
+    mDirty = false;
+    int tv = TransitionVersion();
+    if (tv != mOldVer) {
+        mOldVer = tv;
+        mDirty = true;
+    }
+    if (d.rev > 0xC) {
+        mFull.Load(d.stream);
+        mOne.Load(d.stream);
+    } else {
+        mFull.LoadHeader(d);
+        mOne.LoadHeader(d);
+        if (d.rev > 7) {
+            CharBonesSamples samples;
+            samples.LoadHeader(d);
+        }
+        mFull.LoadData(d);
+        mOne.LoadData(d);
+    }
+    if (d.rev > 0xE) {
+        d >> mZeros;
+    }
+    mFacing.Set(mFull);
+    if (d.rev > 0x11) {
+        d >> mBeatTrack;
+    } else {
+        if (NumFrames() > 1) {
+            mBeatTrack.resize(2);
+            mBeatTrack[0] = Key<float>(start, 0);
+            mBeatTrack[1] = Key<float>(end, NumFrames() - 1);
+        } else {
+            mBeatTrack.resize(1);
+            mBeatTrack[0] = Key<float>(start, 0);
+        }
+        if (d.rev < 0x11) {
+            float oldFPS = mFramesPerSec;
+            if (LengthBeats() > 0) {
+                mFramesPerSec = (NumFrames() - 1) * (oldFPS / LengthBeats());
+            } else
+                mFramesPerSec = 30.0f;
+        }
+    }
+    if (d.rev > 0x12) {
+        d >> mSyncAnim;
+    }
+    if (EndBeat() == StartBeat() && mFull.NumSamples() > 1) {
+        MILO_NOTIFY(
+            "%s has endframe == startframe == %.3f but %d samples!",
+            Name(),
+            StartBeat(),
+            mFull.NumSamples()
+        );
+    }
+    if (d.rev > 0x14) {
+        d >> unk18c;
+    }
+    if (d.rev > 0x15) {
+        d >> unk198;
+    }
 END_LOADS
 
 void CharClip::PreSave(BinStream &) {
@@ -538,12 +689,12 @@ void CharClip::SortEvents() {
     std::sort(mBeatEvents.begin(), mBeatEvents.end(), SortByFrame());
 }
 
-void *CharClip::GetChannel(Symbol s) {
-    int off = mFull.FindOffset(s);
+void *CharClip::GetChannel(Symbol name) {
+    int off = mFull.FindOffset(name);
     if (off > -1) {
         return (void *)(off + 1);
     } else {
-        off = mOne.FindOffset(s);
+        off = mOne.FindOffset(name);
         if (off > -1)
             return (void *)(off + mFull.TotalSize() + 1);
         else
@@ -551,10 +702,10 @@ void *CharClip::GetChannel(Symbol s) {
     }
 }
 
-void CharClip::ScaleDown(CharBones &bones, float f) {
-    mFull.ScaleDown(bones, f);
-    mOne.ScaleDown(bones, f);
-    mFacing.ScaleDown(bones, f);
+void CharClip::ScaleDown(CharBones &bones, float scale) {
+    mFull.ScaleDown(bones, scale);
+    mOne.ScaleDown(bones, scale);
+    mFacing.ScaleDown(bones, scale);
 }
 
 int CharClip::GetContext() const {
@@ -589,17 +740,17 @@ const CharGraphNode *CharClip::FindLastNode(CharClip *clip, float beat) const {
     return nullptr;
 }
 
-void CharClip::EvaluateChannel(void *v1, const void *v2, int iii, float f) {
-    if (!v2) {
+void CharClip::EvaluateChannel(void *dst, const void *data, int sample, float frac) {
+    if (!data) {
         MILO_FAIL("%s passed in NULL for evaluate channel", PathName(this));
     }
-    int i3 = (int)v2 - 1;
+    int i3 = (int)data - 1;
     if (i3 < mFull.TotalSize()) {
-        mFull.EvaluateChannel(v1, i3, iii, f);
+        mFull.EvaluateChannel(dst, i3, sample, frac);
     } else {
         int i2 = i3 - mFull.TotalSize();
         if (i2 < mOne.TotalSize()) {
-            mOne.EvaluateChannel(v1, i2, 0, 0);
+            mOne.EvaluateChannel(dst, i2, 0, 0);
         } else {
             MILO_FAIL("%s could not find offset %d %d", i3, i2, PathName(this));
         }
@@ -634,37 +785,43 @@ int CharClip::TransitionVersion() {
 }
 
 const CharGraphNode *
-CharClip::FindNode(CharClip *clip, float f1, int iii, float f2) const {
+CharClip::FindNode(CharClip *clip, float beat, int flags, float f2) const {
     const CharGraphNode *n = nullptr;
-    int blendMode = iii & 0xF;
+    int blendMode = flags & 0xF;
     switch (blendMode) {
     case kPlayNoDefault:
-        break;
     case kPlayNow:
-        break;
     case kPlayDirty:
         break;
     case kPlayNoBlend:
-        n = nullptr;
+        return nullptr;
+    case kPlayFirst: {
+        n = FindFirstNode(clip, beat);
+        if (n) {
+            return n;
+        }
         break;
-    case kPlayFirst:
-        n = FindFirstNode(clip, f1);
+    }
+    case kPlayLast: {
+        n = FindLastNode(clip, beat);
+        if (n) {
+            return n;
+        }
         break;
-    case kPlayLast:
-        n = FindLastNode(clip, f1);
-        break;
+    }
     default:
-        MILO_NOTIFY("Unknown mode flags %x, default to kPlayNow", iii);
+        MILO_NOTIFY("Unknown mode flags %x, default to kPlayNow", flags);
         break;
     }
     if (!n) {
         static CharGraphNode node;
-        node.curBeat = f1;
+        f2 /= 2;
+        node.curBeat = beat;
         if (blendMode == kPlayLast) {
-            MaxEq(node.curBeat, EndBeat() - f2 * 0.5f);
+            MaxEq(node.curBeat, EndBeat() - f2);
         }
+        node.nextBeat = clip->StartBeat();
         n = &node;
-        node.nextBeat = StartBeat();
     }
     return n;
 }
@@ -699,49 +856,49 @@ float CharClip::DeltaSecondsToDeltaBeat(float f1, float beat) {
     if (mBeatTrack.size() == 1)
         return f1;
     else {
-        float ret = FrameToBeat(f1 * mBeatTrack.front().value + BeatToFrame(beat));
+        float ret = FrameToBeat(f1 * StartBeat() + BeatToFrame(beat));
         ret -= beat;
         return ret;
     }
 }
 
-int CharClip::BeatToSample(float f, float *fp) const {
-    float frame = BeatToFrame(f);
-    float f1 = 0;
+int CharClip::BeatToSample(float beat, float *fracPtr) const {
+    float frame = BeatToFrame(beat);
+    float frac = 0;
     if (mBeatTrack.back().frame != 0) {
-        *fp = frame / mBeatTrack.back().frame;
+        frac = frame / mBeatTrack.back().frame;
     }
-    *fp = f1;
-    return mFull.FracToSample(fp);
+    *fracPtr = frac;
+    return mFull.FracToSample(fracPtr);
 }
 
-void CharClip::EvaluateChannel(void *v1, const void *v2, float f3) {
+void CharClip::EvaluateChannel(void *dst, const void *data, float beat) {
     float fp;
-    int sample = BeatToSample(f3, &fp);
-    EvaluateChannel(v1, v2, sample, fp);
+    int sample = BeatToSample(beat, &fp);
+    EvaluateChannel(dst, data, sample, fp);
 }
 
-void CharClip::RotateBy(CharBones &bones, float f) {
+void CharClip::RotateBy(CharBones &bones, float beat) {
     float frac;
-    int samp = BeatToSample(f, &frac);
+    int samp = BeatToSample(beat, &frac);
     MILO_ASSERT(frac == 0, 0x36E);
     mFull.RotateBy(bones, samp);
     mOne.RotateBy(bones, 0);
 }
 
-void CharClip::RotateTo(CharBones &bones, float f1, float f2) {
+void CharClip::RotateTo(CharBones &bones, float f1, float beat) {
     float fp;
-    int sample = BeatToSample(f2, &fp);
+    int sample = BeatToSample(beat, &fp);
     mFull.RotateTo(bones, f1, sample, fp);
     mOne.RotateTo(bones, f1, 0, 0);
 }
 
-void CharClip::ScaleAdd(CharBones &bones, float f1, float f2, float f3) {
+void CharClip::ScaleAdd(CharBones &bones, float weight, float beat, float dbeat) {
     float fp;
     float fp2;
-    int samp1 = BeatToSample(f2, &fp);
-    int samp2 = BeatToSample(f2 - f3, &fp2);
-    ScaleAddSample(bones, f1, samp1, fp, samp2, fp2);
+    int samp1 = BeatToSample(beat, &fp);
+    int samp2 = BeatToSample(beat - dbeat, &fp2);
+    ScaleAddSample(bones, weight, samp1, fp, samp2, fp2);
 }
 
 void CharClip::SetRelative(CharClip *clip) {
@@ -773,12 +930,12 @@ void CharClip::StuffBones(CharBones &bones) {
     bones.AddBones(blist);
 }
 
-void CharClip::PoseMeshes(ObjectDir *dir, float f) {
+void CharClip::PoseMeshes(ObjectDir *dir, float beat) {
     CharBonesMeshes meshes;
     meshes.SetName("tmp_viseme_bones", dir);
     StuffBones(meshes);
     ScaleDown(meshes, 0.0f);
-    ScaleAdd(meshes, 1.0f, f, 0.0f);
+    ScaleAdd(meshes, 1.0f, beat, 0.0f);
     meshes.PoseMeshes();
 }
 
@@ -798,26 +955,26 @@ DataNode CharClip::GetClipEvents() {
 }
 
 void CharClip::ApplyBlendedSkeletons(
-    CharClip **clips, CharBones &bones, float f1, float f2
+    CharClip **clips, CharBones &bones, float beat, float frac
 ) {
     float f60;
-    int sample = BeatToSample(f1, &f2);
+    int sample = BeatToSample(beat, &frac);
     float f7 = 0;
     std::map<int, float> &curMap = unk18c[sample];
     float f6 = 1;
     FOREACH (it, curMap) {
-        clips[it->first]->ScaleAdd(bones, (f6 - f60) * it->second * f2, f7, f7);
+        clips[it->first]->ScaleAdd(bones, (f6 - f60) * it->second * frac, f7, f7);
     }
     if (f7 < f60) {
         std::map<int, float> &nextMap = unk18c[sample + 1];
         FOREACH (it, nextMap) {
-            clips[it->first]->ScaleAdd(bones, f60 * it->second * f2, f7, f7);
+            clips[it->first]->ScaleAdd(bones, f60 * it->second * frac, f7, f7);
         }
     }
 }
 
 bool CharClip::SharesGroups(CharClip *clip) {
-    FOREACH (it, mRefs) {
+    FOREACH_OBJREF (it, this) {
         Hmx::Object *owner = it->RefOwner();
         CharClipGroup *group = dynamic_cast<CharClipGroup *>(owner);
         if (group && group->HasClip(clip))
@@ -828,7 +985,7 @@ bool CharClip::SharesGroups(CharClip *clip) {
 
 int CharClip::InGroups() {
     int num = 0;
-    FOREACH (it, mRefs) {
+    FOREACH_OBJREF (it, this) {
         Hmx::Object *owner = it->RefOwner();
         CharClipGroup *group = dynamic_cast<CharClipGroup *>(owner);
         if (group)
@@ -839,7 +996,7 @@ int CharClip::InGroups() {
 
 DataNode CharClip::OnGroups(DataArray *) {
     DataArray *groups = new DataArray(0);
-    FOREACH (it, mRefs) {
+    FOREACH_OBJREF (it, this) {
         Hmx::Object *owner = it->RefOwner();
         CharClipGroup *group = dynamic_cast<CharClipGroup *>(owner);
         if (group) {
@@ -853,7 +1010,7 @@ DataNode CharClip::OnGroups(DataArray *) {
 
 DataNode CharClip::OnHasGroup(DataArray *arr) {
     const char *str = arr->Str(2);
-    FOREACH (it, mRefs) {
+    FOREACH_OBJREF (it, this) {
         Hmx::Object *owner = it->RefOwner();
         CharClipGroup *group = dynamic_cast<CharClipGroup *>(owner);
         if (group && streq(group->Name(), str))
@@ -863,10 +1020,9 @@ DataNode CharClip::OnHasGroup(DataArray *arr) {
 }
 
 CharBoneDir *CharClip::GetResource() const {
-    CharBoneDir *dir = 0;
-    const DataArray *tdef = TypeDef();
-    if (tdef) {
-        DataArray *found = tdef->FindArray("resource", false);
+    CharBoneDir *dir = nullptr;
+    if (TypeDef()) {
+        DataArray *found = TypeDef()->FindArray("resource", false);
         if (found)
             dir = CharBoneDir::FindBoneDirResource(found->Str(1));
     }
@@ -878,4 +1034,35 @@ CharBoneDir *CharClip::GetResource() const {
 
 void CharClip::LockAndDelete(CharClip **const clips, int i2, int remaining) {
     MILO_ASSERT(remaining >= 0, 0x42A);
+
+    if (i2 >= remaining) {
+        remaining = i2;
+    }
+
+    int i = 0;
+    if (i2 > 0) {
+        for (int j = 0; j < i2; j++) {
+            CharClip *clip = clips[j];
+            if ((clip->mPlayFlags & 0x8000) == 0) {
+                clips[i] = clips[j];
+                clips[i2 + i] = clip;
+                i++;
+            }
+        }
+    }
+
+    if (remaining > i2) {
+        for (int k = i; k < remaining - i2; k++) {
+            clips[i2 + k]->mPlayFlags |= 0x8000;
+        }
+    }
+
+    if (i2 > 0) {
+        for (int k = 0; k < i2; k++) {
+            CharClip *clip = clips[i2 + k];
+            if (clip != nullptr) {
+                clip->Release(nullptr);
+            }
+        }
+    }
 }

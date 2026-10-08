@@ -1,7 +1,9 @@
 #include "meta_ham/ProfileMgr.h"
 #include "HamProfile.h"
+#include "HamUI.h"
 #include "ProfileMgr.h"
 #include "flow/PropertyEventProvider.h"
+#include "game/Game.h"
 #include "gesture/SpeechMgr.h"
 #include "hamobj/HamGameData.h"
 #include "hamobj/HamPlayerData.h"
@@ -10,12 +12,23 @@
 #include "meta/FixedSizeSaveableStream.h"
 #include "meta/MemcardMgr.h"
 #include "meta/Profile.h"
+#include "meta_ham/AccomplishmentManager.h"
+#include "meta_ham/Challenges.h"
+#include "meta_ham/FitnessGoalMgr.h"
 #include "meta_ham/HamProfile.h"
+#include "meta_ham/MetaPanel.h"
+#include "meta_ham/ShellInput.h"
+#include "meta_ham/SkeletonChooser.h"
+#include "meta_ham/UIEventMgr.h"
+#include "net/DingoSvr.h"
+#include "net_ham/FriendsListJobs.h"
+#include "net_ham/RockCentral.h"
 #include "obj/Data.h"
 #include "obj/Dir.h"
 #include "obj/Msg.h"
 #include "obj/Object.h"
 #include "os/Debug.h"
+#include "os/Joypad.h"
 #include "os/PlatformMgr.h"
 #include "os/System.h"
 #include "os/User.h"
@@ -23,9 +36,16 @@
 #include "rndobj/Rnd.h"
 #include "synth/FxSend.h"
 #include "synth/Synth.h"
+#include "ui/UI.h"
+#include "ui/UIPanel.h"
+#include "ui/UIScreen.h"
 #include "utl/MemMgr.h"
+#include "utl/Std.h"
 #include "utl/Symbol.h"
 #include "game/HamUser.h"
+#include "utl/TextStream.h"
+
+static int sVersion = 28;
 
 ProfileMgr TheProfileMgr;
 
@@ -37,7 +57,7 @@ ProfileMgr::ProfileMgr()
       mSyncPresetIx(0), mOverscan(0), mDisablePhotos(0), mNoFlashcards(0),
       mDisableVoice(0), mDisableVoiceCommander(0), mDisableVoicePause(0),
       mDisableVoicePractice(0), mShowVoiceTip(1), unk78(0), mDisableFreestyle(0),
-      mVenuePreference(gNullStr), unk80(0), unk84(0), mCriticalProfile(0),
+      mVenuePreference(gNullStr), mLocale(0), mLanguage(0), mCriticalProfile(0),
       mAllUnlocked(0), mProfileSaveBuffer(0), unka8(0), unka9(0), mProfilesOverlay(0),
       unkb0(0) {
     mSyncOffset = -mPlatformVideoLatency;
@@ -389,20 +409,20 @@ void ProfileMgr::SetOverscan(bool overscan) {
 }
 
 float ProfileMgr::GetSongToTaskMgrMs(LagContext lc) const {
+    int x;
     switch (lc) {
     case kPractice90:
-        return mSongToTaskMgrMs - unk34 - 0x46;
+        x = 70;
+        break;
     case kPractice80:
-    case kPractice70:
+        x = 55;
+        break;
     default:
+        x = (lc == kPractice70) ? 35 : 0;
         break;
     }
-    return 0;
+    return mSongToTaskMgrMs - unk34 - x;
 }
-
-// bool ProfileMgr::IsUnlockableContent(Symbol s) const {
-//   return TheAccomplishmentMgr.IsUnlockableAsset(s);
-// }
 
 HamProfile *ProfileMgr::GetProfileFromPad(int pad) const {
     HamProfile *ret = nullptr;
@@ -512,10 +532,13 @@ void ProfileMgr::SaveGlobalOptions(FixedSizeSaveableStream &fs) {
     fs << mTutorialsSeen;
     fs << unk4c;
     fs << unk78;
-    fs << (u64)unk80;
-    fs << (u64)unk84;
+    fs << (u64)mLocale;
+    fs << (u64)mLanguage;
     mGlobalOptionsDirty = false;
 }
+
+int ProfileMgr::GlobalOptionsSaveSize() { return 0x38; }
+int ProfileMgr::GetGlobalOptionsSize() { return 0x39; }
 
 void ProfileMgr::EnableFitnessForActiveProfiles() {
     for (int i = 0; i < 2; i++) {
@@ -568,12 +591,12 @@ void ProfileMgr::PushAllOptions() {
     float musicDb = GetMusicVolumeDb();
     float crowdDb = GetCrowdVolumeDb();
     float fxDb = GetFxVolumeDb();
-    // if (TheGame) {
-    //     TheGame->SetBackgroundVolume(musicDb);
-    //     if (TheGame) {
-    //         TheGame->SetBackgroundVolume(musicDb);
-    //     }
-    // }
+    if (TheGame) {
+        TheGame->SetBackgroundVolume(musicDb);
+        if (TheGame) {
+            TheGame->SetBackgroundVolume(musicDb);
+        }
+    }
     Fader *bFade = TheSynth->Find<Fader>("background_music_level.fade", false);
     if (bFade) {
         bFade->SetVolume(musicDb);
@@ -617,7 +640,7 @@ void ProfileMgr::PushAllOptions() {
     }
     DWORD locale = ULSystemLocale();
     DWORD language = ULSystemLanguage();
-    if (TheSpeechMgr && (locale != unk80 || language != unk84)
+    if (TheSpeechMgr && (locale != mLocale || language != mLanguage)
         && TheSpeechMgr->SpeechSupported() && mDisableVoice) {
         mDisableVoice = !mDisableVoice;
         mGlobalOptionsDirty = true;
@@ -625,8 +648,8 @@ void ProfileMgr::PushAllOptions() {
         mDisableVoicePause = !mDisableVoicePause;
         mDisableVoicePractice = !mDisableVoicePractice;
     }
-    unk80 = locale;
-    unk84 = language;
+    mLocale = locale;
+    mLanguage = language;
     mGlobalOptionsDirty = true;
 }
 
@@ -650,7 +673,8 @@ void ProfileMgr::HandlePlayerNameChange() {
     MILO_ASSERT(pNavPlayerNode, 0x6FA);
     Symbol nodeSym = pNavPlayerNode->Sym();
     static Symbol store("store");
-    if (nodeSym == store) {
+    if (nodeSym == store
+        && TheHamUI.GetShellInput()->GetSkeletonChooser()->Unk3C() == 0) {
         HamPlayerData *pPlayer0 = TheGameData->Player(0);
         MILO_ASSERT(pPlayer0, 0x704);
         HamProfile *pProfile = GetProfileFromPad(pPlayer0->PadNum());
@@ -658,7 +682,7 @@ void ProfileMgr::HandlePlayerNameChange() {
             if (mCriticalProfile->HasValidSaveData() && pProfile != mCriticalProfile) {
                 static Symbol store_user_change("store_user_change");
                 static Message init("init");
-                // TheUIEventMgr.TriggerEvent
+                TheUIEventMgr->TriggerEvent(store_user_change, init);
             }
         }
     }
@@ -713,4 +737,420 @@ int ProfileMgr::GetNumValidProfiles() const {
         }
     }
     return count;
+}
+
+void ProfileMgr::HandleSwagJacked() {
+    HamProfile *pProfile = GetActiveProfile(true);
+    static Symbol acc_jack_swag("acc_jack_swag");
+    TheAccomplishmentMgr->EarnAccomplishmentForProfile(pProfile, acc_jack_swag, true);
+}
+
+bool ProfileMgr::HasActiveProfileWithInvalidSaveData() const {
+    HamProfile *pProfile = GetActiveProfile(true);
+    if (!pProfile) {
+        ShellInput *pShellInput = TheHamUI.GetShellInput();
+        MILO_ASSERT(pShellInput, 0x5bb);
+        SkeletonChooser *pSkeletonChooser = pShellInput->mSkelChooser;
+        MILO_ASSERT(pSkeletonChooser, 0x5be);
+        HamPlayerData *pActivePlayer = TheGameData->Player(pSkeletonChooser->Unk3C());
+        MILO_ASSERT(pActivePlayer, 0x5c2);
+        HamProfile *pProfileFromPad =
+            TheProfileMgr.GetProfileFromPad(pActivePlayer->PadNum());
+        if (pProfileFromPad && !pProfileFromPad->HasValidSaveData())
+            return true;
+    }
+    return false;
+}
+
+bool ProfileMgr::IsUnlockableContent(Symbol s) const {
+    return TheAccomplishmentMgr->IsUnlockableAsset(s);
+}
+
+void ProfileMgr::UploadDeferredFlaunt() {
+    if (!unka8)
+        return;
+    unka8 = false;
+    TheChallenges->UploadFlauntForAll(true);
+}
+
+HamProfile *ProfileMgr::GetNonActiveProfile() const {
+    HamProfile *pActiveProfile = GetActiveProfile(false);
+    if (pActiveProfile) {
+        for (int i = 0; i <= 1; i++) {
+            HamPlayerData *pOtherPlayer = TheGameData->Player(i);
+            MILO_ASSERT(pOtherPlayer, 0x595);
+            HamProfile *pProfile =
+                TheProfileMgr.GetProfileFromPad(pOtherPlayer->PadNum());
+            if (pProfile && pProfile->HasValidSaveData() && pProfile != pActiveProfile)
+                return pProfile;
+        }
+    }
+    return nullptr;
+}
+
+bool ProfileMgr::HasFinishedCampaign() const {
+    if (MetaPanel::sUnlockAll) {
+        return true;
+    } else {
+        FOREACH (it, unk90) {
+            HamProfile *profile = *it;
+            MILO_ASSERT(profile, 0x6ae);
+            if (profile->HasFinishedCampaign()) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool ProfileMgr::HasAnyEraSongBeenPlayed(Symbol era) const {
+    if (MetaPanel::sUnlockAll) {
+        return true;
+    } else {
+        FOREACH (it, unk90) {
+            HamProfile *profile = *it;
+            MILO_ASSERT(profile, 0x6c3);
+            if (profile->HasAnyEraSongBeenPlayed(era)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool ProfileMgr::IsDifficultyUnlocked(Symbol s1, Symbol s2) const {
+    if (MetaPanel::sUnlockAll) {
+        return true;
+    } else {
+        FOREACH (it, unk90) {
+            HamProfile *profile = *it;
+            MILO_ASSERT(profile, 0x6d7);
+            if (profile->IsDifficultyUnlockedForProfile(s1, s2)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool ProfileMgr::IsContentUnlocked(Symbol s) const {
+    if (MetaPanel::sUnlockAll) {
+        return true;
+    } else if (!TheAccomplishmentMgr->IsUnlockableAsset(s)) {
+        return true;
+    }
+    FOREACH (it, unk90) {
+        HamProfile *profile = *it;
+        MILO_ASSERT(profile, 0x680);
+        if (profile->IsContentUnlockedForProfile(s)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void ProfileMgr::UpdateUsingFitnessState() {
+    for (int i = 0; i < 2; i++) {
+        HamPlayerData *pPlayer = TheGameData->Player(i);
+        MILO_ASSERT(pPlayer, 0x729);
+        bool check = false;
+        HamProfile *pProfile = TheProfileMgr.GetProfileFromPad(pPlayer->PadNum());
+        if (pProfile) {
+            if (pProfile->HasValidSaveData()) {
+                check = pProfile->InFitnessMode();
+            }
+        }
+        pPlayer->SetUsingFitness(check);
+    }
+}
+
+void ProfileMgr::UploadDeferredFitnessGoal() {
+    if (unka9) {
+        unka9 = false;
+        FOREACH (it, unk90) {
+            HamProfile *profile = *it;
+            MILO_ASSERT(profile, 0x74a);
+            TheFitnessGoalMgr->UpdateFitnessGoal(profile);
+        }
+    }
+}
+
+void ProfileMgr::TriggerSignoutEvent() {
+    static Symbol sign_out("sign_out");
+    static Message init("init", 0);
+    init[0] = 0;
+    TheUIEventMgr->TriggerEvent(sign_out, init);
+    unk90.front()->SetSaveState(kMetaProfileUnloaded);
+}
+
+HamProfile *ProfileMgr::GetActiveProfile(bool b) const {
+    HamProfile *criticalProfile = TheProfileMgr.CriticalProfile();
+    if (criticalProfile) {
+        return criticalProfile;
+    }
+
+    ShellInput *pShellInput = TheHamUI.GetShellInput();
+    MILO_ASSERT(pShellInput, 0x565);
+    SkeletonChooser *pSkeletonChooser = pShellInput->GetSkeletonChooser();
+    MILO_ASSERT(pSkeletonChooser, 0x568);
+    int index = pSkeletonChooser->Unk3C();
+    HamPlayerData *pActivePlayer = TheGameData->Player(index);
+    MILO_ASSERT(pActivePlayer, 0x56c);
+    int padNum = pActivePlayer->PadNum();
+    HamProfile *pProfileFromPad = TheProfileMgr.GetProfileFromPad(padNum);
+    if (pProfileFromPad && pProfileFromPad->HasValidSaveData()) {
+        return pProfileFromPad;
+    }
+    HamPlayerData *pOtherPlayer = TheGameData->Player(index == 0);
+    MILO_ASSERT(pOtherPlayer, 0x579);
+    HamProfile *pOtherPlayerFromPad =
+        TheProfileMgr.GetProfileFromPad(pOtherPlayer->PadNum());
+    if (b && pOtherPlayerFromPad && pOtherPlayerFromPad->HasValidSaveData()) {
+        return pOtherPlayerFromPad;
+    }
+
+    return nullptr;
+}
+
+void ProfileMgr::UpdateFriendsList() {
+    std::vector<HamProfile *> profiles = GetSignedInProfiles();
+    FOREACH (it, profiles) {
+        HamProfile *profile = *it;
+        if (profile->HasValidSaveData()) {
+            UpdateFriendsListJob *job = new UpdateFriendsListJob(nullptr, profile);
+            job->EnumerateFriends();
+        }
+    }
+}
+
+void ProfileMgr::Poll() {
+    const char *authStatus;
+    const char *onlineStatus;
+    if (unkb0 && unkb8.SplitMs() > 1000.0f) {
+        unkb0 = false;
+        TriggerSignoutEvent();
+    }
+    if (mProfilesOverlay && mProfilesOverlay->Showing()) {
+        mProfilesOverlay->Clear();
+        if (TheServer.IsAuthenticated()) {
+            authStatus = "auth";
+        } else {
+            authStatus = "not auth";
+        }
+
+        if (TheRockCentral.IsOnline()) {
+            onlineStatus = "online";
+        } else {
+            onlineStatus = "offline";
+        }
+
+        *mProfilesOverlay << "rock central " << onlineStatus << ", dingo " << authStatus
+                          << "\n";
+
+        int lines = 1;
+        HamProfile *pActiveProfile = GetActiveProfile(false);
+        HamProfile *critProfile = mCriticalProfile;
+        FOREACH (it, unk90) {
+            HamProfile *profile = *it;
+            if (profile) {
+                int padnum = profile->GetPadNum();
+                if (ThePlatformMgr.IsSignedIn(padnum)) {
+                    *mProfilesOverlay << "profile " << profile->GetName() << " pad"
+                                      << padnum;
+                    if (profile == pActiveProfile) {
+                        *mProfilesOverlay << " active";
+                    }
+                    if (profile == critProfile) {
+                        *mProfilesOverlay << " critical";
+                    }
+                    if (ThePlatformMgr.IsSignedIntoLive(padnum)) {
+                        *mProfilesOverlay << " live";
+                    }
+                    *mProfilesOverlay << "\n";
+                    lines++;
+                }
+            }
+        }
+        if (lines != 0) {
+            mProfilesOverlay->SetLines(lines);
+        }
+    }
+}
+
+void ProfileMgr::LoadGlobalOptions(FixedSizeSaveableStream &fs) {
+    int version;
+    fs >> version;
+    if (version > 28) {
+        MILO_NOTIFY(
+            "Found System Settings with version %d, while this build only recognizes up to %d.  Unable to load System Settings.\n",
+            version,
+            sVersion
+        );
+    } else if (version == 28) {
+        fs >> mMono;
+        fs >> mSyncOffset;
+        fs >> mSongToTaskMgrMs;
+        fs >> mMusicVolume;
+        fs >> mFxVolume;
+        fs >> mBassBoost;
+        fs >> mCrowdVolume;
+        fs >> mDolby;
+        fs >> mDisablePhotos;
+        fs >> mNoFlashcards;
+        fs >> mDisableVoice;
+        fs >> mDisableVoiceCommander;
+        fs >> mDisableVoicePause;
+        fs >> mDisableVoicePractice;
+        fs >> mShowVoiceTip;
+        fs >> mDisableFreestyle;
+        fs >> mSyncPresetIx;
+        fs >> mOverscan;
+        fs >> mTutorialsSeen;
+
+        int temp4c;
+        fs >> temp4c;
+        unk4c = temp4c;
+
+        fs >> unk78;
+
+        u64 temp80;
+        fs >> temp80;
+        mLocale = temp80;
+
+        u64 temp84;
+        fs >> temp84;
+        unk45 = true;
+        mLanguage = temp84;
+    }
+    PushAllOptions();
+}
+
+DataNode ProfileMgr::OnMsg(SigninChangedMsg const &msg) {
+    unsigned int mask = msg.GetMask();
+    unsigned int changedMask = msg.GetChangedMask();
+    int pad = 0;
+    static Symbol kick_out_on_sign_out("kick_out_on_sign_out");
+
+    bool kick = false;
+
+    if (TheUI->CurrentScreen()
+        && TheUI->CurrentScreen()->Property(kick_out_on_sign_out, false)) {
+        kick = TheUI->CurrentScreen()->Property(kick_out_on_sign_out)->Int();
+    }
+
+    if (TheUI->FocusPanel()
+        && TheUI->FocusPanel()->Property(kick_out_on_sign_out, false)) {
+        kick = TheUI->FocusPanel()->Property(kick_out_on_sign_out)->Int();
+    }
+
+    if (unkb0) {
+        unkb0 = false;
+        unkb8.Stop();
+    }
+
+    for (; changedMask != 0; changedMask >>= 1, pad++) {
+        if ((changedMask & 1) != 0) {
+            HamProfile *pProfile = GetProfileFromPad(pad);
+            MILO_ASSERT(pProfile, 0x5fb);
+            pProfile->SetSaveState(kMetaProfileDelete);
+            if (!(mask & (1 << pad))) {
+                bool isCritProfile = pProfile == mCriticalProfile;
+                if (kick) {
+                    for (int j = 0; j < 2; j++) {
+                        if (TheGameData->Player(j)->PadNum() == pad) {
+                            isCritProfile = true;
+                        }
+                    }
+                }
+                if (isCritProfile) {
+                    if (mask == 0) {
+                        unkb0 = true;
+                        unkb8.Restart();
+                    } else {
+                        TriggerSignoutEvent();
+                    }
+                }
+            }
+        }
+    }
+
+    TheGameData->UpdateAssociatedPads();
+    UpdateUsingFitnessState();
+    return 1;
+}
+
+Symbol ProfileMgr::GetAlternateOutfit(Symbol outfit) {
+    char buffer[64];
+    Symbol altChar = GetAlternateCharacter(GetOutfitCharacter(outfit));
+    strcpy(buffer, GetCharacterOutfit(altChar, 0).Str());
+    int outfitLen = strlen(outfit.Str());
+    int bufferLen = strlen(buffer);
+    buffer[bufferLen - 2] = outfit.Str()[outfitLen - 2];
+    buffer[bufferLen - 1] = outfit.Str()[outfitLen - 1];
+    Symbol ret = GetOutfitRemap(buffer);
+    int idx = 0;
+    while (!IsContentUnlocked(ret)) {
+        ret = GetOutfitRemap(GetCharacterOutfit(altChar, idx));
+        idx++;
+    }
+    return ret;
+}
+
+float ProfileMgr::GetPadExtraLag(int pad, LagContext ctx) const {
+    switch (JoypadGetPadData(pad)->mType) {
+    case 5:
+    case 6:
+    case 7:
+        if (ctx != 1) {
+            return 18;
+        } else {
+            return 27;
+        }
+    case 0x10:
+    case 0x17:
+        return 10;
+    case 0xc:
+    case 0x19:
+        if (ctx == 1) {
+            return 25;
+        } else {
+            return 10;
+        }
+    case 0xD:
+    case 0x1A:
+        if (ctx != 1) {
+            return 20;
+        } else {
+            return 35;
+        }
+    case 8:
+    case 9:
+    case 11:
+        switch (ctx) {
+        case 1:
+            return 43;
+        case 2:
+            return 19;
+        default:
+            return 36;
+        }
+    case 0xe:
+    case 0xf:
+    case 0x11:
+    case 0x12:
+    case 0x18:
+    case 0x1b:
+    case 0x1c:
+        switch (ctx) {
+        case 1:
+            return 24;
+        case 2:
+            return -1;
+        default:
+            return 16;
+        }
+    default:
+        return 14;
+    }
 }

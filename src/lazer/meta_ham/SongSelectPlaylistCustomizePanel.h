@@ -17,8 +17,10 @@ public:
     virtual void Unload();
     virtual void FinishLoad();
 
+    NEW_OBJ(SongSelectPlaylistCustomizePanel)
+
     SongSelectPlaylistCustomizePanel();
-    void UpdatePlaylistName(HamPanel *);
+    void UpdatePlaylistName(HamLabel *);
     bool IsPlaylistEmpty() const;
     bool IsPlaylistFull() const;
     void UpdateSongs();

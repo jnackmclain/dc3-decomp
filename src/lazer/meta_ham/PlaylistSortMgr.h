@@ -1,18 +1,57 @@
 #pragma once
 #include "NavListSortMgr.h"
+#include "game/PartyModeMgr.h"
 #include "meta/SongPreview.h"
+#include "meta_ham/FitnessGoalMgr.h"
 #include "meta_ham/Playlist.h"
+#include "net_ham/PlaylistJobs.h"
 #include "net_ham/RCJobDingo.h"
 #include "obj/Data.h"
-#include "stl/_vector.h"
 #include "utl/Str.h"
 #include "utl/Symbol.h"
 #include <list>
 
+struct CmdAddPlaylistToRC : public QueueableCommand {
+    virtual int GetType() { return 4; }
+    CmdAddPlaylistToRC(CustomPlaylist *pl) : playlist(pl) {}
+    CustomPlaylist *playlist;
+};
+
+struct CmdDeletePlaylistFromRC : public QueueableCommand {
+    virtual int GetType() { return 6; }
+    CmdDeletePlaylistFromRC(int i) : num(i) {}
+    int num;
+};
+
+struct CmdEditPlaylist : public QueueableCommand {
+    virtual int GetType() { return 5; }
+    CmdEditPlaylist(CustomPlaylist *pl) : playlist(pl) {}
+    CustomPlaylist *playlist;
+};
+
+struct CmdGetPlaylistFromRC : public QueueableCommand {
+    virtual int GetType() { return 3; }
+    CmdGetPlaylistFromRC(int i) : num(i) {}
+    int num;
+};
+
+struct CmdGetPlaylistsFromRC : public QueueableCommand {
+    virtual int GetType() { return 1; }
+    CmdGetPlaylistsFromRC() {}
+};
+
+struct CmdResolvePlaylists : public QueueableCommand {
+    virtual int GetType() { return 2; }
+    CmdResolvePlaylists() {}
+};
+
 class PlaylistSortMgr : public NavListSortMgr {
 public:
     virtual DataNode Handle(DataArray *, bool);
+    virtual bool SelectionIs(Symbol) { return 0; }
+    virtual Symbol MoveOn() { return 0; }
     virtual void OnEnter();
+
     int ConvertListIndexToPlaylistIndex(int);
     Playlist *GetPlaylist(int);
     void OnDeletePlaylistFromRC(Playlist *);
@@ -20,11 +59,17 @@ public:
 
     static void Init(SongPreview &);
 
-    std::vector<Playlist> unk78;
+    const std::vector<Playlist *> &GetPlaylists() const { return unk78; }
+    void AddPlaylist(Playlist *p) { unk78.push_back(p); }
+
+protected:
+    std::vector<Playlist *> unk78;
     CustomPlaylist unk84;
     String unkb0;
     String unkb8;
-    std::list<Playlist> unkc0;
+    std::list<QueueableCommand *> unkc0;
+    bool unkc8;
+    RCJob *unkcc;
     std::vector<CustomPlaylist> unkd0;
 
 private:
@@ -49,6 +94,7 @@ private:
     void QueueCmdGetPlaylistsFromRC();
     void QueueCmdResolvePlaylists();
     void QueueCmdGetPlaylistFromRC(int);
+    void QueueCmdGetPlaylistsFromRC(int);
     void HandleCmdGetPlaylistFromRC();
     void QueueCmdAddPlaylistToRC(Playlist *);
     void HandleCmdAddPlaylistToRC();
@@ -59,7 +105,7 @@ private:
     bool HasValidProfile();
     void UpdateCurrPlaylistWithRC();
     void HandleCmdGetPlaylistsFromRC();
-    // DataNode OnMsg(SmartGlassMsg const &);
+    DataNode OnMsg(SmartGlassMsg const &);
     DataNode OnMsg(RCJobCompleteMsg const &);
 };
 

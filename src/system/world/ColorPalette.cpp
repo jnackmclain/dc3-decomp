@@ -33,10 +33,7 @@ BinStream &operator>>(BinStream &bs, ColorSet &cs) {
     return bs;
 }
 
-BinStreamRev &operator>>(BinStreamRev &d, ColorSet &cs) {
-    d.stream >> cs;
-    return d;
-}
+INIT_REVS(1, 0)
 
 BEGIN_LOADS(ColorPalette)
     LOAD_REVS(bs)

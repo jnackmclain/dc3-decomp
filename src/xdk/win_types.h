@@ -1,5 +1,6 @@
 #pragma once
 #include <types.h>
+#include <wchar.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -63,7 +64,19 @@ typedef LONG_PTR SSIZE_T, *PSSIZE_T;
 typedef s64 LONGLONG, *PLONGLONG;
 typedef signed long long INT64, *PINT64;
 typedef s64 LONG64, *PLONG64;
-typedef s64 LARGE_INTEGER, *PLARGE_INTEGER;
+
+typedef union _LARGE_INTEGER { /* Size=0x8 */
+    struct {
+        /* 0x0000 */ LONG HighPart;
+        /* 0x0004 */ DWORD LowPart;
+    };
+    /* 0x0000 */
+    struct {
+        /* 0x0000 */ LONG HighPart;
+        /* 0x0004 */ DWORD LowPart;
+    } u;
+    /* 0x0000 */ LONGLONG QuadPart;
+} LARGE_INTEGER, *PLARGE_INTEGER;
 
 typedef u64 QWORD;
 typedef u64 ULONGLONG, *PULONGLONG;
@@ -97,19 +110,13 @@ typedef HINSTANCE HMODULE;
 typedef LONG HRESULT;
 
 #define INVALID_HANDLE_VALUE ((HANDLE)(LONG_PTR) - 1)
+#define SUCCEEDED(hr) (((HRESULT)(hr)) >= 0)
 
 typedef DWORD FOURCC;
 
 #define MAKEFOURCC(ch0, ch1, ch2, ch3)                                                   \
     ((DWORD)(BYTE)(ch0) | ((DWORD)(BYTE)(ch1) << 8) | ((DWORD)(BYTE)(ch2) << 16)         \
      | ((DWORD)(BYTE)(ch3) << 24))
-
-typedef struct _GUID { /* Size=0x10 */
-    /* 0x0000 */ DWORD Data1;
-    /* 0x0004 */ WORD Data2;
-    /* 0x0006 */ WORD Data3;
-    /* 0x0008 */ BYTE Data4[8];
-} GUID;
 
 #ifdef __cplusplus
 }

@@ -3,6 +3,8 @@
 #include "obj/Dir.h"
 #include "os/Debug.h"
 #include "os/NetworkSocket.h"
+#include "ppcintrinsics.h"
+#include "utl/Std.h"
 
 const char *kHMXDomain = "harmonixmusic.com";
 
@@ -67,13 +69,13 @@ bool WebSvcMgr::ResolveHostname(WebSvcRequest *req) {
     unsigned int ip = req->GetIPAddr();
     if (ip == 0) {
         NetAddress addr = ResolveHostname(req->GetHostName(), kHMXDomain, 0x50);
-        if (addr.mIP == 0) {
+        if (addr.GetIP() == 0) {
             addr = ResolveHostname(req->GetHostName(), nullptr, 0x50);
-            if (addr.mIP == 0) {
+            if (addr.GetIP() == 0) {
                 return false;
             }
         }
-        req->UpdateIP(addr.mIP);
+        req->UpdateIP(addr.GetIP());
     }
     return true;
 }
@@ -92,8 +94,43 @@ WebSvcMgr::ResolveHostname(const char *hostname, const char *domain, unsigned sh
     } else {
         ret = NetworkSocket::SetIPPortFromHostPort(hostname, domain, port);
     }
-    if (ret.mIP != 0 && it == mHostCache.end()) {
+    if (ret.GetIP() != 0 && it == mHostCache.end()) {
         mHostCache.insert(std::make_pair(str, ret));
     }
     return ret;
+}
+
+void WebSvcMgr::Poll() {
+    bool b = false;
+    unsigned int i = 0;
+    auto it = mRequests.begin();
+    while (it != mRequests.end()) {
+        WebSvcRequest *req = *it;
+        if (!b) {
+            if (req->GetState() == WebSvcRequest::kNotStarted) {
+                if (i >= 5) {
+                    return;
+                }
+                Start(req);
+            }
+            req->Poll();
+        }
+
+        if (req->IsDeleteReady() || req->GetState() == WebSvcRequest::kReadyForRemoval) {
+            it = mRequests.erase(it);
+            if (req->IsDeleteReady()) {
+                OnReqFinished(req);
+            } else if (req->GetState() == WebSvcRequest::kReadyForRemoval) {
+                req->OnReset();
+            }
+        } else {
+            if (req->IsRunning() || req->IsFinished()) {
+                i++;
+            }
+            if (req->MustFinish()) {
+                b = true;
+            }
+            ++it;
+        }
+    }
 }

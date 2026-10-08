@@ -42,16 +42,22 @@ public:
     void BlendInOverrideClip(CharClip *, float, float);
     void BlendInOverrides(float);
     void BlendOutOverrides(float);
+    void ScaleAddViseme(CharClip *, float);
     void SetSongOffset(float offset) { mSongOffset = offset; }
     void SetOverrideWeight(float weight) { mOverrideWeight = weight; }
     float GetOverrideWeight() const { return mOverrideWeight; }
     CharClip *OverrideClip() const { return mOverrideClip; }
+    void SetOverrideClip(CharClip *c) { mOverrideClip = c; }
     CharLipSync *LipSync() const { return mLipSync; }
+    ObjectDir *OverrideOptions() const { return mOverrideOptions; }
+    ObjectDir *Clips() const { return mClips; }
+    CharLipSync::PlayBack *GetPlayBack() const { return unk88; }
 
 protected:
     CharLipSyncDriver();
 
     void ApplyBlinks();
+    void UpdatePlayback(CharLipSync::PlayBack *, float, float);
 
     /** "The lipsync file to use" */
     ObjPtr<CharLipSync> mLipSync; // 0x30
@@ -74,7 +80,7 @@ protected:
     ObjPtr<CharClip> mTestClip; // 0xac
     /** "weight to apply this clip with" */
     float mTestWeight; // 0xc0
-    float unkc4; // 0xc4
+    float mOverallOverrideWeight; // 0xc4
     bool unkc8; // 0xc8
     bool unkc9; // 0xc9
     float unkcc; // 0xcc

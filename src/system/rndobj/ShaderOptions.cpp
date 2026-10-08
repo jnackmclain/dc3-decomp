@@ -81,14 +81,14 @@ const char *ShaderSourcePath(const char *file) {
     }
 }
 
-const char *ShaderCachedPath(const char *file, u64 i2, bool b3) {
+const char *ShaderCachedPath(const char *file, u64 flags, bool pixelShader) {
     Platform plat = TheLoadMgr.GetPlatform();
     return MakeString(
         "%s/gen/%s_%llx_%s.%s_%s",
         FileGetPath(file),
         FileGetBase(file),
-        i2,
-        b3 ? "ps" : "vs",
+        flags,
+        pixelShader ? "ps" : "vs",
         FileGetExt(file),
         PlatformSymbol(plat)
     );
@@ -103,27 +103,13 @@ bool IsPostProcShaderType(ShaderType s) {
     case kDownsample4xShader:
     case kDownsampleDepthShader:
     case kDrawRectShader:
-        return false;
-    case kErrorShader:
-        return true;
     case kFurShader:
     case kLineNozShader:
     case kLineShader:
     case kMovieShader:
-        return false;
-    case kMultimeshShader:
-    case kMultimeshBBShader:
-    case kParticlesShader:
-        return true;
     case kPostprocessErrorShader:
     case kPostprocessShader:
     case kShadowmapShader:
-        return false;
-    case kStandardShader:
-    case kStandardBBShader:
-    case kSyncTrackShader:
-    case kSyncTrackChargeEffectShader:
-        return true;
     case kUnwrapUVShader:
     case kVelocityCameraShader:
     case kVelocityObjectShader:
@@ -140,6 +126,14 @@ bool IsPostProcShaderType(ShaderType s) {
     case kTwirlShader:
     case kKillAlphaShader:
         return false;
+    case kErrorShader:
+    case kMultimeshShader:
+    case kMultimeshBBShader:
+    case kParticlesShader:
+    case kStandardShader:
+    case kStandardBBShader:
+    case kSyncTrackShader:
+    case kSyncTrackChargeEffectShader:
     case kAllWhiteShader:
         return true;
     default:
@@ -235,14 +229,16 @@ void ShaderOptions::GenerateMacros(ShaderType t, std::vector<ShaderMacro> &macro
     macros.push_back(ShaderMacro("ENABLE_AO", sNumbers[(flags >> 38) & 1]));
     macros.push_back(ShaderMacro("TONE_MAPPING", sNumbers[(flags >> 39) & 1]));
     macros.push_back(ShaderMacro("SOFT_DEPTH_BLEND", sNumbers[(flags >> 45) & 1]));
-    macros.push_back(ShaderMacro("ENABLE_POINT_CUBE_TEX", sNumbers[flags & 1])); // as
-                                                                                 // u16?
+    macros.push_back(ShaderMacro(
+        "ENABLE_POINT_CUBE_TEX", sNumbers[*(const unsigned short *)&flags & 1]
+    ));
     macros.push_back(ShaderMacro("HI_RES_SCREEN", sNumbers[(flags >> 52) & 1]));
     macros.push_back(ShaderMacro("INTENSIFY", sNumbers[(flags >> 53) & 1]));
     macros.push_back(ShaderMacro("FIT_TO_SPLINE", sNumbers[(flags >> 55) & 1]));
-    macros.push_back(ShaderMacro("SPLINE_PULSE", sNumbers[flags & 1])); // as u8?
-    macros.push_back(ShaderMacro("SYNC_TRACK_CHARGE_EFFECT", sNumbers[(flags >> 59) & 1])
+    macros.push_back(
+        ShaderMacro("SPLINE_PULSE", sNumbers[*(const unsigned char *)&flags & 1])
     );
+    macros.push_back(ShaderMacro("SYNC_TRACK_CHARGE_EFFECT", sNumbers[(flags >> 59) & 1]));
     macros.push_back(ShaderMacro("SHOCKWAVE", sNumbers[(flags >> 60) & 1]));
     macros.push_back(ShaderMacro("FAST_CHEAP_LIGHTING", sNumbers[(flags >> 61) & 1]));
     macros.push_back(ShaderMacro(nullptr, nullptr));
@@ -254,16 +250,14 @@ void ShaderMakeOptionsString(ShaderType type, const ShaderOptions &opts, String 
     bool first = true;
     for (int i = 0; i < macros.size(); i++) {
         ShaderMacro &cur = macros[i];
-        if (cur.Name && cur.Value) {
-            if (strcmp(cur.Value, "0") != 0) {
-                if (!first) {
-                    str += " ";
-                }
-                first = false;
-                str += cur.Name;
-                str += "=";
-                str += cur.Value;
+        if (cur.Name && cur.Value && !streq(cur.Value, "0")) {
+            if (!first) {
+                str += " ";
             }
+            first = false;
+            str += cur.Name;
+            str += "=";
+            str += cur.Value;
         }
     }
 }

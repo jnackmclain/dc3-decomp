@@ -1,6 +1,8 @@
 #include "world/PhysicsVolume.h"
+#include "math/Color.h"
 #include "obj/Data.h"
 #include "os/Debug.h"
+#include "rndobj/Utl.h"
 #include "world/PhysicsManager.h"
 #include "math/Geo.h"
 #include "math/Rot.h"
@@ -13,13 +15,13 @@
 #include "rndobj/Trans.h"
 
 namespace {
-    Box gPhysicsVolumeBox;
+    Box gPhysicsVolumeBox(Vector3(-0.5f, -0.5f, -0.5f), Vector3(0.5f, 0.5f, 0.5f));
 }
 
 PhysicsVolume::PhysicsVolume()
     : mDetectionVolume(nullptr), mShapeType(kPhysicsVolumeBox), unk124(0),
-      mDirectionalForce(Vector3::ZeroVec()), mTangentialForce(Vector3::ZeroVec()),
-      mDirectionalVelocity(Vector3::ZeroVec()), mRadialForce(0),
+      mDirectionalForce(Vector3::GetZero()), mTangentialForce(Vector3::GetZero()),
+      mDirectionalVelocity(Vector3::GetZero()), mRadialForce(0),
       mFilter(kCollidePhysicsVolumeDynamicFixed), mActive(true),
       mReportOnOverlaps(false) {}
 
@@ -36,11 +38,19 @@ BEGIN_HANDLERS(PhysicsVolume)
     HANDLE_SUPERCLASS(Hmx::Object)
 END_HANDLERS
 
+void PhysicsVolume::SetCollisionFilter(CollisionFilter cf) {
+    mFilter = cf;
+    if (mDetectionVolume) {
+        mDetectionVolume->SetCollisionFilter(mFilter);
+    }
+}
+
 BEGIN_PROPSYNCS(PhysicsVolume)
     SYNC_PROP_SET(active, mActive, SetActiveState(_val.Int()))
     SYNC_PROP(report_on_overlaps, mReportOnOverlaps)
-    SYNC_PROP_SET(collision_filter, (int &)mFilter, mFilter = (CollisionFilter)_val.Int();
-                  if (mDetectionVolume) mDetectionVolume->SetCollisionFilter(mFilter))
+    SYNC_PROP_SET(
+        collision_filter, (int &)mFilter, SetCollisionFilter((CollisionFilter)_val.Int())
+    )
     SYNC_PROP(radial_force, mRadialForce)
     SYNC_PROP(directional_force, mDirectionalForce)
     SYNC_PROP(tangential_force, mTangentialForce)
@@ -87,12 +97,86 @@ BEGIN_COPYS(PhysicsVolume)
     DestroyPhysicsVolume();
 END_COPYS
 
+INIT_REVS(7, 0)
+
+BEGIN_LOADS(PhysicsVolume)
+    LOAD_REVS(bs)
+    ASSERT_REVS(7, 0)
+    if (d.rev < 1) {
+        LOAD_SUPERCLASS(RndTransformable)
+        LOAD_SUPERCLASS(RndDrawable)
+        LOAD_SUPERCLASS(RndPollable)
+        LOAD_SUPERCLASS(Hmx::Object)
+    } else {
+        LOAD_SUPERCLASS(RndPollable)
+        LOAD_SUPERCLASS(RndTransformable)
+        LOAD_SUPERCLASS(RndDrawable)
+    }
+    d >> mActive;
+    if (d.rev > 1) {
+        d >> mRadialForce;
+        d >> mDirectionalForce;
+    }
+    if (d.rev > 2) {
+        d >> mDirectionalVelocity;
+    }
+    if (d.rev > 3) {
+        d >> (int &)mShapeType;
+    }
+    if (d.rev > 4) {
+        d >> mReportOnOverlaps;
+    }
+    if (d.rev > 5) {
+        int filter;
+        d >> filter;
+        mFilter = (CollisionFilter)filter;
+    }
+    if (d.rev > 6) {
+        d >> mTangentialForce;
+    }
+    Vector3 ext;
+    HalfExtends(ext);
+    Sphere s;
+    Vector3 harness_reduction_vector;
+    harness_reduction_vector.x = ext.x;
+    harness_reduction_vector.y = ext.z;
+    harness_reduction_vector.z = ext.y;
+    s.radius = Length(harness_reduction_vector);
+    s.center = WorldXfm().v;
+    SetSphere(s);
+END_LOADS
+
 bool PhysicsVolume::MakeWorldSphere(Sphere &s, bool b) {
     Vector3 v;
     HalfExtends(v);
     s.radius = Length(v);
     s.center = WorldXfm().v;
     return true;
+}
+
+void PhysicsVolume::DrawShowing() {
+    if (sShowing) {
+        Vector3 v40;
+        Hmx::Color c30;
+        if (!mActive) {
+            v40.Set(0.5f, 0.5f, 0.5f);
+            c30 = Hmx::Color(0.5f, 0.5f, 0.5f);
+        } else if (unk124 != 0) {
+            v40.Set(1, 0, 0);
+            c30 = Hmx::Color(1, 0, 0);
+        } else {
+            v40.Set(1, 1, 0);
+            c30 = Hmx::Color(1, 1, 0);
+        }
+        if (mShapeType == kPhysicsVolumeBox) {
+            UtilDrawBox(WorldXfm(), gPhysicsVolumeBox, c30, true);
+        } else {
+            MakeScale(WorldXfm().m, v40);
+            v40 /= 2.0f;
+            float len = Length(v40);
+            UtilDrawSphere(WorldXfm().v, len, c30, nullptr);
+        }
+    }
 }
 
 void PhysicsVolume::Poll() {

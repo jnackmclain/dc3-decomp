@@ -121,9 +121,9 @@ public:
      * @param [in] idx The zero-indexed number color of the palette to get.
      * @param [out] r, g, b, a The corresponding color's RGBA values.
      */
-    void
-    PaletteColor(int, unsigned char &, unsigned char &, unsigned char &, unsigned char &)
-        const;
+    void PaletteColor(
+        int, unsigned char &, unsigned char &, unsigned char &, unsigned char &
+    ) const;
     unsigned char PixelIndex(int, int) const;
     void SetPixelIndex(int, int, unsigned char);
     void SetAlpha(AlphaFlag);
@@ -233,8 +233,9 @@ public:
     int Bpp() const { return mBpp; }
     u8 *Palette() const { return mPalette; }
     u8 *Pixels() const { return mPixels; }
+    u8 *Buffer() const { return mBuffer; }
     RndBitmap *nextMip() const { return mMip; }
-    bool HasName() const { return mName.mCRC; }
+    bool HasName() const { return mName; }
 
 private:
     void ConvertToAlpha();

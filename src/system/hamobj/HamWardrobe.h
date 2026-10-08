@@ -24,16 +24,24 @@ public:
     OBJ_MEM_OVERLOAD(0x2B)
     NEW_OBJ(HamWardrobe)
 
-    HamCharacter *GetCharacter(int) const;
-    HamCharacter *GetBackup(int) const;
+    HamCharacter *GetCharacter(int idx) const;
+    HamCharacter *GetBackup(int idx) const;
     void PlayCrowdAnimation(Symbol, int, bool);
     void EndCrowdOverride();
     void ForceCrowdAnimationStart(Symbol);
     void ForceCrowdAnimationEnd();
-    void SetBackupOverrideOutfits(Symbol, Symbol);
-    void
-    LoadCharacters(Symbol, Symbol, Symbol, Symbol, HamBackupDancers, Symbol, Symbol, bool);
-    Symbol GetBackupOutfitOverride(int);
+    void SetBackupOverrideOutfits(Symbol outfit1, Symbol outfit2);
+    void LoadCharacters(
+        Symbol outfit1,
+        Symbol outfit2,
+        Symbol crew1,
+        Symbol crew2,
+        HamBackupDancers dancers,
+        Symbol tempo,
+        Symbol venue,
+        bool async
+    );
+    Symbol GetBackupOutfitOverride(int idx);
     bool AllCharsLoaded();
     void ClearCrowdClips();
     void ClearCrowd();
@@ -44,8 +52,8 @@ protected:
     HamWardrobe();
 
     Symbol GetCrewChar(Symbol, int);
-    HamCharacter *LoadMainCharacter(int, Symbol, bool);
-    void LoadCrowdClips(Symbol, Symbol, bool);
+    HamCharacter *LoadMainCharacter(int index, Symbol outfit, bool async);
+    void LoadCrowdClips(Symbol tempo, Symbol venue, bool async);
     void SyncInterestObjects(ObjectDir *);
 
     DataNode OnSetVenue(DataArray *);
@@ -54,13 +62,14 @@ protected:
 
     ObjPtrList<Character> mCrowdMembers; // 0x4
     ObjPtrVec<HamCharacter> mMainCharacters; // 0x18
-    Symbol unk34; // 0x34
-    bool unk38; // 0x38
-    Symbol unk3c; // 0x3c
-    int unk40; // 0x40
-    Symbol unk44; // 0x44
-    Symbol unk48; // 0x48
-    Symbol unk4c[2]; // 0x4c
+    /** How fast the crowd moves. */
+    Symbol mTempo; // 0x34
+    bool unk38; // 0x38 - active crowd override?
+    Symbol mCrowdForceState; // 0x3c
+    int unk40; // 0x40 - some sort of flags
+    Symbol unk44; // 0x44 - current crowd state?
+    Symbol mCharOverrideOutfit; // 0x48
+    Symbol mBackupOverrideOutfits[2]; // 0x4c
     RndOverlay *mOverlay; // 0x54
 };
 

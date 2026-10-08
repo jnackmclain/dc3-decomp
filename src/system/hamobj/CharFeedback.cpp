@@ -2,8 +2,13 @@
 #include "obj/Object.h"
 #include "obj/Task.h"
 #include "os/Debug.h"
+#include "rndobj/Anim.h"
 #include "rndobj/Draw.h"
+#include "rndobj/Line.h"
+#include "rndobj/Mesh.h"
 #include "rndobj/Poll.h"
+#include "ui/UIColor.h"
+#include "utl/Loader.h"
 
 bool CharFeedback::sEnabled = true;
 
@@ -58,6 +63,91 @@ BEGIN_COPYS(CharFeedback)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(10, 0)
+
+BEGIN_LOADS(CharFeedback)
+    LOAD_REVS(bs)
+    ASSERT_REVS(10, 0)
+    LOAD_SUPERCLASS(Hmx::Object)
+    LOAD_SUPERCLASS(RndDrawable)
+    d >> mTarget;
+    if (d.rev < 3) {
+        if (d.rev > 0) {
+            ObjPtr<RndMesh> mesh(this);
+            d >> mesh;
+            int x;
+            d >> x;
+        }
+        if (d.rev > 1) {
+            ObjPtr<RndAnimatable> anim(this);
+            d >> anim;
+        }
+    }
+    if (d.rev > 2) {
+        if (d.rev < 6) {
+            {
+                ObjPtr<RndLine> line(this);
+                ObjPtr<UIColor> color(this);
+                d >> line;
+                d >> color;
+                d >> color;
+            }
+            int x;
+            d >> x;
+        } else if (d.rev < 8) {
+            int x;
+            d >> x;
+        } else if (d.rev < 9) {
+            Symbol s;
+            d >> s;
+        } else {
+            d >> (int &)mTestLimbs;
+        }
+    }
+    if (d.rev > 3) {
+        d >> mFailTriggerSecs;
+    }
+    if (d.rev > 6) {
+        d >> mMinFailSecs;
+    }
+    if (d.rev > 4) {
+        d >> mFailMat;
+    }
+    if (d.rev > 8) {
+        d >> mFadeSecs;
+        if (d.rev < 10) {
+            int x;
+            d >> x;
+        }
+    }
+    Sync();
+END_LOADS
+
+void CharFeedback::Poll() {
+    float secs = TheTaskMgr.Seconds(TaskMgr::kRealTime);
+    float delta = TheTaskMgr.DeltaSeconds();
+    for (int i = 0; i < 4; i++) {
+        LimbState &cur = mLimbStates[i];
+        if (cur.unk4 != -1) {
+            if (cur.unk0) {
+                if (!cur.unk1) {
+                    cur.unk0 = false;
+                }
+            } else if (cur.unk1 && secs > mFailTriggerSecs + cur.unk4) {
+                cur.unk0 = true;
+            }
+            float f1 = delta / mFadeSecs;
+            if (!cur.unk0) {
+                f1 *= -1;
+            }
+            cur.unk8 += f1;
+            ClampEq(cur.unk8, 0.0f, 1.0f);
+        } else {
+            cur.unk8 = 0;
+        }
+    }
+}
+
 void CharFeedback::Enter() {
     RndPollable::Enter();
     Sync();
@@ -108,6 +198,20 @@ void CharFeedback::Sync() {
             if (mesh) {
                 mesh->SetShowing(false);
                 mesh->SetMat(mFailMat);
+            }
+        }
+    }
+}
+
+void CharFeedback::DrawShowing() {
+    if (TheLoadMgr.EditMode() || sEnabled) {
+        if (mTarget && mFailMat) {
+            for (int i = 0; i < kNumLimbFeedbacks; i++) {
+                LimbState &state = mLimbStates[i];
+                if (state.unk8 > 0 && state.unkc) {
+                    mFailMat->SetAlpha(state.unk8);
+                    state.unkc->DrawShowing();
+                }
             }
         }
     }

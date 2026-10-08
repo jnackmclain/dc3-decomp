@@ -5,7 +5,6 @@
 #include "obj/Object.h"
 #include "obj/PropSync.h"
 #include "rndobj/Anim.h"
-#include "stl/_vector.h"
 #include "ui/UILabel.h"
 #include "ui/UIPanel.h"
 
@@ -27,6 +26,8 @@ public:
     virtual bool IsLoaded() const;
     virtual void Unload();
     virtual void FinishLoad();
+
+    NEW_OBJ(MoviePanel)
 
     static bool sUseSubtitles;
     MoviePanel();

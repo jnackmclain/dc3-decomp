@@ -1,10 +1,13 @@
 #include "hamobj/PoseFatalities.h"
 #include "PoseFatalities.h"
 #include "char/CharClip.h"
+#include "char/CharClipDriver.h"
 #include "char/CharDriver.h"
 #include "flow/PropertyEventProvider.h"
 #include "gesture/BaseSkeleton.h"
 #include "gesture/Skeleton.h"
+#include "gesture/SkeletonUpdate.h"
+#include "gesture/SkeletonViz.h"
 #include "hamobj/CharCameraInput.h"
 #include "hamobj/Difficulty.h"
 #include "hamobj/HamCharacter.h"
@@ -12,6 +15,10 @@
 #include "hamobj/HamGameData.h"
 #include "hamobj/HamLabel.h"
 #include "hamobj/HamMaster.h"
+#include "hamobj/HamPhraseMeter.h"
+#include "hamobj/HamPlayerData.h"
+#include "math/Color.h"
+#include "math/Geo.h"
 #include "math/Rand.h"
 #include "math/Utl.h"
 #include "obj/Data.h"
@@ -23,12 +30,17 @@
 #include "os/Joypad.h"
 #include "os/System.h"
 #include "rndobj/Anim.h"
+#include "rndobj/Draw.h"
 #include "rndobj/PropKeys.h"
+#include "rndobj/Rnd.h"
 #include "synth/FxSendDelay.h"
 #include "synth/Synth.h"
 #include "utl/BeatMap.h"
+#include "utl/DebugMeter.h"
+#include "utl/MakeString.h"
 #include "utl/OSCMessenger.h"
 #include "utl/Symbol.h"
+#include "world/Dir.h"
 
 PoseFatalities::PoseFatalities()
     : unk15fc(0.5f), mHudPanel(0), mJumpStart(0), mJumpEnd(0), unk1754(0), unk1764(0),
@@ -99,20 +111,23 @@ bool PoseFatalities::InFatality(int player) const {
         }
         if (b1) {
             return FatalActive();
+        } else {
+            return false;
         }
     } else {
         MILO_ASSERT_RANGE(player, 0, 2, 0x391);
-        if (max >= mFatalStartBeats[player]) {
+        if (max < mFatalStartBeats[player]) {
+            return false;
+        } else {
             return mInFatality[player];
         }
     }
-    return false;
 }
 
 bool PoseFatalities::InStrikeAPose() {
     static Symbol gameplay_mode("gameplay_mode");
     static Symbol strike_a_pose("strike_a_pose");
-    return TheHamProvider->Property(gameplay_mode, true)->Sym() == strike_a_pose;
+    return TheHamProvider->Property(gameplay_mode)->Sym() == strike_a_pose;
 }
 
 void PoseFatalities::SetCombo(int player, int combo) {
@@ -144,7 +159,7 @@ void PoseFatalities::Reset() {
         unk15f4[i] = 0;
     }
     TheHamProvider->SetProperty("in_fatalities", 0);
-    RndAnimatable *anim = TheSynth->Find<RndAnimatable>("beat_repeat.anim", true);
+    RndAnimatable *anim = TheSynth->Find<RndAnimatable>("beat_repeat.anim");
     if (anim) {
         anim->SetFrame(4, 1);
     }
@@ -160,11 +175,10 @@ void PoseFatalities::PlayVO(Symbol s) {
 }
 
 String PoseFatalities::GetCelebrationClip(int player) {
-    Symbol outfit =
-        GetOutfitCharacter(TheHamDirector->GetCharacter(player)->Outfit(), true);
+    Symbol outfit = GetOutfitCharacter(TheHamDirector->GetCharacter(player)->Outfit());
     static Symbol strikeapose_celebrations("strikeapose_celebrations");
     DataArray *cfg = SystemConfig(strikeapose_celebrations);
-    DataArray *a = cfg->FindArray(outfit, true);
+    DataArray *a = cfg->FindArray(outfit);
     return a->Node(RandomInt(1, a->Size())).Str();
 }
 
@@ -177,9 +191,9 @@ void PoseFatalities::EndFatal(int player) {
     TheHamProvider->Handle(endFatalityMsg, false);
     if (!InStrikeAPose()) {
         ObjectDir *poseDisplay = TheHamDirector->GetVenueWorld()->Find<ObjectDir>(
-            MakeString("final_pose_display%d", player), true
+            MakeString("final_pose_display%d", player)
         );
-        HamLabel *label = poseDisplay->Find<HamLabel>("pose_combo.lbl", true);
+        HamLabel *label = poseDisplay->Find<HamLabel>("pose_combo.lbl");
         int num;
         if (mGotFullCombo[player]) {
             num = 8;
@@ -191,13 +205,12 @@ void PoseFatalities::EndFatal(int player) {
         } else {
             label->SetTextToken(gNullStr);
         }
-        poseDisplay->Find<RndAnimatable>("pose_combo.anim", true)
-            ->Animate(0, false, 0, nullptr, kEaseLinear, 0, false);
+        poseDisplay->Find<RndAnimatable>("pose_combo.anim")->Animate(0, false, 0);
     }
     mCurrentCombo[player] = 0;
     if (!DataVariable("restart_fatals").Int() && !InStrikeAPose()) {
         for (int i = 0; i < 2; i++) {
-            b10 &= mInFatality[i] != 0;
+            b10 = mInFatality[i] ? false : b10;
         }
         if (b10) {
             unk1760 = 4;
@@ -274,7 +287,10 @@ void PoseFatalities::BeginFatal(int player) {
 }
 
 bool PoseFatalities::CheckMatchingPose(int player) {
-    return InFatality(player) && unk15f4[player] >= unk15fc;
+    if (InFatality(player) && unk15f4[player] >= unk15fc) {
+        return true;
+    }
+    return false;
 }
 
 void PoseFatalities::LoadFatalityClips() {
@@ -313,17 +329,16 @@ void PoseFatalities::Enter() {
         if (InStrikeAPose()) {
             mFatalEndBeat = idx * 4;
         }
-        mPoseComboLabels[kSkeletonLeft] = mHudPanel->Find<ObjectDir>("hud_left", true)
-                                              ->Find<HamLabel>("pose_combo.lbl", true);
-        mPoseComboLabels[kSkeletonRight] = mHudPanel->Find<ObjectDir>("hud_right", true)
-                                               ->Find<HamLabel>("pose_combo.lbl", true);
-        mPoseBeatAnims[kSkeletonLeft] = mHudPanel->Find<ObjectDir>("hud_left", true)
-                                            ->Find<RndAnimatable>("pose_beat.anim", true);
+        mPoseComboLabels[kSkeletonLeft] =
+            mHudPanel->Find<ObjectDir>("hud_left")->Find<HamLabel>("pose_combo.lbl");
+        mPoseComboLabels[kSkeletonRight] =
+            mHudPanel->Find<ObjectDir>("hud_right")->Find<HamLabel>("pose_combo.lbl");
+        mPoseBeatAnims[kSkeletonLeft] =
+            mHudPanel->Find<ObjectDir>("hud_left")->Find<RndAnimatable>("pose_beat.anim");
         mPoseBeatAnims[kSkeletonRight] =
-            mHudPanel->Find<ObjectDir>("hud_right", true)
-                ->Find<RndAnimatable>("pose_beat.anim", true);
+            mHudPanel->Find<ObjectDir>("hud_right")->Find<RndAnimatable>("pose_beat.anim");
         unk1748 = InStrikeAPose();
-        FxSendDelay *delay = TheSynth->Find<FxSendDelay>("BeatRepeat.send", true);
+        FxSendDelay *delay = TheSynth->Find<FxSendDelay>("BeatRepeat.send");
         if (delay) {
             float bpm = TheMaster->SongData()->GetTempoMap()->GetTempoBPM(0);
             delay->SetProperty("tempo", bpm);
@@ -337,14 +352,14 @@ void PoseFatalities::PollVO() {
     if (InStrikeAPose()) {
         bool flag1 = unk1768 & 1;
         bool flag2 = (unk1768 >> 1) & 1;
-        if (flag1) {
-            if (flag2) {
+        if (flag1 || flag2) {
+            if (flag1 && flag2) {
                 PlayVO("nar_sap_both_fc");
-            } else {
+            } else if (flag1) {
                 PlayVO("nar_sap_left_fc");
+            } else if (flag2) {
+                PlayVO("nar_sap_right_fc");
             }
-        } else if (flag2) {
-            PlayVO("nar_sap_right_fc");
         }
         if (unk1764 <= 0) {
             if (unk1768 & 4) {
@@ -365,12 +380,8 @@ void PoseFatalities::PollVO() {
 
 void PoseFatalities::Poll() {
     if (InStrikeAPose()) {
-        TheHamDirector->GetVenueWorld()
-            ->Find<HamCharacter>("backup0", true)
-            ->SetShowing(false);
-        TheHamDirector->GetVenueWorld()
-            ->Find<HamCharacter>("backup1", true)
-            ->SetShowing(false);
+        TheHamDirector->GetVenueWorld()->Find<HamCharacter>("backup0")->SetShowing(false);
+        TheHamDirector->GetVenueWorld()->Find<HamCharacter>("backup1")->SetShowing(false);
     }
     if (unk1760 > 0) {
         unk1760 -= TheTaskMgr.DeltaBeat();
@@ -405,6 +416,7 @@ void PoseFatalities::Poll() {
             }
             if (InFatality(i)) {
                 CharCameraInput input(TheHamDirector->GetCharacter(i));
+                input.SetUnk2430(true);
                 input.PollTracking();
                 const SkeletonFrame *frame = input.NewFrame();
                 if (frame) {
@@ -486,15 +498,15 @@ void PoseFatalities::AddFatal(int player) {
             ;
         randClip = *it;
     } else {
-        const char *str =
-            MakeString("pose_fatalities_%s", GetOutfitCharacter(hChar->Outfit()));
-        randClip = driver->FindClip(str, true);
+        randClip = driver->FindClip(
+            MakeString("pose_fatalities_%s", GetOutfitCharacter(hChar->Outfit()))
+        );
     }
 lab5548:
     if (randClip) {
         driver->Play(randClip, 0x402, -1, kHugeFloat, 0);
         TheHamDirector->CurShot()->Reteleport(
-            Vector3::ZeroVec(), false, MakeString("player%d", player)
+            Vector3::GetZero(), false, MakeString("player%d", player)
         );
     }
 lab55b4:
@@ -511,7 +523,7 @@ void PoseFatalities::OnFatalResult(int player, bool hit) {
         if (hit) {
             static Symbol score("score");
             int scoreProp =
-                TheGameData->Player(player)->Provider()->Property(score, true)->Int();
+                TheGameData->Player(player)->Provider()->Property(score)->Int();
             int newScoreProp;
             if (mCurrentCombo[player] < 8) {
                 newScoreProp = mCurrentCombo[player] * 2000 + scoreProp;
@@ -527,7 +539,7 @@ void PoseFatalities::OnFatalResult(int player, bool hit) {
             unk176c = 0;
             unk1768 |= 4;
             if (InStrikeAPose()) {
-                TheSynth->Find<RndAnimatable>("beat_repeat.anim", true)
+                TheSynth->Find<RndAnimatable>("beat_repeat.anim")
                     ->Animate(0, false, 0, nullptr, kEaseLinear, 0, false);
             }
         } else {
@@ -562,8 +574,7 @@ void PoseFatalities::OnFatalResult(int player, bool hit) {
                     unk1768 |= 2;
                 }
                 CharDriver *driver = TheHamDirector->GetCharacter(player)->Driver();
-                CharClip *celebrationClip =
-                    driver->FindClip(GetCelebrationClip(player), true);
+                CharClip *celebrationClip = driver->FindClip(GetCelebrationClip(player));
                 if (celebrationClip) {
                     driver->Play(celebrationClip, 2, -1, kHugeFloat, 0);
                 }
@@ -643,15 +654,180 @@ void PoseFatalities::OnBeat(int beat) {
     bool p9 = unk1754 < mFatalStartBeats[0] ? false : mInFatality[0];
     if (p9) {
         JoypadData *jData = JoypadGetPadData(0);
-        if (jData->GetRX() > 0.5f) {
+        if (jData->RX() > 0.5f) {
             AddFatal(0);
         }
-        if (jData->GetRX() < -0.5f) {
+        if (jData->RX() < -0.5f) {
             unk44[0] -= 2;
             AddFatal(0);
         }
-        if (jData->GetLY() > 0.5f) {
+        if (jData->LY() > 0.5f) {
             OnFatalResult(0, false);
+        }
+    }
+}
+
+void PoseFatalities::UpdateClipDriver(int i) {
+    HamCharacter *character = TheHamDirector->GetCharacter(i);
+    CharClipDriver *clipDriver = character->Driver()->First();
+    if (clipDriver) {
+        while (clipDriver != 0) {
+            if (strstr(clipDriver->GetClip()->Name(), "pose_fatalities_")) {
+                break;
+            }
+            clipDriver = clipDriver->Next();
+        }
+        if (clipDriver && clipDriver->GetClip()) {
+            MILO_ASSERT(NUM_FATALITIES == clipDriver->NumBeatEvents(), 0x123);
+            int num = unk44[i];
+            clipDriver->SetBeatOffset(
+                unk1718[i], kTaskBeats, MakeString("pose_fatality_%i", num - 1)
+            );
+            if (unk1718[i] < 0) {
+                unk1718[i] += TheTaskMgr.DeltaUISeconds();
+            }
+        }
+    }
+}
+
+void PoseFatalities::UpdateMatchingPose(int player) {
+    bool b2 = false;
+    unk1710[player] = 0;
+    float f12 = Clamp(0.0f, 1.0f, TheTaskMgr.DeltaBeat());
+    if (InFatality(player)) {
+        const Skeleton *skeleton = TheGameData->Player(player)->GetSkeleton();
+        float f13 = mRecorder.CompareSkeletonPositions(
+            skeleton,
+            &mPlayerSkeletons[player],
+            TheOSCMessenger.GetFloat("/fatalposeerrorweight", 1)
+        );
+        unk1710[player] = f13 / TheOSCMessenger.GetFloat("/fatalposethresh", 0.5f);
+        // NaN check
+        if (unk1710[player] != unk1710[player]) {
+            unk1710[player] = 0;
+        }
+        ClampEq(unk1710[player], 0.0f, 1.0f);
+        b2 = unk1710[player] >= 1 && unk1718[player] >= 0;
+        if (unk1718[player] >= 0) {
+            JoypadData *jData = JoypadGetPadData(0);
+            if (player == 0) {
+                if (jData->RT() > 0.5f || !TheGameData->Player(0)->Autoplay().Null()) {
+                    b2 = true;
+                }
+            }
+            if (player == 1) {
+                if (jData->LT() > 0.5f || !TheGameData->Player(1)->Autoplay().Null()) {
+                    b2 = true;
+                }
+            }
+        }
+    }
+    if (b2) {
+        unk15f4[player] += f12;
+    } else {
+        unk15f4[player] *=
+            1 - Clamp(0.0f, 1.0f, TheOSCMessenger.GetFloat("/holddecay", 1) * f12);
+    }
+    float frac = Clamp(0.0f, 1.0f, unk15f4[player] / unk15fc);
+    WorldDir *world = TheHamDirector->GetVenueWorld();
+    HamPhraseMeter *hpm =
+        world->Find<HamPhraseMeter>(MakeString("phrase_meter%i", player));
+    hpm->SetRatingFrac(frac, -1);
+    hpm->SetShowing(true);
+    hpm->Find<RndAnimatable>("perimeter_feedback_color.anim")
+        ->SetFrame(unk1710[player] * 4, 1);
+}
+
+void PoseFatalities::DrawDebug() {
+    static SkeletonViz *sViz1 = nullptr;
+    static SkeletonViz *sViz2 = nullptr;
+    if (!sViz2) {
+        sViz2 = Hmx::Object::New<SkeletonViz>();
+        sViz2->Init();
+        sViz1 = Hmx::Object::New<SkeletonViz>();
+        sViz1->Init();
+    }
+    SkeletonUpdateHandle handle = SkeletonUpdate::InstanceHandle();
+
+    static float sFloatd7d4 = 0.3f;
+    static float sFloatd7d8 = 0.1f;
+    static float sFloatd7dc = 0.3f;
+    static float sFloatd7e0 = 0.2f;
+
+    float f8 = sFloatd7dc / TheRnd.YRatio();
+    if (unk1754 < mFatalStartBeats[0] ? false : mInFatality[0]) {
+        if (DataVariable("fatal_debug").Int()) {
+            const Skeleton *skeleton = TheGameData->Player(0)->GetSkeleton();
+            static DebugMeter sDebugMeter1(0.1f, 0.1f, 0.5f, 0.1f, Hmx::Color(0, 0, 0));
+            sDebugMeter1.Draw();
+            sDebugMeter1.DrawBar(
+                0,
+                mRecorder.CompareSkeletonPositions(skeleton, &mPlayerSkeletons[0], 1),
+                Hmx::Color(0, 1, 0)
+            );
+
+            float f9 = mRecorder.CompareSkeletonPositions(
+                skeleton,
+                &mPlayerSkeletons[0],
+                TheOSCMessenger.GetFloat("/fatalposeerrorweight", 0)
+            );
+            float f17 = TheOSCMessenger.GetFloat("/fatalposethresh", 0);
+            float f13 = f9 / f17;
+            // NaN check
+            if (f13 != f13) {
+                f13 = 0;
+            }
+            ClampEq(f13, 0.0f, 1.0f);
+
+            static DebugMeter sDebugMeter2(0.1f, 0.3f, 0.5f, 0.1f, Hmx::Color(0, 0, 0));
+            sDebugMeter2.Draw();
+            sDebugMeter2.DrawBar(0, 1, Hmx::Color(0, 0, f13 * f13));
+            sDebugMeter2.DrawBar(0, f9, Hmx::Color(0, 1, 0));
+
+            static DebugMeter sDebugMeter3(
+                sFloatd7d8 + sFloatd7dc + 0.1f,
+                sFloatd7d4,
+                sFloatd7dc,
+                0.03f,
+                Hmx::Color(0, 0, 0)
+            );
+            sDebugMeter3.Draw();
+            sDebugMeter3.DrawBar(0, 1, Hmx::Color(0, 0, unk1710[0] * unk1710[0]));
+            sDebugMeter3.DrawBar(
+                0, Clamp(0.0f, 1.0f, unk15f4[0] / unk15fc), Hmx::Color(0, 1, 0)
+            );
+        }
+
+        if (TheOSCMessenger.GetInt("/posefatalitiesdrawdebugskel", 0)) {
+            Hmx::Rect r(sFloatd7d8 + sFloatd7dc + 0.1f, sFloatd7d4, sFloatd7dc, f8);
+            TheRnd.DrawRectScreen(r, Hmx::Color(0, 0, 0, 0.4f), nullptr, nullptr, nullptr);
+            sViz2->SetUsePhysicalCam(true);
+            sViz2->SetPhysicalCamScreenRect(r);
+            sViz2->Visualize(
+                *handle.GetCameraInput(), mPlayerSkeletons[0], nullptr, false
+            );
+        }
+    }
+
+    if (unk1754 < mFatalStartBeats[1] ? false : mInFatality[1]) {
+        if (DataVariable("fatal_debug").Int()) {
+            static DebugMeter sDebugMeter4(
+                sFloatd7d8, sFloatd7d4, sFloatd7dc, 0.03f, Hmx::Color(0, 0, 0)
+            );
+            sDebugMeter4.Draw();
+            sDebugMeter4.DrawBar(0, 1, Hmx::Color(0, 0, unk1710[1] * unk1710[1]));
+            sDebugMeter4.DrawBar(
+                0, Clamp(0.0f, 1.0f, unk15f4[1] / unk15fc), Hmx::Color(0, 1, 0)
+            );
+        }
+        if (TheOSCMessenger.GetInt("/posefatalitiesdrawdebugskel", 0)) {
+            Hmx::Rect r(sFloatd7d8, sFloatd7d4, sFloatd7dc, f8);
+            TheRnd.DrawRectScreen(r, Hmx::Color(0, 0, 0, 0.4f), nullptr, nullptr, nullptr);
+            sViz1->SetUsePhysicalCam(true);
+            sViz1->SetPhysicalCamScreenRect(r);
+            sViz1->Visualize(
+                *handle.GetCameraInput(), mPlayerSkeletons[1], nullptr, false
+            );
         }
     }
 }

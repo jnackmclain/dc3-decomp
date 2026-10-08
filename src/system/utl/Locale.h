@@ -19,35 +19,40 @@ private:
     Symbol *mSymTable; // 0x4
     const char **mStrTable; // 0x8
     StringTable *mStringData; // 0xc
-    int unk10;
+    bool *mUploadedFlags; // 0x10
     Symbol mFile; // 0x14
     int mNumFilesLoaded; // 0x18
-    bool *mUploadedFlags; // 0x1c
+    bool mInitialized; // 0x1c - checked in Init
     DataArray *mMagnuStrings; // 0x20
 public:
     Locale() {}
-    // : mSize(0), mSymTable(0), mStrTable(0), mStringData(0), mUploadedFlags(0),
-    //   mFile(), mNumFilesLoaded(0), mMagnuStrings(0) {}
-    ~Locale();
+    ~Locale() {
+        if (mMagnuStrings) {
+            mMagnuStrings->Release();
+            mMagnuStrings = nullptr;
+        }
+    }
 
     void Init();
     void Terminate();
 
-    // static const char *sIgnoreMissingText;
+    static const char *sIgnoreMissingText;
 
     void SetMagnuStrings(DataArray *);
-    // bool FindDataIndex(Symbol, int &, bool) const;
-    // const char *Localize(Symbol, bool) const;
+    const char *Localize(Symbol token, bool fail = true) const;
 
     static void SetLocaleVerboseNotify(bool set) { Locale::sVerboseNotify = set; }
+    static bool GetLocaleVerboseNotify() { return sVerboseNotify; }
 
 protected:
+    bool FindDataIndex(Symbol sym, int &index, bool fail = true) const;
+
     static bool sVerboseNotify;
 };
 
 extern Locale TheLocale;
 
-const char *Localize(Symbol, bool *, Locale &);
-const char *LocalizeSeparatedInt(int, Locale &);
-const char *LocalizeFloat(const char *, float);
+const char *Localize(Symbol token, bool *success, Locale &locale);
+const char *LocalizeSeparatedInt(int num, Locale &locale);
+const char *LocalizeFloat(const char *fmt, float num);
 void SyncReloadLocale();

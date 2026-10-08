@@ -10,7 +10,10 @@
 #include "ui/UIComponent.h"
 #include "ui/UIListCustom.h"
 #include "ui/UIListProvider.h"
-class NavListSortMgr : public UIListProvider, Hmx::Object, ContentMgr::Callback {
+#include "utl/Symbol.h"
+class NavListSortMgr : public UIListProvider,
+                       public Hmx::Object,
+                       public ContentMgr::Callback {
 public:
     NavListSortMgr(SongPreview &);
     virtual ~NavListSortMgr();
@@ -29,19 +32,27 @@ public:
     virtual bool IsHeader(int);
     virtual void UnHighlightCurrent();
     virtual void ClearIconLabels();
+    virtual bool HeadersSelectable(); // 0x6c
+    virtual bool SelectionIs(Symbol); // 0x70
+    virtual bool DataIs(int, Symbol); // 0x74
+    virtual Symbol MoveOn(); // 0x78
+    virtual void OnEnter(); // 0x7c
+    virtual int GetListIndexFromHeaderIndex(int); // 0x80
+    virtual Symbol GetFirstChildSymbolFromHeaderSymbol(Symbol); // 0x84
+    virtual DataNode OnCancel(); // 0x88
     // ContentMgr::Callback
-    virtual void ContentMounted(const char *, const char *);
-
+    virtual void ContentMounted(const char *, const char *); // 0x8c
 
     void StopPreview();
     void SetHeaderMode(bool);
     void SetEnteringHeaderMode(bool);
     void SetExitingHeaderMode(bool);
-    NavListSortNode *GetHighlightItem() { return mSorts[mCurrentSortIdx]->GetUnk50(); };
+    NavListSortNode *GetHighlightItem();
     void OnHighlightChanged();
     void OnExit();
     void OnUnload();
     NavListSort *GetCurrentSort();
+    NavListSort *GetCurrentSortHandle();
     Symbol GetCurrentSortName();
     Symbol GetHeaderSymbolFromChildSymbol(Symbol);
     void DoUncollapse();
@@ -50,8 +61,6 @@ public:
     void StartPreview(int, TexMovie *);
     Symbol OnGetToken(int);
     bool IsIndexHeader(int);
-    virtual int GetListIndexFromHeaderIndex(int);
-    virtual Symbol GetFirstChildSymbolFromHeaderSymbol(Symbol);
     int GetHeaderIndexFromListIndex(int);
     int GetHeaderIndexFromChildListIndex(int);
     bool IsHeaderCollapsed(Symbol);
@@ -62,8 +71,24 @@ public:
     void AddHeaderIndex(int);
     void FinalizeHeaders();
     void ClearHeaders();
+    int FirstDataIndex(Symbol);
+    bool IsDisabled(int);
+    void SetHighlightedIx(int);
+    int GetHeaderCount();
+    void SortWithHeaders(int);
+    void SetHeaderMode(int);
+    void NextSort();
 
-    bool IsInHeaderMode() { return mHeaderMode; }
+    bool &IsInHeaderMode() { return mHeaderMode; }
+    bool &EnteringHeaderMode() { return mEnteringHeaderMode; }
+    bool &GetHeadersSelectable() { return mHeadersSelectable; }
+    bool &ExitingHeaderMode() { return mExitingHeaderMode; }
+    std::vector<NavListSort *> &Sorts() { return mSorts; };
+    std::vector<int> &GetHeadersA() { return mHeadersA; };
+    std::vector<int> &GetHeadersB() { return mHeadersB; };
+    int &GetHeadersBAtIdx(int idx) { return mHeadersB[idx]; };
+    int GetCurrentSortIdx() const { return mCurrentSortIdx; };
+    SongPreview *GetSongPreview() { return mSongPreview; };
 
 protected:
     std::vector<NavListSort *> mSorts; // 0x34

@@ -17,6 +17,9 @@ class RndParticle {
 public:
     MEM_ARRAY_OVERLOAD(Particle, 0x1E);
 
+    Vector3 &Pos3() { return reinterpret_cast<Vector3 &>(pos); }
+    Vector3 &Vel3() { return reinterpret_cast<Vector3 &>(vel); }
+
     Hmx::Color col; // 0x0
     Hmx::Color colVel; // 0x10
     Vector4 pos; // 0x20
@@ -29,28 +32,30 @@ public:
     float swingArm; // 0x54
     RndParticle *prev; // 0x58
     RndParticle *next; // 0x5c
-    int unk60;
-    int unk64;
+    int tileIdx; // 0x60
+    float unk64;
 };
 
 // size 0xc8
 class RndFancyParticle : public RndParticle {
 public:
-    float growFrame; // 0x60
-    float growVel; // 0x64
-    float shrinkFrame; // 0x68
-    float shrinkVel; // 0x6c
-    Hmx::Color midcolVel; // 0x70
-    float midcolFrame; // 0x80
-    float beginGrow; // 0x84
-    float midGrow; // 0x88
-    float endGrow; // 0x8c
-    Vector4 bubbleDir; // 0x90
-    float bubbleFreq; // 0xa0
-    float bubblePhase; // 0xa4
-    float RPF; // 0xa8
-    float swingArmVel; // 0xac
-    int unkb0, unkb4, unkb8, unkbc, unkc0, unkc4;
+    Vector3 &Bubble3() { return reinterpret_cast<Vector3 &>(bubbleDir); }
+
+    float growFrame; // 0x68
+    float growVel; // 0x6c
+    float shrinkFrame; // 0x70
+    float shrinkVel; // 0x74
+    Hmx::Color midcolVel; // 0x78
+    float midcolFrame; // 0x88
+    float beginGrow; // 0x8c
+    float midGrow; // 0x90
+    float endGrow; // 0x94
+    Vector4 bubbleDir; // 0x98
+    float bubbleFreq; // 0xa8
+    float bubblePhase; // 0xac
+    float RPF; // 0xb0
+    float swingArmVel; // 0xb4
+    Vector3 unkb8;
 };
 
 class ParticleCommonPool {
@@ -66,8 +71,8 @@ public:
     MEM_OVERLOAD(ParticleCommonPool, 0x254)
 
 private:
-    RndParticle *mPoolParticles; // 0x0
-    RndParticle *mPoolFreeParticles; // 0x4
+    RndFancyParticle *mPoolParticles; // 0x0
+    RndFancyParticle *mPoolFreeParticles; // 0x4
     int mNumActiveParticles; // 0x8
     int mHighWaterMark; // 0xc
 };
@@ -119,6 +124,9 @@ public:
     };
     class Burst {
     public:
+        bool Set(float, float);
+        float Emit(float);
+
         float unk0;
         float unk4;
         float unk8;
@@ -177,7 +185,7 @@ public:
 
     float CalcFrame() {
         if (mFrameDrive)
-            return mFrame;
+            return GetFrame();
         else
             return mElapsedTime;
     }
@@ -196,7 +204,10 @@ public:
         mEndColorHigh = high;
     }
     const Vector2 &EmitRate() const { return mEmitRate; }
-    void SetEmitRate(float x, float y) { mEmitRate.Set(x, y); }
+    void SetEmitRate(float x, float y) {
+        mEmitRate.x = x;
+        mEmitRate.y = y;
+    }
     const Vector2 &Speed() const { return mSpeed; }
     void SetSpeed(float x, float y) { mSpeed.Set(x, y); }
     const Vector2 &Life() const { return mLife; }
@@ -208,6 +219,9 @@ public:
     const Vector2 &Yaw() const { return mYaw; }
     const Vector3 &BoxExtent1() const { return mBoxExtent1; }
     const Vector3 &BoxExtent2() const { return mBoxExtent2; }
+    const Vector2 &BubbleSize() const { return mBubbleSize; }
+    const Vector2 &BubblePeriod() const { return mBubblePeriod; }
+    const Vector3 &ForceDir() const { return mForceDir; }
 
     void SetBoxExtent(const Vector3 &v1, const Vector3 &v2) {
         mBoxExtent1 = v1;
@@ -232,6 +246,10 @@ public:
     void SetStretchWithVelocity(bool b) { mStretchWithVelocity = b; }
     void SetConstantArea(bool b) { mConstantArea = b; }
 
+    bool CheckParticleLife(float frame, RndParticle *particle) {
+        return frame >= particle->deathFrame || frame < particle->birthFrame;
+    }
+
     void SetMaxBurst(int i) { mMaxBurst = i; }
     void SetTimeBetweenBursts(float f1, float f2) { mBurstInterval.Set(f1, f2); }
     void SetPeakRate(float f1, float f2) { mBurstPeak.Set(f1, f2); }
@@ -246,6 +264,7 @@ public:
     const Hmx::Color &MidColorLow() const { return mMidColorLow; }
     const Hmx::Color &MidColorHigh() const { return mMidColorHigh; }
     RndMesh *GetMesh() const { return mMeshEmitter; }
+    RndParticle *ActiveParticles() const { return mActiveParticles; }
 
 protected:
     RndParticleSys();
@@ -253,6 +272,10 @@ protected:
     void UpdateParticles();
     void UpdateRelativeXfm();
     void InitParticle(float, RndParticle *, const Transform *, PartOverride &);
+    float CheckBursts(float);
+    void CreateParticles(float, float, const Transform &);
+    void RunFastForward();
+    void MoveParticles(float, float);
 
     DataNode OnSetStartColor(const DataArray *);
     DataNode OnSetStartColorInt(const DataArray *);
@@ -375,7 +398,7 @@ protected:
     Vector2 mBurstInterval; // 0x3a8
     Vector2 mBurstPeak; // 0x3b0
     Vector2 mBurstLength; // 0x3b8
-    int unk3c0;
+    int mExplicitParts; // 0x3c0
     float mElapsedTime; // 0x3c4
     /** "uses material texture as page tiles to animated through" */
     bool mAnimateUVs; // 0x3c8
@@ -399,6 +422,4 @@ protected:
     ObjVector<Attractor> mAttractors; // 0x3e8
 };
 
-extern ParticleCommonPool *gParticlePool;
-extern PartOverride gNoPartOverride;
 void InitParticleSystem();

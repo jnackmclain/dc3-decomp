@@ -65,6 +65,10 @@ public:
     virtual void DeleteSessionComplete(bool success) {}
     virtual void StartUploadCareerScore(u64 career_score) {}
 
+    int GetUnk74() const { return unk74; }
+    const char *GetUnk40() const { return unk40.c_str(); }
+    OnlineID &GetOnlineID() { return mOnlineId; }
+
     void DelayJob(DingoJob *job);
     void CancelDelayedCalls();
     void AddDelayedCalls();
@@ -115,4 +119,5 @@ enum ServerStatusResult {
 
 DECLARE_MESSAGE(ServerStatusChangedMsg, "server_status_changed")
 ServerStatusChangedMsg(ServerStatusResult r) : Message(Type(), r) {}
+ServerStatusResult Result() const { return (ServerStatusResult)mData->Int(2); }
 END_MESSAGE

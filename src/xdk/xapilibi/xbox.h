@@ -2,7 +2,8 @@
 #include "../win_types.h"
 #include "minwinbase.h"
 #include "wtypesbase.h"
-#include "winsockx.h"
+#include "xdk/d3d9i/d3d9.h"
+#include "xdk/d3d9i/d3d9types.h"
 #include "xinput.h"
 #include "xbase.h"
 
@@ -14,36 +15,36 @@
 extern "C" {
 #endif
 
-DWORD XBackgroundDownloadSetMode(XBACKGROUND_DOWNLOAD_MODE);
-
-DWORD XEnableScreenSaver(BOOL);
-
+DWORD XBackgroundDownloadSetMode(XBACKGROUND_DOWNLOAD_MODE Mode);
+DWORD XEnableScreenSaver(BOOL fEnable);
 DWORD XGetLocale();
-
 DWORD XTLGetLanguage();
-
-VOID XLaunchNewImage(LPCSTR, DWORD);
-
-LPVOID XPhysicalAlloc(SIZE_T, ULONG_PTR, ULONG_PTR, DWORD);
-VOID XPhysicalFree(LPVOID);
-
-DWORD XShowFriendsUI(DWORD);
-DWORD XShowPartyUI(DWORD);
-
-DWORD XShowNuiFriendsUI(DWORD, DWORD);
-DWORD XShowNuiPartyUI(DWORD, DWORD);
-DWORD XShowNuiGuideUI(DWORD);
-
-DWORD XUserCheckPrivilege(DWORD, XPRIVILEGE_TYPE, BOOL *);
-XUSER_SIGNIN_STATE XUserGetSigninState(DWORD);
-DWORD XUserGetXUID(DWORD, XUID *);
-void XUserSetContext(DWORD, DWORD, DWORD);
-DWORD XUserWriteAchievements(DWORD, XUSER_ACHIEVEMENT *, XOVERLAPPED *);
-
-DWORD XContentClose(const char *, XOVERLAPPED *);
-DWORD XContentGetDeviceData(DWORD, XDEVICE_DATA *);
-
-DWORD XCancelOverlapped(XOVERLAPPED *);
+__declspec(noreturn) VOID XLaunchNewImage(LPCSTR szImagePath, DWORD dwFlags);
+LPVOID XPhysicalAlloc(
+    SIZE_T dwSize, ULONG_PTR ulPhysicalAddress, ULONG_PTR ulAlignment, DWORD flProtect
+);
+VOID XPhysicalFree(LPVOID lpAddress);
+DWORD XShowFriendsUI(DWORD dwUserIndex);
+DWORD XShowPartyUI(DWORD dwUserIndex);
+DWORD XShowNuiFriendsUI(DWORD dwTrackingID, DWORD dwUserIndex);
+DWORD XShowNuiPartyUI(DWORD dwTrackingID, DWORD dwUserIndex);
+DWORD XShowNuiGuideUI(DWORD dwTrackingID);
+DWORD XShowNuiSigninUI(DWORD dwTrackingID, DWORD dwFlags);
+HRESULT XNuiDelayUI(ULONG ulMilliSeconds);
+DWORD XShowNuiGamerCardUI(DWORD dwTrackingID, DWORD dwUserIndex, XUID XuidPlayer);
+DWORD XShowNuiControllerRequiredUI(DWORD dwTrackingID, DWORD dwUserIndex);
+DWORD XUserCheckPrivilege(
+    DWORD dwUserIndex, XPRIVILEGE_TYPE PrivilegeType, BOOL *pfResult
+);
+XUSER_SIGNIN_STATE XUserGetSigninState(DWORD dwUserIndex);
+DWORD XUserGetXUID(DWORD dwUserIndex, XUID *pxuid);
+VOID XUserSetContext(DWORD dwUserIndex, DWORD dwContextId, DWORD dwContextValue);
+DWORD XUserWriteAchievements(
+    DWORD dwNumAchievements, XUSER_ACHIEVEMENT *pAchievements, XOVERLAPPED *pOverlapped
+);
+DWORD XContentClose(LPCSTR szRootName, XOVERLAPPED *pOverlapped);
+DWORD XContentGetDeviceData(DWORD DeviceID, XDEVICE_DATA *pDeviceData);
+DWORD XCancelOverlapped(XOVERLAPPED *pOverlapped);
 DWORD XGetOverlappedExtendedError(XOVERLAPPED *pOverlapped);
 DWORD XShowKeyboardUI(
     DWORD dwUserIndex,
@@ -55,102 +56,180 @@ DWORD XShowKeyboardUI(
     DWORD cchResultText,
     XOVERLAPPED *pOverlapped
 );
-
 DWORD XContentCrossTitleCreate(
-    DWORD,
-    LPCSTR,
-    XCONTENT_CROSS_TITLE_DATA *,
-    DWORD,
-    DWORD *,
-    DWORD *,
-    int,
-    ULONGLONG,
-    XOVERLAPPED *
+    DWORD dwUserIndex,
+    LPCSTR szRootName,
+    XCONTENT_CROSS_TITLE_DATA *pContentData,
+    DWORD dwContentFlags,
+    DWORD *pdwDisposition,
+    DWORD *pdwLicenseMask,
+    SIZE_T dwFileCacheSize,
+    ULARGE_INTEGER uliContentSize,
+    XOVERLAPPED *pOverlapped
 );
-DWORD XContentCrossTitleDelete(DWORD, const XCONTENT_CROSS_TITLE_DATA *, XOVERLAPPED *);
-
-DWORD XGetOverlappedExtendedError(XOVERLAPPED *);
-DWORD XGetOverlappedResult(XOVERLAPPED *, DWORD *, BOOL);
-
-DWORD XUserGetSigninInfo(DWORD, DWORD, XUSER_SIGNIN_INFO *);
-
-DWORD XSetThreadProcessor(HANDLE, DWORD);
-
+DWORD XContentCrossTitleDelete(
+    DWORD dwUserIndex,
+    CONST XCONTENT_CROSS_TITLE_DATA *pContentData,
+    XOVERLAPPED *pOverlapped
+);
+DWORD XGetOverlappedExtendedError(XOVERLAPPED *pOverlapped);
+DWORD XGetOverlappedResult(XOVERLAPPED *pOverlapped, DWORD *pdwResult, BOOL bWait);
+DWORD XUserGetSigninInfo(DWORD dwUserIndex, DWORD dwFlags, XUSER_SIGNIN_INFO *pSigninInfo);
+DWORD XSetThreadProcessor(HANDLE hThread, DWORD dwHardwareThread);
 DWORD XContentCreateEx(
-    DWORD,
-    LPCSTR,
-    CONST XCONTENT_DATA *,
-    DWORD,
-    DWORD *,
-    DWORD *,
-    DWORD,
-    ULARGE_INTEGER,
-    XOVERLAPPED *
+    DWORD dwUserIndex,
+    LPCSTR szRootName,
+    CONST XCONTENT_DATA *pContentData,
+    DWORD dwContentFlags,
+    DWORD *pdwDisposition,
+    DWORD *pdwLicenseMask,
+    SIZE_T dwFileCacheSize,
+    ULARGE_INTEGER uliContentSize,
+    XOVERLAPPED *pOverlapped
 );
-DWORD XContentGetCreator(DWORD, CONST XCONTENT_DATA *, BOOL *, XUID *, XOVERLAPPED *);
-DWORD XContentGetDeviceState(DWORD, XOVERLAPPED *);
-DWORD XContentDelete(DWORD, CONST XCONTENT_DATA *, XOVERLAPPED *);
-DWORD XContentCreateEnumerator(DWORD, DWORD, DWORD, DWORD, DWORD, DWORD *, HANDLE *);
-DWORD XEnumerate(HANDLE, VOID *, DWORD, DWORD *, XOVERLAPPED *);
-DWORD XContentFlush(LPCSTR, XOVERLAPPED *);
-ULONGLONG XContentCalculateSize(ULONGLONG, DWORD);
+DWORD XContentGetCreator(
+    DWORD dwUserIndex,
+    CONST XCONTENT_DATA *pContentData,
+    BOOL *pfUserIsCreator,
+    XUID *pxuid,
+    XOVERLAPPED *pOverlapped
+);
+DWORD XContentGetDeviceState(DWORD DeviceID, XOVERLAPPED *pOverlapped);
+DWORD XContentDelete(
+    DWORD dwUserIndex, CONST XCONTENT_DATA *pContentData, XOVERLAPPED *pOverlapped
+);
+DWORD XContentCreateEnumerator(
+    DWORD dwUserIndex,
+    DWORD DeviceID,
+    DWORD dwContentType,
+    DWORD dwContentFlags,
+    DWORD cItem,
+    DWORD *pcbBuffer,
+    HANDLE *phEnum
+);
 
-void XAudioGetSpeakerConfig();
-void XGetVideoMode(XVIDEO_MODE *);
+DWORD XContentCreateCrossTitleEnumerator(
+    DWORD dwUserIndex,
+    DWORD DeviceID,
+    DWORD dwContentType,
+    DWORD dwContentFlags,
+    DWORD cItem,
+    DWORD *pcbBuffer,
+    HANDLE *phEnum
+);
 
-void *XMemSet(VOID *dest, INT c, SIZE_T count);
-void *XMemAlloc(SIZE_T dwSize, DWORD dwAllocAttributes);
+DWORD XEnumerate(
+    HANDLE hEnum,
+    VOID *pvBuffer,
+    DWORD cbBuffer,
+    DWORD *pcItemsReturned,
+    XOVERLAPPED *pOverlapped
+);
 
+DWORD XEnumerateCrossTitle(
+    HANDLE hEnum,
+    VOID *pvBuffer,
+    DWORD cbBuffer,
+    DWORD *pcItemsReturned,
+    XOVERLAPPED *pOverlapped
+);
+
+DWORD XContentFlush(LPCSTR szRootName, XOVERLAPPED *pOverlapped);
+ULONGLONG XContentCalculateSize(ULONGLONG cbData, DWORD cDirectories);
+VOID XGetVideoMode(XVIDEO_MODE *pVideoMode);
+VOID *XMemCpy(VOID *__restrict dest, const VOID *__restrict src, SIZE_T count);
+VOID *XMemCpyStreaming_WriteCombined(
+    VOID *__restrict dest, const VOID *__restrict src, SIZE_T count
+);
+VOID *XMemSet(VOID *dest, INT c, SIZE_T count);
+VOID *XMemAlloc(SIZE_T dwSize, DWORD dwAllocAttributes);
+VOID *XMemAllocDefault(SIZE_T dwSize, DWORD dwAllocAttributes);
+VOID XMemFree(LPVOID lpHandle, DWORD dwFreeAttributes);
+VOID XMemFreeDefault(LPVOID lpHandle, DWORD dwFreeAttributes);
+INT XMemSize(LPVOID lpHandle, DWORD dwSizeAttributes);
+INT XMemSizeDefault(LPVOID lpHandle, DWORD dwSizeAttributes);
+DWORD XPhysicalSize(LPVOID lpAddress);
 DWORD XUserAwardGamerPicture(
     DWORD dwUserIndex, DWORD dwPictureId, DWORD dwReserved, XOVERLAPPED *pXOverlapped
 );
 DWORD XUserAwardAvatarAssets(
-    DWORD dwNumAssets, const XUSER_AVATARASSET *pAssets, XOVERLAPPED *pOverlapped
+    DWORD dwNumAssets, CONST XUSER_AVATARASSET *pAssets, XOVERLAPPED *pOverlapped
 );
-
-DWORD XTitleServerCreateEnumerator(
-    LPCSTR pszServerInfo, DWORD cItem, DWORD *pcbBuffer, HANDLE *hEnum
-);
-
-DWORD XNetGetConnectStatus(const in_addr ina);
-INT XNetUnregisterInAddr(const in_addr ina);
-INT XNetConnect(const in_addr ina);
-
-DWORD XSessionStart(HANDLE hSession, DWORD dwFlags, XOVERLAPPED *pXOverlapped);
-DWORD XSessionEnd(HANDLE hSession, XOVERLAPPED *pXOverlapped);
-DWORD XSessionWriteStats(
-    HANDLE hSession,
-    XUID xuid,
-    DWORD dwNumViews,
-    XSESSION_VIEW_PROPERTIES *pViews,
-    XOVERLAPPED *pXOverlapped
-);
-DWORD XSessionCreate(
-    DWORD dwFlags,
-    DWORD dwUserIndex,
-    DWORD dwMaxPublicSlots,
-    DWORD dwMaxPrivateSlots,
-    ULONGLONG *pqwSessionNonce,
-    XSESSION_INFO *pSessionInfo,
-    XOVERLAPPED *pXOverlapped,
-    HANDLE *ph
-);
-DWORD XSessionDelete(HANDLE hSession, XOVERLAPPED *pXOverlapped);
-DWORD XSessionJoinLocal(
-    HANDLE hSession,
-    DWORD dwUserCount,
-    const DWORD *pdwUserIndexes,
-    const BOOL *pfPrivateSlots,
-    XOVERLAPPED *pXOverlapped
-);
-DWORD XSessionLeaveLocal(
-    HANDLE hSession,
-    DWORD dwUserCount,
-    const DWORD *pdwUserIndexes,
-    XOVERLAPPED *pXOverlapped
-);
-
 DWORD XUserGetName(DWORD dwUserIndex, LPSTR szUserName, DWORD cchUserName);
+DWORD XShowTokenRedemptionUI(DWORD dwUserIndex);
+DWORD XUserAreUsersFriends(
+    DWORD dxUserIndex,
+    XUID *pXuids,
+    DWORD dwXuidCount,
+    BOOL *pfResult,
+    XOVERLAPPED *pOverlapped
+);
+DWORD XShowNuiMarketplaceUI(
+    DWORD dwTrackingID,
+    DWORD dwUserIndex,
+    DWORD dwEntryPoint,
+    QWORD qwOfferID,
+    DWORD dwContentCategories
+);
+DWORD XShowMarketplaceUI(
+    DWORD dwUserIndex, DWORD dwEntryPoint, QWORD qwOfferID, DWORD dwContentCategories
+);
+DWORD XShowMarketplaceDownloadItemsUI(
+    DWORD dwUserIndex,
+    DWORD dwEntryPoint,
+    const XUID *pOfferIDs,
+    DWORD dwOfferIdCount,
+    HRESULT *phrResult,
+    _XOVERLAPPED *pOverlapped
+);
+DWORD XShowNuiDeviceSelectorUI(
+    DWORD dwTrackingID,
+    DWORD dwUserIndex,
+    DWORD dwContentType,
+    DWORD dwContentFlags,
+    ULARGE_INTEGER uliBytesRequested,
+    DWORD *pDeviceID,
+    XOVERLAPPED *pOverlapped
+);
+DWORD XShowDeviceSelectorUI(
+    DWORD dwUserIndex,
+    DWORD dwContentType,
+    DWORD dwContentFlags,
+    ULARGE_INTEGER uliBytesRequested,
+    DWORD *pDeviceID,
+    XOVERLAPPED *pOverlapped
+);
+DWORD XGetGameRegion();
+DWORD XShowSigninUI(DWORD cPanes, DWORD dwFlags);
+__declspec(noreturn) DWORD XShowNuiDirtyDiscErrorUI(DWORD dwTrackingID, DWORD dwUserIndex);
+__declspec(noreturn) DWORD XShowDirtyDiscErrorUI(DWORD dwUserIndex);
+
+HANDLE XNotifyCreateListener(QWORD qwAreas);
+void XNotifyPositionUI(DWORD dwPosition);
+BOOL XNotifyGetNext(HANDLE hNotification, DWORD dwMsgFilter, DWORD *pdwId, ULONG *pParam);
+DWORD XUserSetPropertyEx(
+    DWORD dwUserIndex,
+    DWORD dwPropertyId,
+    DWORD cbValue,
+    const void *pvValue,
+    XOVERLAPPED *pOverlapped
+);
+DWORD XShowGamerCardUI(DWORD dwUserIndex, XUID XuidPlayer);
+void XGOffsetResourceAddress(D3DResource *pResource, void *pBaseAddress);
+DWORD XGSetTextureHeader(
+    DWORD Width,
+    DWORD height,
+    DWORD Levels,
+    DWORD Usage,
+    D3DFORMAT Format,
+    DWORD Pool,
+    DWORD BaseOffset,
+    DWORD MipOffset,
+    DWORD Pitch,
+    D3DTexture *pTexture,
+    DWORD *pBaseSize,
+    DWORD *pMipSize
+);
 
 #ifdef __cplusplus
 }

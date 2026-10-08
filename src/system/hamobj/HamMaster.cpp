@@ -1,6 +1,8 @@
 #include "hamobj/HamMaster.h"
 #include "HamAudio.h"
+#include "flow/PropertyEventProvider.h"
 #include "hamobj/HamSongData.h"
+#include "math/Decibels.h"
 #include "midi/DataEventList.h"
 #include "midi/MidiParserMgr.h"
 #include "obj/Data.h"
@@ -13,11 +15,14 @@
 #include "synth/Synth.h"
 #include "utl/Loader.h"
 #include "utl/SongPos.h"
+#include "utl/TimeConversion.h"
+
+HamMaster *TheMaster;
 
 HamMaster::HamMaster(HamSongData *data, MidiParserMgr *mgr)
     : mSongData(data), mAudio(nullptr), mMidiParserMgr(mgr), mSongInfo(nullptr),
       mLoader(0), unk45(0), unk48(0), mStreamMs(-1), unk50(0), unk54(-1), unk58(-1),
-      unk5c(-1), unk9c(0), unka0(0), unka4(0), unkb0(0), mMetronome(0) {
+      unk5c(-1), unka4(0), unkb0(0), mMetronome(0) {
     Reset();
     mAudio = new HamAudio();
 }
@@ -36,15 +41,51 @@ BEGIN_PROPSYNCS(HamMaster)
     SYNC_SUPERCLASS(Hmx::Object)
 END_PROPSYNCS
 
+void HamMaster::Poll(float f1) {
+    if (IsLoaded() && mAudio->GetSongStream()) {
+        unk48 = f1;
+        unk60 = mSongData->CalcSongPos(this, unk48);
+        float f9 = mAudio->GetSongStream()->GetJumpBackTotalTime(unk48) + unk48;
+        unk50 = f9 < mStreamMs;
+        Marker marker2, marker1;
+        bool jp = mAudio->GetSongStream()->CurrentJumpPoints(marker1, marker2);
+        if (!unk50 && jp && marker1.posMS <= marker2.posMS) {
+            unk50 = mStreamMs <= marker2.posMS && marker2.posMS < f9;
+        }
+        if (unk50) {
+            float f10;
+            if (jp) {
+                f10 = MsToTick(marker2.posMS) - 1.0f;
+            } else {
+                f10 = unk60.GetTotalTick();
+            }
+            if (mMidiParserMgr) {
+                mMidiParserMgr->Reset(f10);
+            }
+            unk54 = mStreamMs;
+            unk58 = marker1.posMS;
+            unk5c = marker2.posMS;
+            static Message msg("stream_jump");
+            Export(msg, true);
+        }
+        mStreamMs = f9;
+        if (mMidiParserMgr) {
+            mMidiParserMgr->Poll();
+        }
+        CheckBeat();
+        CheckLevels();
+        mAudio->Poll();
+    }
+}
+
 void HamMaster::Jump(float f1) {
-    SongPos calcedPos = mSongData->CalcSongPos(this, f1);
-    SongPos &tmp = unk60;
-    unk60 = calcedPos;
+    unk60 = mSongData->CalcSongPos(this, f1);
+    const SongPos &tmp = unk60;
     unk78 = tmp;
     unkb4 = -1;
     unkb8 = 0;
     if (mMidiParserMgr) {
-        mMidiParserMgr->Reset(unk78.GetTotalTick());
+        mMidiParserMgr->Reset(tmp.GetTotalTick());
     }
     mAudio->Jump(f1);
 }
@@ -97,8 +138,14 @@ float HamMaster::SongDurationMs() {
     return 0;
 }
 
-void HamMaster::
-    Load(SongInfo *s, bool b2, int i3, bool b4, HamSongDataValidate v, std::vector<MidiReceiver *> *) {
+void HamMaster::Load(
+    SongInfo *s,
+    bool b2,
+    int i3,
+    bool b4,
+    HamSongDataValidate v,
+    std::vector<MidiReceiver *> *
+) {
     unk44 = b2;
     mSongInfo = s;
     mSongData->Load(s, b4, v);
@@ -135,8 +182,8 @@ bool HamMaster::DetectStreamJump(float &f1, float &f2, float &f3) const {
 }
 
 void HamMaster::AddMusicFader(Fader *fader) {
-    if (mAudio && mAudio->GetSongStream()) {
-        mAudio->GetSongStream()->Faders()->Add(fader);
+    if (GetAudio() && GetAudio()->GetSongStream()) {
+        GetAudio()->GetSongStream()->Faders()->Add(fader);
     }
 }
 
@@ -170,6 +217,100 @@ void HamMaster::LoaderPoll() {
         }
         unk45 = true;
         RELEASE(mLoader);
+    }
+}
+
+void HamMaster::CheckBeat() {
+    int totalbeat1 = unk78.GetTotalBeat();
+    int totalbeat2 = unk60.GetTotalBeat();
+    if (totalbeat1 != totalbeat2) {
+        int beat = unk60.GetBeat();
+        TheHamProvider->SetProperty("beat", beat + 1);
+        if (beat == 0) {
+            if (mMetronome) {
+                TheSynth->PlaySound("metronome_measure", 0, 0, 0);
+            }
+        } else {
+            if (mMetronome) {
+                TheSynth->PlaySound("metronome_beat", 0, 0, 0);
+            }
+        }
+        static DataNode &n = DataVariable("beat");
+        n = totalbeat2;
+        static Message msg("beat");
+        Export(msg, true);
+    }
+    if (unk78.GetMeasure() != unk60.GetMeasure()) {
+        static DataNode &n = DataVariable("measure");
+        n = unk60.GetMeasure();
+        static Message msg("downbeat");
+        TheHamProvider->Export(msg, true);
+    }
+    if (unk78.GetTick() / 240 != unk60.GetTick() / 240) {
+        static Message msg("halfbeat");
+        TheHamProvider->Export(msg, true);
+    }
+    if (unk78.GetTick() / 120 != unk60.GetTick() / 120) {
+        static Message msg("quarterbeat");
+        TheHamProvider->Export(msg, true);
+    }
+    unk78 = unk60;
+}
+
+void HamMaster::CheckLevels() {
+    static float sFloat1c0 = 40;
+    if (TheSynth) {
+        PropertyEventProvider *prov =
+            ObjectDir::Main()->Find<PropertyEventProvider>("audio_channels", false);
+        if (prov) {
+            const auto &levelData = TheSynth->GetLevelData();
+            if (levelData.size() != 0) {
+                float f12 = levelData[levelData.size() - 1].mRMS;
+                float f13;
+                if (levelData.size() > 2) {
+                    f13 = levelData[levelData.size() - 2].mRMS;
+                } else {
+                    f13 = f12;
+                }
+                f12 = (RatioToDb(f12) + sFloat1c0) / sFloat1c0;
+                f13 = (RatioToDb(f13) + sFloat1c0) / sFloat1c0;
+
+                ClampEq(f12, 0.0f, 1.0f);
+                ClampEq(f13, 0.0f, 1.0f);
+
+                unka8.push_back(Vector2(f12, f13));
+
+                float f14 = 0;
+                float f15 = 0;
+                FOREACH (it, unka8) {
+                    Vector2 &cur = *it;
+                    f15 += cur.x;
+                    f14 += cur.y;
+                }
+                unsigned int numVecs = unka8.size();
+                float f15div = (1 / (float)numVecs) * f15;
+                float f14div = (1 / (float)numVecs) * f14;
+
+                while (unka8.size() > 3) {
+                    unka8.pop_front();
+                }
+
+                float channels[8];
+                float firstloc = 1;
+                for (int i = 0; i < 4; i++) {
+                    channels[3 - i] = firstloc * f15div;
+                    firstloc *= 0.7f;
+                }
+                float secondloc = 1;
+                for (int i = 4; i < 8; i++) {
+                    channels[i] = secondloc * f14div;
+                    secondloc *= 0.7f;
+                }
+                for (int i = 0; i < 8; i++) {
+                    prov->SetProperty(MakeString("channel%d", i), channels[i]);
+                }
+            }
+        }
     }
 }
 

@@ -7,9 +7,6 @@
 #include "obj/Object.h"
 #include "os/ContentMgr.h"
 #include "rndobj/Tex.h"
-#include "stl/_map.h"
-#include "stl/_pair.h"
-#include "stl/_vector.h"
 #include "utl/NetCacheLoader.h"
 #include "utl/Str.h"
 #include "utl/Symbol.h"
@@ -20,7 +17,7 @@ public:
     struct MotdData {
     public:
         MotdData();
-        MotdData(MotdData const &);
+        MotdData(const MotdData &);
 
         Symbol unk0;
         String unk4;
@@ -46,11 +43,14 @@ public:
     // ContentMgr::Callback
     virtual void ContentDone();
 
+    NEW_OBJ(MainMenuPanel)
+
     MainMenuPanel();
+    MainMenuProvider *GetMainMenuProvider();
 
 protected:
-    int unk40;
-    MainMenuProvider unk44;
+    HamLabel *mMsgLabel; // 0x40
+    MainMenuProvider unk44; // 0x44
     bool unk80;
     bool unk81;
     std::list<NetCacheLoader *> unk84;
@@ -61,7 +61,7 @@ protected:
     bool unk96;
     std::map<Symbol, std::list<String> > unk98;
     bool unkb0;
-    std::list<MotdData> unkb4;
+    std::list<MotdData> mMotdData; // 0xb4
     int unkbc;
     int unkc0;
     int unkc4;

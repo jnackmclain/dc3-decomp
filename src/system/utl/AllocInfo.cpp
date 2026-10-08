@@ -1,15 +1,18 @@
 #include "utl/AllocInfo.h"
+#include "os/System.h"
+#include "utl/MemTracker.h"
 #include "utl/Pool.h"
 #include "os/Debug.h"
-#include "trie.h"
+#include "utl/trie.h"
 #include "utl/TextStream.h"
 #include "xdk/XBDM.h"
+#include <cstdio>
 
-Trie *s_pTrie;
+static Trie *s_pTrie = nullptr;
 bool AllocInfo::bPrintCsv;
 
 Pool &GetPool() {
-    static void *sMem;
+    static void *sMem = nullptr;
     static Pool sPool(4, sMem, 4);
     return sPool;
 }
@@ -30,6 +33,7 @@ AllocInfo::AllocInfo(
     : mReqSize(requestedSize), mActSize(actualSize), mType(type), mMem(mem), mHeap(heap),
       mPooled(pooled), mStrat(strat), mFile(file), mLine(line),
       unk1d(s_pTrie->store(str1.c_str())), unk21(s_pTrie->store(str2.c_str())) {
+    mTimeSlice = gMemTracker->GetTimeSlice();
     FillStackTrace();
 }
 
@@ -57,9 +61,10 @@ void AllocInfo::PrintCsv(TextStream &ts) const {
     MILO_ASSERT(s_pTrie, 0xC6);
     char buf1d[0x80];
     char buf21[0x80];
+    char *buf1 = s_pTrie->get(unk1d, buf1d, sizeof(buf1d));
+    char *buf2 = s_pTrie->get(unk21, buf21, sizeof(buf21));
     ts << ", actual, " << mActSize << ", heap, " << mHeap << ", " << mFile << ", "
-       << mLine << ", " << s_pTrie->get(unk1d, buf1d, 0x80) << ", "
-       << s_pTrie->get(unk21, buf21, 0x80);
+       << mLine << ", " << buf1 << ", " << buf2;
     if (mPooled) {
         ts << ", pooled";
     }
@@ -76,12 +81,60 @@ void AllocInfo::Print(TextStream &ts) const {
             ts << "(pooled) ";
         ts << "(actual " << mActSize << ") (heap_number " << mHeap << ") (location "
            << mFile << " " << mLine << ") ";
+        int i = 0;
         ts << "(stack ";
-        for (int i = 0; mStackTrace[i] != 0 && i < 16; i++) {
+        for (; mStackTrace[i] != 0 && i < 16; i++) {
             ts << mStackTrace[i] << " ";
         }
         ts << ") ";
     }
+}
+
+void AllocInfo::PrintForReport(TextStream &ts) const {
+    MILO_ASSERT(s_pTrie, 0xD1);
+    char buf1d[0x80];
+    char buf21[0x80];
+    char *buf1 = s_pTrie->get(unk1d, buf1d, sizeof(buf1d));
+    char *buf2 = s_pTrie->get(unk21, buf21, sizeof(buf21));
+    char printbuf[0x140];
+    Hx_snprintf(
+        printbuf,
+        sizeof(printbuf),
+        "addr\t0x%lX\t%s\tbytes\t%d\tactual\t%d\theap\t%d\t%s\t%d\t%s\t%s\t%s\n",
+        mMem,
+        mType,
+        mReqSize,
+        mActSize,
+        mHeap,
+        mFile,
+        mLine,
+        buf1,
+        buf2,
+        mPooled ? "pooled" : ""
+    );
+    ts << printbuf;
+}
+
+void AllocInfo::PrintForReport(FILE *file) const {
+    MILO_ASSERT(s_pTrie, 0xDE);
+    char buf1d[0x80];
+    char buf21[0x80];
+    char *buf1 = s_pTrie->get(unk1d, buf1d, sizeof(buf1d));
+    char *buf2 = s_pTrie->get(unk21, buf21, sizeof(buf21));
+    fprintf(
+        file,
+        "addr\t0x%lX\t%s\tbytes\t%d\tactual\t%d\theap\t%d\t%s\t%d\t%s\t%s\t%s\n",
+        mMem,
+        mType,
+        mReqSize,
+        mActSize,
+        mHeap,
+        mFile,
+        mLine,
+        buf1,
+        buf2,
+        mPooled ? "pooled" : ""
+    );
 }
 
 TextStream &operator<<(TextStream &ts, const AllocInfo &info) {
@@ -95,17 +148,45 @@ int AllocInfo::Compare(const AllocInfo &info) const {
         return cmp;
     } else if (mReqSize < info.mReqSize) {
         return -1;
-    } else
-        return mReqSize <= info.mReqSize;
+    } else if (mReqSize > info.mReqSize) {
+        return 1;
+    } else {
+        return 0;
+    }
 }
 
 void AllocInfo::FillStackTrace() {
     int stack[20];
     DmCaptureStackBackTrace(20, stack);
     for (int i = 0; i < 16; i++) {
-        mStackTrace[i] = stack[i];
-        if (stack[i] == 0U)
+        mStackTrace[i] = stack[(i) + (4)];
+        if (stack[(i) + (4)] == 0U)
             break;
     }
     mStackTrace[15] = 0;
+}
+
+void AllocInfoInit() {
+    if (!s_pTrie) {
+        s_pTrie = new Trie();
+    }
+}
+
+int AllocInfo::StackCompare(const AllocInfo &other) const {
+    int result = Compare(other);
+    if (result != 0) {
+        return result;
+    }
+    for (int i = 0; i < 16; i++) {
+        if (mStackTrace[i] < other.mStackTrace[i]) {
+            return -1;
+        }
+        if (mStackTrace[i] > other.mStackTrace[i]) {
+            return 1;
+        }
+        if (mStackTrace[i] == 0 && other.mStackTrace[i] == 0) {
+            break;
+        }
+    }
+    return 0;
 }

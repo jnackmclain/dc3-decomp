@@ -51,10 +51,18 @@ public:
     void SetMaps();
     void LoaderPoll();
     int Unk70() const { return unk60.GetMeasure(); }
-    HamAudio *Audio() const { return mAudio; }
+    float TotalBeat1() const { return unk60.GetTotalBeat(); }
+    float TotalBeat2() const { return unk78.GetTotalBeat(); }
+    HamAudio *GetAudio() const { return mAudio; }
     HamSongData *SongData() const { return mSongData; }
+    MidiParserMgr *GetMidiParserMgr() const { return mMidiParserMgr; }
+    const SongPos &Pos1() const { return unk60; }
+    const SongPos &Pos2() const { return unk78; }
 
 private:
+    void CheckBeat();
+    void CheckLevels();
+
     HamSongData *mSongData; // 0x30
     HamAudio *mAudio; // 0x34
     MidiParserMgr *mMidiParserMgr; // 0x38
@@ -71,8 +79,9 @@ private:
     SongPos unk60;
     SongPos unk78;
     std::vector<int> unk90;
-    float unk9c;
-    float unka0;
+    std::pair<float, float> unk9c;
+    // float unk9c;
+    // float unka0;
     float unka4;
     std::list<Vector2> unka8;
     int unkb0;

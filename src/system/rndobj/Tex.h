@@ -15,18 +15,18 @@
 class RndTex : public Hmx::Object {
 public:
     enum Type {
-        kTexRegular = 1,
-        kTexRendered = 2,
+        kRegular = 1,
+        kRendered = 2,
         kMovie = 4,
-        kTexBackBuffer = 8,
-        kTexFrontBuffer = 0x18,
-        kTexRenderedNoZ = 0x22,
-        kTexShadowMap = 0x42,
-        kTexDepthVolumeMap = 0xA2,
-        kTexDensityMap = 0x122,
-        kTexScratch = 0x200,
-        kTexDeviceTexture = 0x1000,
-        kTexRegularLinear = 0x2000
+        kBackBuffer = 8,
+        kFrontBuffer = 0x18,
+        kRenderedNoZ = 0x22,
+        kShadowMap = 0x42,
+        kDepthVolumeMap = 0xA2,
+        kDensityMap = 0x122,
+        kScratch = 0x200,
+        kDeviceTexture = 0x1000,
+        kRegularLinear = 0x2000
     };
     enum AlphaCompress {
     };
@@ -52,8 +52,6 @@ public:
     virtual void TexelsUnlock() {}
     virtual unsigned int TexelsPitch() const { return 0; }
     virtual void Select(int) {}
-    virtual void PresyncBitmap();
-    virtual void SyncBitmap();
 
     OBJ_MEM_OVERLOAD(0x1C)
     NEW_OBJ(RndTex)
@@ -102,17 +100,21 @@ public:
     static void PlatformBppOrder(const char *path, int &bpp, int &order, bool hasAlpha);
 
     int SizeKb() const { return ((mWidth * mHeight * mBpp) / 8 / 1024); }
-    bool IsBackBuffer() const { return mType & kTexBackBuffer; }
-    bool IsRenderTarget() const { return mType & kTexRendered; }
+    bool IsBackBuffer() const { return mType & kBackBuffer; }
+    bool IsRenderTarget() const { return mType & kRendered; }
     int Width() const { return mWidth; }
     int Height() const { return mHeight; }
     Type GetType() const { return mType; }
     const FilePath &File() const { return mFilepath; }
     int NumMips() const { return mNumMips; }
     int Bpp() const { return mBpp; }
+    bool PowerOf2();
 
 protected:
     RndTex();
+
+    virtual void PresyncBitmap() {}
+    virtual void SyncBitmap() {}
 
     /** Handler to set this texture's bitmap.
      * @param [in] arr The supplied DataArray.

@@ -35,18 +35,18 @@ public:
         MovePlayerData() : mCurMove(nullptr) {}
         void Reset() {
             mCurMove = nullptr;
-            unk30 = nullptr;
+            mPhraseMeter = nullptr;
             mFeedback = nullptr;
-            unk38 = nullptr;
-            unk2c = 0;
+            mTextFeedback = nullptr;
+            mState = 0;
         }
         ObjPtr<HamMove> mCurMove; // 0x0
-        std::vector<DetectFrame> unk14; // 0x14
-        std::vector<HamMoveKey> unk20; // 0x20
-        int unk2c; // 0x2c
-        HamPhraseMeter *unk30; // 0x30
+        std::vector<DetectFrame> mDetectFrames; // 0x14
+        std::vector<HamMoveKey> mMoveKeys; // 0x20
+        int mState; // 0x2c
+        HamPhraseMeter *mPhraseMeter; // 0x30
         CharFeedback *mFeedback; // 0x34
-        RndDrawable *unk38; // 0x38
+        RndDrawable *mTextFeedback; // 0x38
     };
     // Hmx::Object
     virtual ~MoveDir();
@@ -103,6 +103,8 @@ public:
     void SetDebugLoop(bool);
     PracticeSection *GetPracticeSection(Difficulty);
     DancerSequence *SkillsSequence(Difficulty, Symbol, Symbol);
+    float DetectFrac(int, int);
+    bool InGracePeriod(int);
 
     MoveAsyncDetector *GetAsyncDetector() const { return mAsyncDetector; }
 
@@ -121,8 +123,16 @@ private:
         std::vector<DetectFrame> &, std::pair<DetectFrame *, DetectFrame *> &, int, int
     );
     void PostUpdateFilters();
+    float SongSpeed() const;
+    MoveFrame *ClosestMoveFrame();
 
     DataNode OnStreamJump(const DataArray *);
+    float DetectRangePSNR(
+        const std::pair<const DetectFrame *, const DetectFrame *> &, const FilterVersion *
+    ) const;
+    float DetectRangeFrac(
+        const std::pair<DetectFrame *, DetectFrame *> &, const FilterVersion *
+    ) const;
 
     static std::vector<FilterVersion *> sFilterVersions;
     static float sLatencySeconds;
@@ -158,8 +168,8 @@ protected:
     FilterQueue *mFilterQueue; // 0x314
     MovePlayerData mMovePlayerData[2]; // 0x318
     MoveAsyncDetector *mAsyncDetector; // 0x390
-    DirLoader *unk394; // 0x394 - update loader?
-    std::list<ObjDirPtr<UILabelDir> > unk398; // 0x398 - update fonts?
+    DirLoader *mUpdateLoader; // 0x394
+    std::list<ObjDirPtr<UILabelDir> > mUpdateFonts; // 0x398
     /** Smoothed normalized results of the current move. */
     DoubleExponentialSmoother mCurMoveSmoothers[2]; // 0x3a0
 
@@ -174,9 +184,9 @@ protected:
     int mFinishingMoveMeasure; // 0x3f8
     RndOverlay *mMoveOverlay; // 0x3fc
     ObjPtr<DancerSequence> mDancerSeq; // 0x400
-    DancerSkeleton *unk414; // 0x414
-    SkeletonViz *mSkeletonViz; // 0x418
-    int unk41c; // 0x41c
+    const DancerSkeleton *unk414; // 0x414
+    SkeletonViz *mDancerViz; // 0x418
+    DetectFrame *unk41c; // 0x41c
     /** "Offset debug skeleton by latency offset" */
     bool mDebugLatencyOffset; // 0x420
     Skeleton unk424; // 0x424

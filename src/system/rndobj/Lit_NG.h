@@ -7,17 +7,19 @@
 
 class NgLight : public RndLight {
 public:
+    virtual ~NgLight();
     OBJ_CLASSNAME(Light)
     OBJ_SET_TYPE(Light)
     virtual void Copy(const Hmx::Object *, CopyType);
     virtual void Load(BinStream &);
-    virtual ~NgLight();
 
     NEW_OBJ(NgLight);
 
     void CheckShadowMap();
+    RndTex *GetShadowMap() const { return mShadowMap; }
 
     static void Init();
+    static void Terminate();
 
 protected:
     NgLight();
@@ -32,7 +34,7 @@ protected:
     bool HaveShadows(std::vector<RndDrawable *> &);
 
     RndTex *mShadowRT; // 0x180
-    int mShadowMap; // 0x184
+    RndTex *mShadowMap; // 0x184
     RndTex *unk188; // 0x188
     int unk18c; // 0x18c
 };

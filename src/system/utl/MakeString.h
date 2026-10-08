@@ -3,7 +3,7 @@
 #include "utl/Str.h"
 
 class FormatString {
-private:
+protected:
     enum Type {
         kInt = 0,
         kStr = 1,
@@ -20,19 +20,18 @@ private:
 
     void UpdateType();
 
-protected:
     FormatString();
     void InitializeWithFmt(const char *, bool);
 
 public:
     FormatString(const char *);
     FormatString &operator<<(void *);
+    FormatString &operator<<(int);
     FormatString &operator<<(unsigned int);
-    FormatString &operator<<(unsigned long);
     FormatString &operator<<(long);
+    FormatString &operator<<(unsigned long);
     FormatString &operator<<(long long);
     FormatString &operator<<(unsigned long long);
-    FormatString &operator<<(int);
     FormatString &operator<<(const class DataNode &);
     FormatString &operator<<(const char *);
     FormatString &operator<<(float);
@@ -47,6 +46,9 @@ public:
 void InitMakeString();
 bool MakeStringInitted();
 void TerminateMakeString();
+
+// hack lmfao
+const char *MakeStringNotInlined(const char *c);
 
 inline const char *MakeString(const char *c) {
     FormatString fs(c);

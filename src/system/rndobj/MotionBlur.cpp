@@ -37,20 +37,20 @@ BEGIN_COPYS(RndMotionBlur)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(1, 0)
+
 BEGIN_LOADS(RndMotionBlur)
     LOAD_REVS(bs);
     ASSERT_REVS(1, 0);
     LOAD_SUPERCLASS(Hmx::Object)
     LOAD_SUPERCLASS(RndDrawable)
-    bs >> mDrawList;
+    d >> mDrawList;
 END_LOADS
 
 void RndMotionBlur::DrawShowing() {
     RndPostProc *cur = RndPostProc::Current();
     if (cur) {
-        for (ObjPtrList<RndDrawable>::iterator it = mDrawList.begin();
-             it != mDrawList.end();
-             ++it) {
+        FOREACH (it, mDrawList) {
             cur->QueueMotionBlurObject(*it);
         }
     }
@@ -58,13 +58,13 @@ void RndMotionBlur::DrawShowing() {
 
 DataNode RndMotionBlur::OnAllowedDrawable(const DataArray *da) {
     int allowcount = 0;
-    for (ObjDirItr<RndDrawable> it(Dir(), true); it != 0; ++it) {
+    for (ObjDirItr<RndDrawable> it(Dir(), true); it != nullptr; ++it) {
         if (CanMotionBlur(it))
             allowcount++;
     }
     DataArrayPtr ptr(new DataArray(allowcount));
     allowcount = 0;
-    for (ObjDirItr<RndDrawable> it(Dir(), true); it != 0; ++it) {
+    for (ObjDirItr<RndDrawable> it(Dir(), true); it != nullptr; ++it) {
         if (CanMotionBlur(it)) {
             ptr->Node(allowcount++) = &*it;
         }
@@ -73,6 +73,10 @@ DataNode RndMotionBlur::OnAllowedDrawable(const DataArray *da) {
 }
 
 bool RndMotionBlur::CanMotionBlur(RndDrawable *d) {
-    return dynamic_cast<RndMesh *>(d) || dynamic_cast<RndDir *>(d)
-        || dynamic_cast<RndGroup *>(d);
+    if (dynamic_cast<RndMesh *>(d) || dynamic_cast<RndDir *>(d)
+        || dynamic_cast<RndGroup *>(d)) {
+        return true;
+    } else {
+        return false;
+    }
 }

@@ -5,6 +5,11 @@
 class UIListProvider;
 class UIListStateCallback;
 
+struct ScrollState {
+    int mTarget; // 0x0
+    int mSelected; // 0x4
+};
+
 class UIListState {
 public:
     UIListState(UIListProvider *, UIListStateCallback *);
@@ -39,10 +44,12 @@ public:
     void Scroll(int, bool);
     void PageScroll(int);
     void SetSelectedSimulateScroll(int);
+    int State2Data(const ScrollState &) const;
 
     bool Circular() const { return mCircular; }
     int NumDisplay() const { return mNumDisplay; }
     int FirstShowing() const { return mFirstShowing; }
+    int TargetShowing() const { return mTargetShowing; }
     int GridSpan() const { return mGridSpan; }
     float Speed() const;
     int MinDisplay() const;
@@ -54,10 +61,11 @@ public:
     UIListProvider *Provider();
     UIListProvider *Provider() const;
     void SetProvider(UIListProvider *, RndDir *);
+    float StepPercent() const;
 
 protected:
     int ScrollToTarget(int) const;
-    // bool BuildScroll(int, int, int, ScrollState &) const;
+    bool BuildScroll(int, int, int, ScrollState &) const;
 
 private:
     /** "Does the list scrolling wrap?" */

@@ -19,60 +19,65 @@ public:
         void Clear() { SetSize(0); }
         void *FindVert(int);
         void CopyVert(int, int, VertArray &);
-        int AppendWeights(int, int *const, float *const);
+        int AppendWeights(int num, int *const bones, float *const weights);
         void Copy(const VertArray &);
         void Save(BinStream &);
         void Load(BinStream &);
         int NumVerts() {
-            u8 *buf = (u8 *)mData;
-            void *end = (void *)((int)mData + mSize);
-            int i = 0;
-            for (; buf < end;) {
-                i++;
-                buf += (*buf * 2) + 1;
+            int num = 0;
+            auto itEnd = end();
+            for (auto it = begin(); it < itEnd; ++it) {
+                num++;
             }
-            return i;
+            return num;
         }
 
-        // probably overkill but idk we already had this so why not
+        struct WeightPair {
+            unsigned char bone; // 0x0
+            unsigned char weight; // 0x1
+        };
+
+        struct Vert {
+            unsigned char num; // 0x0
+            WeightPair weights[kMaxWeights]; // 0x1
+        };
+
         class iterator {
         private:
-            void *data;
+            unsigned char *data;
 
         public:
             iterator() : data(nullptr) {}
-            iterator(void *d) : data(d) {}
-            operator void *() const { return data; }
-            void *Data() const { return data; }
-            // void *operator->() const { return data; }
+            iterator(unsigned char *d) : data(d) {}
+            operator unsigned char *() const { return data; }
+            unsigned char *&operator*() { return data; }
 
-            iterator operator++() {
-                char *cData = (char *)data;
-                cData += (*cData * 2) + 1;
-                data = cData;
+            iterator &operator++() {
+                // skips to the next Vert over,
+                // based on the number of WeightPairs in this current Vert
+                Vert *cur = (Vert *)data;
+                data += (cur->num * sizeof(WeightPair)) + 1;
                 return *this;
             }
 
-            iterator operator++(int) {
-                iterator tmp = *this;
-                ++*this;
-                return tmp;
-            }
-
-            bool operator!=(iterator it) { return data != it.data; }
-            bool operator==(iterator it) { return data == it.data; }
-            bool operator!() { return data == nullptr; }
+            bool operator!=(const iterator &it) { return data != it.data; }
+            bool operator==(const iterator &it) { return data == it.data; }
         };
 
-        iterator begin() const { return iterator(mData); }
-        iterator end() const { return iterator((void *)((int)mData + mSize)); }
+        iterator begin() const { return mData; }
+        iterator end() const { return mData + mSize; }
 
     protected:
         void SetSize(int);
 
-        int mSize;
-        void *mData;
-        RndMeshDeform *mParent;
+        int mSize; // 0x0
+        // mData is a tightly packed series of Verts
+        // the reason this is unsigned char* and not Vert* is
+        // so it doesn't take up the full kMaxWeights sized array in memory.
+        // it only takes up however many weights the Vert has,
+        // and you access it via a reinterpret_cast to a Vert
+        unsigned char *mData; // 0x4
+        RndMeshDeform *mParent; // 0x8
     };
 
     // size 0x6c
@@ -81,6 +86,7 @@ public:
             unk14.Reset();
             unk54.Reset();
         }
+
         ObjPtr<RndTransformable> unk0;
         Transform unk14;
         Transform unk54;

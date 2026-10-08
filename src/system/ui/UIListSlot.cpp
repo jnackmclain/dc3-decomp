@@ -1,7 +1,12 @@
 #include "ui/UIListSlot.h"
 #include "macros.h"
+#include "math/Mtx.h"
 #include "obj/Object.h"
+#include "rndobj/Trans.h"
+#include "ui/UIColor.h"
+#include "ui/UIComponent.h"
 #include "ui/UIList.h"
+#include "ui/UIListProvider.h"
 #include "ui/UIListState.h"
 #include "ui/UIListWidget.h"
 #include "utl/Std.h"
@@ -28,6 +33,8 @@ BEGIN_COPYS(UIListSlot)
     COPY_MEMBER_FROM(s, mSlotDrawType)
 END_COPYS
 
+INIT_REVS(0, 0)
+
 BEGIN_LOADS(UIListSlot)
     LOAD_REVS(bs)
     ASSERT_REVS(0, 0)
@@ -53,13 +60,77 @@ void UIListSlot::CreateElements(UIList *uilist, int count) {
 }
 
 void UIListSlot::Draw(
-    const UIListWidgetDrawState &,
-    const UIListState &,
-    const Transform &,
-    UIComponent::State,
-    Box *,
-    DrawCommand
-) {}
+    const UIListWidgetDrawState &drawState,
+    const UIListState &listState,
+    const Transform &xfm,
+    UIComponent::State compState,
+    Box *box,
+    DrawCommand cmd
+) {
+    RndTransformable *root = RootTrans();
+    if (root) {
+        int numDrawElements = drawState.mElements.size();
+        if (numDrawElements > mElements.size()) {
+            MILO_FAIL(
+                "%i isn't enough elements (need %i)", mElements.size(), numDrawElements
+            );
+        }
+        Transform tfc0 = root->WorldXfm();
+        UIListProvider *prov = listState.Provider();
+        for (int i = 0; i < numDrawElements; i++) {
+            const UIListElementDrawState &curElDrawState = drawState.mElements[i];
+            if (curElDrawState.mDraw) {
+                UIColor *c = nullptr;
+                float alpha = 1;
+                if (!box) {
+                    if (((mSlotDrawType == kUIListSlotDrawHighlight
+                          || mSlotDrawType == kUIListSlotDrawHighlightFullAlpha)
+                         && (curElDrawState.mDisplay != drawState.mHighlightDisplay))
+                        || ((mSlotDrawType == kUIListSlotDrawNoHighlight
+                             || mSlotDrawType == kUIListSlotDrawNoHighlightFullAlpha)
+                            && (curElDrawState.mDisplay == drawState.mHighlightDisplay))) {
+                        continue;
+                    }
+                    UIListWidgetState element_state = prov->SlotElementStateOverride(
+                        curElDrawState.mShowing,
+                        curElDrawState.mData,
+                        this,
+                        curElDrawState.mElementState
+                    );
+                    UIComponent::State cs = curElDrawState.mComponentState;
+                    UIColor *color = DisplayColor(element_state, cs);
+                    UIColor *harness_tmp_12 = prov->SlotColorOverride(
+                        curElDrawState.mShowing, curElDrawState.mData, this, color
+                    );
+                    c = harness_tmp_12;
+                    if (mSlotDrawType != kUIListSlotDrawAlwaysFullAlpha
+                        && mSlotDrawType != kUIListSlotDrawHighlightFullAlpha
+                        && mSlotDrawType != kUIListSlotDrawNoHighlightFullAlpha) {
+                        alpha = curElDrawState.mAlpha;
+                    } else {
+                        alpha = 1;
+                    }
+                    if (cs == UIComponent::kDisabled) {
+                        alpha *= DisabledAlphaScale();
+                    }
+                    prov->PreDraw(curElDrawState.mShowing, curElDrawState.mData, this);
+                }
+                Transform tf100 = tfc0;
+                if (ParentList()) {
+                    ParentList()->AdjustTrans(tf100, curElDrawState);
+                }
+                CalcXfm(xfm, curElDrawState.mPos, tf100);
+                ScaleDiagonal(curElDrawState.unk14, tf100.m);
+                if (cmd != kExcludeFirst || i > 0) {
+                    mElements[i]->Draw(tf100, alpha, c, box);
+                    if (cmd == kDrawFirst) {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+}
 
 void UIListSlot::Fill(const UIListProvider &prov, int display, int j, int k) {
     if (RootTrans()) {
@@ -75,7 +146,15 @@ void UIListSlot::StartScroll(int i, bool b) {
     }
 }
 
-void UIListSlot::CompleteScroll(const UIListState &, int) {}
+void UIListSlot::CompleteScroll(const UIListState &state, int i2) {
+    if (RootTrans()) {
+        if (mElements.size() == state.NumDisplay() + 1) {
+            UIListSlotElement *element = mElements[i2 > 0 ? 0 : state.NumDisplay()];
+            mElements.erase(std::find(mElements.begin(), mElements.end(), element));
+            mNextElement = element;
+        }
+    }
+}
 
 void UIListSlot::Poll() {
     FOREACH (it, mElements) {
@@ -83,9 +162,7 @@ void UIListSlot::Poll() {
     }
 }
 
-bool UIListSlot::Matches(const char *cc) const {
-    return strcmp(mMatchName.c_str(), cc) == 0;
-}
+bool UIListSlot::Matches(const char *cc) const { return streq(mMatchName.c_str(), cc); }
 
 const char *UIListSlot::MatchName() const { return mMatchName.c_str(); }
 

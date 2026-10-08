@@ -1,4 +1,5 @@
 #include "char/FileMerger.h"
+#include "char/FileMergerOrganizer.h"
 #include "CharClipGroup.h"
 #include "char/CharPollGroup.h"
 #include "obj/Dir.h"
@@ -54,8 +55,7 @@ void FileMerger::Merger::Clear(bool b1) {
         owner->HandleType(msg);
     }
     while (!mLoadedObjects.empty()) {
-        Hmx::Object *front = mLoadedObjects.front();
-        delete front;
+        delete mLoadedObjects.front();
     }
     ObjectDir *mergerDir = MergerDir();
     if (mergerDir) {
@@ -67,7 +67,7 @@ void FileMerger::Merger::Clear(bool b1) {
     } else {
         mLoadedSubdirs.clear();
     }
-    if (b1 && !TheRnd.GetUnk1b4()) {
+    if (b1 && !TheRnd.Splashing()) {
         TheRnd.BeginDrawing();
         TheRnd.EndDrawing();
     }
@@ -171,6 +171,8 @@ BinStreamRev &operator>>(BinStreamRev &d, FileMerger::Merger &fm) {
     return d;
 }
 
+INIT_REVS(5, 0)
+
 void FileMerger::PreLoad(BinStream &bs) {
     LOAD_REVS(bs)
     ASSERT_REVS(5, 0)
@@ -233,10 +235,11 @@ MergeFilter::Action FileMerger::Filter(Hmx::Object *o1, Hmx::Object *o2, ObjectD
 
 MergeFilter::SubdirAction FileMerger::FilterSubdir(ObjectDir *o1, ObjectDir *o2) {
     SubdirAction a;
+    Merger *merger = mFilesPending.front();
     if (mFilter) {
         a = mFilter->FilterSubdir(o1, o2);
     } else {
-        a = MergeFilter::DefaultSubdirAction(o1, mFilesPending.front()->mSubdirs);
+        a = MergeFilter::DefaultSubdirAction(o1, merger->mSubdirs);
     }
     if (a == 1 && !o2->HasSubDir(o1)) {
         mFilesPending.front()->mLoadedSubdirs.push_back(o1);
@@ -266,7 +269,7 @@ void FileMerger::Clear() {
     }
 }
 
-bool FileMerger::StartLoad(bool b) { return StartLoadInternal(b, false); }
+bool FileMerger::StartLoad(bool async) { return StartLoadInternal(async, false); }
 
 FileMerger::Merger *FileMerger::FindMerger(Symbol name, bool warn) {
     int idx = FindMergerIndex(name, warn);
@@ -314,8 +317,9 @@ FileMerger::Merger *FileMerger::InMerger(Hmx::Object *o) {
 void FileMerger::DeleteCurLoader() {
     if (mCurLoader) {
         DirLoader *d = dynamic_cast<DirLoader *>(mCurLoader);
-        // if (d)
-        //     d->unk99 = true;
+        if (d) {
+            d->SetUnk99(true);
+        }
         delete mCurLoader;
     }
 }
@@ -375,19 +379,14 @@ bool FileMerger::NeedsLoading(FileMerger::Merger &merger) {
 void FileMerger::LaunchNextLoader() {
     MILO_ASSERT(!mFilesPending.empty(), 0x182);
     MILO_ASSERT(!mCurLoader, 0x183);
-    bool b1 = false;
-    if (Dir()->Loader() && !Dir()->Loader()->IsLoaded()) {
-        if (Dir()->Loader()->GetPos() != kLoadStayBack) {
-            if (Dir()->Loader()->GetPos() != kLoadFrontStayBack)
-                goto next;
-        }
-        b1 = true;
-    }
-
-next:
-    int pos = 0;
-    if (b1)
+    int pos;
+    if (Dir()->Loader() && !Dir()->Loader()->IsLoaded()
+        && (Dir()->Loader()->GetPos() == kLoadStayBack
+            || Dir()->Loader()->GetPos() == kLoadFrontStayBack)) {
         pos = 2;
+    } else {
+        pos = 0;
+    }
     FilePath &fp = mFilesPending.front()->loading;
     MemHeapTracker tmp(mHeap);
     if (fp.empty()) {
@@ -433,7 +432,7 @@ bool FileMerger::StartLoadInternal(bool async, bool loading) {
         return false;
     else {
         if (async) {
-            // TheFileMergerOrganizer->AddFileMerger(this);
+            TheFileMergerOrganizer->AddFileMerger(this);
         } else {
             LaunchNextLoader();
             while (!mFilesPending.empty()) {
@@ -445,6 +444,7 @@ bool FileMerger::StartLoadInternal(bool async, bool loading) {
 }
 
 FileMerger::Merger *FileMerger::NotifyFileLoaded(Loader *l, DirLoader *dl) {
+    FilePath firstLoading = mFilesPending.front()->loading;
     MILO_ASSERT_FMT(
         l->LoaderFile() == mFilesPending.front()->loading,
         "%s != %s",

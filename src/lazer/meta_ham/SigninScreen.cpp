@@ -1,5 +1,7 @@
 #include "lazer/meta_ham/SigninScreen.h"
+#include "meta_ham/HamScreen.h"
 #include "obj/Data.h"
+#include "obj/Msg.h"
 #include "obj/Object.h"
 #include "os/PlatformMgr.h"
 #include "ui/UI.h"
@@ -8,21 +10,41 @@
 
 SigninScreen::SigninScreen() {}
 
-void SigninScreen::Poll() { UIScreen::Poll(); }
-
-void SigninScreen::Enter(UIScreen *) {
-    ThePlatformMgr.AddSink(this, gNullStr, gNullStr, kHandle, true);
-}
-
-void SigninScreen::Exit(UIScreen *) { ThePlatformMgr.RemoveSink(this, gNullStr); }
-
-DataNode SigninScreen::OnMsg(SigninChangedMsg const &) { return NULL_OBJ; }
-
-DataNode SigninScreen::OnMsg(UIChangedMsg const &) { return NULL_OBJ; }
-
 BEGIN_HANDLERS(SigninScreen)
-    HANDLE_ACTION(show_signin_ui, ThePlatformMgr.SignInUsers(1, 0x100000))
+    HANDLE_ACTION(show_signin_ui, ThePlatformMgr.SignInUsers(1, 0x1000000))
     HANDLE_MESSAGE(SigninChangedMsg)
     HANDLE_MESSAGE(UIChangedMsg)
-    // HANDLE_SUPERCLASS(HamScreen)
+    HANDLE_SUPERCLASS(HamScreen)
 END_HANDLERS
+
+void SigninScreen::Poll() { UIScreen::Poll(); }
+
+void SigninScreen::Enter(UIScreen *screen) {
+    HamScreen::Enter(screen);
+    ThePlatformMgr.AddSink(this);
+}
+
+void SigninScreen::Exit(UIScreen *screen) {
+    ThePlatformMgr.RemoveSink(this);
+    HamScreen::Exit(screen);
+}
+
+DataNode SigninScreen::OnMsg(const SigninChangedMsg &msg) {
+    int mask = ThePlatformMgr.SignInMask();
+    for (int i = 0; mask != 0; mask >>= 1, i++) {
+        if ((mask & 1) && !ThePlatformMgr.IsPadAGuest(i)) {
+            static Message msg("on_signed_in");
+            Handle(msg, true);
+            break;
+        }
+    }
+    return 0;
+}
+
+DataNode SigninScreen::OnMsg(const UIChangedMsg &msg) {
+    if (!msg.Showing() && ThePlatformMgr.SignInMask() == 0) {
+        static Message msg("sign_in_dismissed", 0);
+        Handle(msg, false);
+    }
+    return 0;
+}

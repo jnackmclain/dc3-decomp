@@ -21,6 +21,12 @@ public:
 
 class MoveChoiceSet {
 public:
+    MoveChoiceSet() {
+        for (int i = 0; i < kNumDifficulties; i++) {
+            unk0[i] = nullptr;
+        }
+    }
+
     const MoveParent *unk0[kNumDifficulties];
 };
 
@@ -38,8 +44,9 @@ public:
     void RegisterSongLayout(SongLayout *);
     void UnRegisterSongLayout(SongLayout *);
     Symbol PickRandomCategory();
-    void
-    GenerateMoveChoice(Symbol, std::vector<const MoveVariant *> &, std::vector<const MoveVariant *> &);
+    void GenerateMoveChoice(
+        Symbol, std::vector<const MoveVariant *> &, std::vector<const MoveVariant *> &
+    );
     const std::map<Symbol, MoveParent *> &MoveParents() const {
         return mMoveGraph.MoveParents();
     }
@@ -82,11 +89,16 @@ public:
     Symbol GetGenreTokenName(Symbol);
 
     std::vector<const MoveParent *> &CurParents(int i) { return mMoveParents[i]; }
+    std::vector<std::pair<const MoveVariant *, const MoveVariant *> > &Unk150(int i) {
+        return unk150[i];
+    }
     bool HasVariantPair(const MoveParent *p1, const MoveParent *p2) const {
         return mMoveGraph.HasVariantPair(p1, p2);
     }
     MoveGraph &Graph() { return mMoveGraph; }
     ObjectDir *MoveDataDir() const { return mMoveDataDir; }
+    void SetSong(Symbol song) { unk14c = song; }
+    std::set<const MoveVariant *> &GetUnk104() { return unk104; }
 
     static void Init(const char *);
 
@@ -98,7 +110,6 @@ private:
 
     DataNode OnFindVariants(DataArray *);
 
-protected:
     Keys<Symbol, Symbol> *mClipPropKeys[kNumDifficultiesDC2]; // 0x2c
     int unk38; // 0x38
     Keys<Symbol, Symbol> *mPracticePropKeys; // 0x3c
@@ -116,13 +127,14 @@ protected:
     std::vector<const MoveVariant *> unk134[2]; // 0x134
     Symbol unk14c; // 0x14c
     // indexed by number of players
-    std::vector<std::pair<const MoveVariant *, const MoveVariant *> > unk150[2]; // 0x150
+    std::vector<std::pair<const MoveVariant *, const MoveVariant *> >
+        unk150[2]; // 0x150 - routines?
     bool unk168; // 0x168
     std::vector<MoveChoiceSet> unk16c; // 0x16c
     std::vector<CategoryData> unk178; // 0x178 - genre data
     std::vector<CategoryData> unk184; // 0x184 - era data
-    std::vector<CategoryData> unk190; // 0x190
-    std::vector<CategoryData> unk19c; // 0x19c
+    std::vector<CategoryData> unk190; // 0x190 - also genre data
+    std::vector<CategoryData> unk19c; // 0x19c - also era data
     ObjectDir *mMoveDataDir; // 0x1a8
     SuperEasyRemixer *mSuperEasyRemixer; // 0x1ac
 };

@@ -1,25 +1,99 @@
 #include "hamobj/HamWardrobe.h"
+#include "char/CharClipDriver.h"
+#include "char/CharClipGroup.h"
 #include "char/CharDriver.h"
 #include "char/CharInterest.h"
 #include "char/Character.h"
 #include "char/FileMerger.h"
 #include "hamobj/HamCharacter.h"
 #include "hamobj/HamGameData.h"
+#include "math/Rand.h"
+#include "math/Utl.h"
 #include "obj/Data.h"
 #include "obj/DataUtl.h"
 #include "obj/Dir.h"
 #include "obj/Msg.h"
 #include "obj/Object.h"
 #include "os/Debug.h"
+#include "os/System.h"
 #include "rndobj/Overlay.h"
 #include "rndobj/Wind.h"
+#include "utl/MakeString.h"
+#include "utl/Std.h"
 #include "utl/Symbol.h"
+#include "world/Crowd.h"
+#include "world/Dir.h"
+#include <cstdio>
 
 HamWardrobe *TheHamWardrobe;
 
+namespace {
+    Symbol HandleRobot(Symbol s) {
+        static Symbol robota01("robota01");
+        static Symbol robota02("robota02");
+        static Symbol robotb01("robotb01");
+        static Symbol robotb02("robotb02");
+        if (s == robota02) {
+            return robota01;
+        } else if (s == robotb02) {
+            return robotb01;
+        } else {
+            return s;
+        }
+    }
+}
+
+Symbol HamWardrobe::GetBackupOutfitOverride(int x) {
+    if (x >= 0 && x < 2) {
+        return mBackupOverrideOutfits[x];
+    } else
+        return gNullStr;
+}
+
+Symbol HamWardrobe::GetCrewChar(Symbol s, int i) {
+    return DataGetMacro("CREWS")->FindArray(s, "characters")->Sym(i + 1);
+}
+
+Symbol GetOutfitBackupDancer(Symbol outfit) {
+    MILO_ASSERT(!outfit.Null(), 0x112);
+    DataArray *entry = GetOutfitEntry(outfit, true);
+    static Symbol backup_dancers("backup_dancers");
+    DataArray *backupArr = entry->FindArray(backup_dancers, true);
+    return backupArr->Sym(1);
+}
+
+Symbol GetDanceBattleBackupOutfit(Symbol s1, Symbol s2) {
+    DataArray *charArr = DataGetMacro("CREWS")->FindArray(s2, "characters");
+    Symbol out(gNullStr);
+    String str88(s1);
+    String str90(str88);
+    int str90len = str90.length();
+    if (str90len >= 2) {
+        str90 = str90.substr(0, str90len - 2);
+    }
+    for (int i = 1; i < charArr->Size(); i++) {
+        const char *curStr = charArr->Sym(i).Str();
+        if (str90 != curStr) {
+            unsigned int crewCharLen = strlen(curStr);
+            if (crewCharLen < 30) {
+                char buf[32];
+                strcpy(buf, curStr);
+                buf[crewCharLen + 2] = '\0';
+                buf[crewCharLen + 1] = str88[str90len - 1];
+                buf[crewCharLen] = str88[str90len - 2];
+                out = GetOutfitRemap(buf, false);
+                break;
+            } else {
+                MILO_ASSERT(crewCharLen < 30, 0x13C);
+            }
+        }
+    }
+    return out;
+}
+
 HamWardrobe::HamWardrobe()
     : mCrowdMembers(this), mMainCharacters(this, (EraseMode)1, kObjListAllowNull),
-      unk34("medium"), unk38(0), unk3c(gNullStr), unk40(0) {
+      mTempo("medium"), unk38(0), mCrowdForceState(gNullStr), unk40(0) {
     static DataNode &n = DataVariable("hamwardrobe");
     if (TheHamWardrobe) {
         MILO_NOTIFY("Trying to make > 1 HamWardrobe, which should be single");
@@ -46,7 +120,7 @@ BEGIN_HANDLERS(HamWardrobe)
     HANDLE_EXPR(get_character, GetCharacter(_msg->Int(2)))
     HANDLE_EXPR(get_backup, GetBackup(_msg->Int(2)))
     HANDLE(add_crowd, OnAddCrowd)
-    HANDLE_ACTION(set_force_character, unk48 = _msg->Sym(2))
+    HANDLE_ACTION(set_force_character, mCharOverrideOutfit = _msg->Sym(2))
     HANDLE_ACTION(crowd, PlayCrowdAnimation(_msg->Sym(2), 1, false))
     HANDLE_ACTION(crowd_end_override, EndCrowdOverride())
     HANDLE_ACTION(crowd_force_state_enable, ForceCrowdAnimationStart(_msg->Sym(2)))
@@ -68,76 +142,30 @@ END_PROPSYNCS
 BEGIN_SAVES(HamWardrobe)
     SAVE_REVS(2, 0)
     SAVE_SUPERCLASS(Hmx::Object)
-    bs << unk34;
+    bs << mTempo;
 END_SAVES
+
+INIT_REVS(2, 0)
 
 BEGIN_LOADS(HamWardrobe)
     LOAD_REVS(bs)
     ASSERT_REVS(2, 0)
     LOAD_SUPERCLASS(Hmx::Object)
     if (d.rev > 1)
-        bs >> unk34;
+        bs >> mTempo;
 END_LOADS
 
 BEGIN_COPYS(HamWardrobe)
     COPY_SUPERCLASS(Hmx::Object)
     CREATE_COPY(HamWardrobe)
     BEGIN_COPYING_MEMBERS
-        COPY_MEMBER(unk34)
+        COPY_MEMBER(mTempo)
     END_COPYING_MEMBERS
 END_COPYS
 
-void HamWardrobe::SetBackupOverrideOutfits(Symbol s1, Symbol s2) {
-    unk4c[0] = s1;
-    unk4c[1] = s2;
-}
-
-namespace {
-    Symbol HandleRobot(Symbol s) {
-        static Symbol robota01("robota01");
-        static Symbol robota02("robota02");
-        static Symbol robotb01("robotb01");
-        static Symbol robotb02("robotb02");
-        if (s == robota02) {
-            s = robota01;
-        }
-        if (s == robotb02) {
-            s = robotb01;
-        }
-        return s;
-    }
-}
-
-Symbol HamWardrobe::GetBackupOutfitOverride(int x) {
-    if (x >= 0 && x < 2) {
-        return unk4c[x];
-    } else
-        return gNullStr;
-}
-
-Symbol HamWardrobe::GetCrewChar(Symbol s, int i) {
-    return DataGetMacro("CREWS")->FindArray(s, "characters")->Sym(i + 1);
-}
-
-Symbol GetOutfitBackupDancer(Symbol outfit) {
-    MILO_ASSERT(!outfit.Null(), 0x112);
-    DataArray *entry = GetOutfitEntry(outfit, true);
-    static Symbol backup_dancers("backup_dancers");
-    DataArray *backupArr = entry->FindArray(backup_dancers, true);
-    return backupArr->Sym(1);
-}
-
-Symbol GetDanceBattleBackupOutfit(Symbol s1, Symbol s2) {
-    DataArray *charArr = DataGetMacro("CREWS")->FindArray(s2, "characters");
-    Symbol out(gNullStr);
-    String str88(s1);
-    String str90(str88);
-    if (str90.length() >= 2) {
-        str90 = str90.substr(0, str90.length() - 2);
-    }
-    for (int i = 1; i < charArr->Size(); i++) {
-    }
-    return out;
+void HamWardrobe::SetBackupOverrideOutfits(Symbol outfit1, Symbol outfit2) {
+    mBackupOverrideOutfits[0] = outfit1;
+    mBackupOverrideOutfits[1] = outfit2;
 }
 
 HamCharacter *HamWardrobe::GetBackup(int i) const {
@@ -146,11 +174,13 @@ HamCharacter *HamWardrobe::GetBackup(int i) const {
 
 void HamWardrobe::EndCrowdOverride() {
     if (unk38) {
-        if (unk3c == gNullStr) {
+        if (mCrowdForceState == gNullStr) {
             unk38 = false;
-            int flags = unk40;
-            if (flags & 2) {
-                flags &= ~2;
+            int flags;
+            if (unk40 & 2) {
+                flags = (unk40 & 0xfffffffc) | 1;
+            } else {
+                flags = unk40;
             }
             PlayCrowdAnimation(unk44, flags, false);
         }
@@ -158,47 +188,47 @@ void HamWardrobe::EndCrowdOverride() {
 }
 
 void HamWardrobe::ForceCrowdAnimationEnd() {
-    unk3c = gNullStr;
+    mCrowdForceState = gNullStr;
     EndCrowdOverride();
 }
 
 void HamWardrobe::ForceCrowdAnimationStart(Symbol s) {
     static Symbol none("none");
-    if (s == gNullStr || s == none || s == unk3c) {
-        if (unk3c != gNullStr) {
+    if (s == gNullStr || s == none || s == mCrowdForceState) {
+        if (mCrowdForceState != gNullStr) {
             ForceCrowdAnimationEnd();
         }
     } else {
         MILO_LOG(
             "HamWardrobe::ForceCrowdAnimationStart: %s : current mCrowdForceState = '%s'\n",
             s.Str(),
-            unk3c.Str()
+            mCrowdForceState.Str()
         );
-        unk3c = gNullStr;
+        mCrowdForceState = gNullStr;
         PlayCrowdAnimation(s, 1, true);
-        unk3c = s;
+        mCrowdForceState = s;
         static Symbol none2("none");
         if (s == none2) {
-            unk3c = gNullStr;
+            mCrowdForceState = gNullStr;
         }
     }
 }
 
-HamCharacter *HamWardrobe::LoadMainCharacter(int index, Symbol s, bool b3) {
+HamCharacter *HamWardrobe::LoadMainCharacter(int index, Symbol outfit, bool async) {
     MILO_ASSERT(index < mMainCharacters.size(), 0x160);
     HamCharacter *c = mMainCharacters[index];
-    c->SetOutfit(s);
-    c->StartLoad(b3);
+    c->SetOutfit(outfit);
+    c->StartLoad(async);
     return c;
 }
 
-void HamWardrobe::LoadCrowdClips(Symbol s1, Symbol s2, bool b3) {
+void HamWardrobe::LoadCrowdClips(Symbol tempo, Symbol venue, bool async) {
     FileMerger *fm = Dir()->Find<FileMerger>("crowd_clips.fm", false);
     if (fm) {
         static Message msg("load_tempo", 0, 0, 0, 0);
-        msg[0] = s1;
-        msg[1] = b3;
-        msg[2] = s2;
+        msg[0] = tempo;
+        msg[1] = async;
+        msg[2] = venue;
         fm->HandleType(msg);
     }
 }
@@ -223,7 +253,7 @@ bool HamWardrobe::AllCharsLoaded() {
 }
 
 HamCharacter *HamWardrobe::GetCharacter(int i) const {
-    MILO_ASSERT((0) <= (i) && (i) < (2), 0x213);
+    MILO_ASSERT_RANGE(i, 0, 2, 0x213);
     return (HamCharacter *)mMainCharacters[i];
 }
 
@@ -231,7 +261,7 @@ void HamWardrobe::ClearCrowdClips() { LoadCrowdClips(gNullStr, gNullStr, false);
 
 void HamWardrobe::ClearCrowd() {
     mCrowdMembers.clear();
-    unk3c = gNullStr;
+    mCrowdForceState = gNullStr;
     unk38 = false;
 }
 
@@ -260,15 +290,33 @@ void HamWardrobe::SyncInterestObjects(ObjectDir *dir) {
 
 void HamWardrobe::UpdateOverlay() {
     if (mOverlay && mOverlay->Showing()) {
-        for (ObjPtrList<Character>::iterator it = mCrowdMembers.begin();
-             it != mCrowdMembers.end();
-             ++it) {
+        FOREACH (it, mCrowdMembers) {
             Character *cur = *it;
             if (cur) {
                 *mOverlay << cur->Name() << ": ";
                 CharDriver *driver = cur->Driver();
-                if (driver) {
+                if (!driver) {
+                    *mOverlay << "\n";
+                    continue;
                 }
+                CharClipGroup *grp = driver->LastPlayedGroup();
+                if (!grp) {
+                    *mOverlay << "\n";
+                    continue;
+                }
+                *mOverlay << grp->Name() << "    [ ";
+                std::set<String> strings;
+                for (CharClipDriver *it = driver->First(); it != nullptr;
+                     it = it->Next()) {
+                    String cur(it->GetClip() ? it->GetClip()->Name() : "<NULL>");
+                    if (strings.find(cur) != strings.end()) {
+                        continue;
+                    } else {
+                        strings.insert(cur);
+                        *mOverlay << cur.c_str() << " ";
+                    }
+                }
+                *mOverlay << "]\n";
             }
         }
     }
@@ -293,4 +341,185 @@ void HamWardrobe::SetDir(ObjectDir *dir) {
         }
     }
     SyncInterestObjects(dir);
+}
+
+void HamWardrobe::PlayCrowdAnimation(Symbol s1, int i2, bool b3) {
+    if (!mCrowdMembers.empty()) {
+        unk44 = s1;
+        unk40 = i2;
+        if ((b3 || !unk38) && mCrowdForceState == gNullStr) {
+            unk38 = b3;
+            float f6;
+            if ((i2 & 0xF0) == 0x10) {
+                f6 = 0;
+            } else {
+                f6 = 4;
+            }
+            FOREACH (it, mCrowdMembers) {
+                Character *cur = *it;
+                if (s1.Null()) {
+                    cur->Enter();
+                } else {
+                    Symbol stance = cur->Property("stance")->Sym();
+                    if (stance == gNullStr) {
+                        MILO_LOG("    stance = NULL!\n");
+                    }
+                    char buf[128];
+                    _snprintf(buf, 0x78, "%s_%s", stance.Str(), s1.Str());
+                    cur->Driver()->SetBlendWidth(3);
+                    CharClipDriver *clip =
+                        cur->Driver()->PlayGroup(buf, i2 | 0x30U, -1, kHugeFloat, 0);
+                    if (clip) {
+                        if (clip->Next()) {
+                            clip->mRampIn = RandomFloat(0, f6);
+                        }
+                    } else {
+                        MILO_LOG("clip not found - groupName = %s\n", buf);
+                        MILO_NOTIFY(
+                            "%s could not find clip from group %s", PathName(cur), buf
+                        );
+                        _snprintf(buf, 0x78, "%s_ok", stance.Str());
+                        cur->Driver()->SetBlendWidth(3);
+
+                        CharClipDriver *clip =
+                            cur->Driver()->PlayGroup(buf, i2 | 0x30U, -1, kHugeFloat, 0);
+                        if (clip) {
+                            if (clip->Next()) {
+                                clip->mRampIn = RandomFloat(0, f6);
+                            }
+                        } else {
+                            MILO_LOG("  clip not found - groupName = %s\n", buf);
+                            MILO_NOTIFY(
+                                "  %s could not find clip from group %s",
+                                PathName(cur),
+                                buf
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void HamWardrobe::LoadCharacters(
+    Symbol outfit1,
+    Symbol outfit2,
+    Symbol crew1,
+    Symbol crew2,
+    HamBackupDancers dancers,
+    Symbol tempo,
+    Symbol venue,
+    bool async
+) {
+    if (!mCharOverrideOutfit.Null()) {
+        outfit1 = mCharOverrideOutfit;
+    }
+    outfit1 = HandleRobot(outfit1);
+    outfit2 = HandleRobot(outfit2);
+    mMainCharacters.clear();
+    for (int i = 0; i < 2; i++) {
+        mMainCharacters.push_back(Dir()->Find<HamCharacter>(MakeString("player%d", i)));
+    }
+
+    mTempo = tempo;
+
+    if (outfit1 != "") {
+        LoadMainCharacter(0, outfit1, async);
+    }
+    if (outfit2 != "") {
+        LoadMainCharacter(1, outfit2, async);
+    }
+
+    for (int i = 0; i < 2; i++) {
+        Symbol outfit = (i == 0) ? outfit1 : outfit2;
+        Symbol crew = (i == 0) ? crew1 : crew2;
+        Symbol finalOutfit = gNullStr;
+
+        if (dancers == (HamBackupDancers)0) {
+            if (!outfit.Null()) {
+                Symbol dancer = GetOutfitBackupDancer(outfit);
+                finalOutfit = MakeString("%s_bd0%d", dancer, i + 1);
+            }
+        } else if (dancers == (HamBackupDancers)2) {
+            if (i == 0) {
+                static Symbol tan01("tan01");
+                finalOutfit = tan01;
+            }
+        } else if (dancers == (HamBackupDancers)3) {
+            finalOutfit = GetBackupOutfitOverride(i);
+        } else {
+            MILO_ASSERT(dancers == kBackupDancersDanceBattle, 0x1ac);
+            finalOutfit = GetDanceBattleBackupOutfit(outfit, crew);
+        }
+
+        HamCharacter *backup = GetBackup(i);
+        backup->SetOutfit(finalOutfit);
+        backup->SetOutfitDir(
+            (dancers == kBackupDancersRegular) ? "char/main/backup" : "char/main/dancer"
+        );
+        backup->StartLoad(async);
+    }
+    LoadCrowdClips(mTempo, venue, async);
+}
+
+DataNode HamWardrobe::OnSetVenue(DataArray *arr) {
+    SetDir(arr->Obj<ObjectDir>(2));
+    Symbol venue = TheGameData->Venue();
+
+    if (venue.Null() && TheWorld) {
+        String worldPath = TheWorld->GetPathName();
+        worldPath = worldPath.substr(worldPath.find_last_of('/') + 1);
+        DataArray *venueArr = SystemConfig()->FindArray("venues", false);
+        if (venueArr) {
+            for (int i = 1; i < venueArr->Size(); i++) {
+                DataArray *venueEntryArray = venueArr->Array(i);
+                MILO_ASSERT(venueEntryArray, 0x27d);
+                Symbol venueSym = venueEntryArray->Sym(0);
+                if (worldPath.contains(venueSym.Str())) {
+                    venue = venueSym;
+                    break;
+                }
+            }
+        }
+    }
+
+    LoadCharacters(
+        "mo01", "emilia01", "crew02", "crew01", kBackupDancersRegular, mTempo, venue, false
+    );
+    return 0;
+}
+
+DataNode HamWardrobe::OnLoadCharacters(DataArray *arr) {
+    int size = arr->Size();
+    Symbol crew1 = 4 < size ? arr->Sym(4) : gNullStr;
+    Symbol crew2 = size > 5 ? arr->Sym(5) : gNullStr;
+    int dancer = size > 6 ? arr->Int(6) : 0;
+    Symbol s = size > 6 ? arr->Sym(7) : "medium";
+    int i = size > 7 ? arr->Int(8) : 1;
+    LoadCharacters(
+        arr->Sym(2),
+        arr->Sym(3),
+        crew1,
+        crew2,
+        (HamBackupDancers)dancer,
+        s,
+        TheGameData->Venue().Str(),
+        i
+    );
+    return 0;
+}
+
+DataNode HamWardrobe::OnAddCrowd(DataArray *arr) {
+    WorldCrowd *crowd = arr->Obj<WorldCrowd>(2);
+    auto &chars = crowd->Characters();
+    FOREACH (it, chars) {
+        Character *curChar = it->mDef.mChar;
+        if (curChar) {
+            if (mCrowdMembers.find(curChar) == mCrowdMembers.end()) {
+                mCrowdMembers.push_back(curChar);
+            }
+        }
+    }
+    return 0;
 }

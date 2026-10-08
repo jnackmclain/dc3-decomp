@@ -1,11 +1,14 @@
 #pragma once
-
 #include "obj/Data.h"
 #include "obj/Msg.h"
 #include "obj/Object.h"
 #include "utl/Symbol.h"
+
 class PresenceMgr : public Hmx::Object {
 public:
+    PresenceMgr()
+        : mPresenceModes(0), mPresenceModeContexts(0), mInstrumentPlayModeContexts(0),
+          mSongID(0), mInGame(0) {}
     virtual DataNode Handle(DataArray *, bool);
 
     void Init();
@@ -21,13 +24,16 @@ protected:
     DataNode OnPlayerPresentChange(DataArray *);
     DataNode OnPresenceChange(DataArray *);
 
-    DataArray *unk2c;
-    DataArray *unk30;
-    DataArray *unk34;
-    u32 unk38;
+    DataArray *mPresenceModes; // 0x2c
+    DataArray *mPresenceModeContexts; // 0x30
+    DataArray *mInstrumentPlayModeContexts; // 0x34
+    Symbol unk38; // 0x38
     int mSongID; // 0x3c
     bool mInGame; // 0x40
 };
 
+extern PresenceMgr ThePresenceMgr;
+
 DECLARE_MESSAGE(CurrentScreenChangedMsg, "current_screen_changed")
+CurrentScreenChangedMsg(Symbol s) : Message(Type(), s) {}
 END_MESSAGE

@@ -1,5 +1,6 @@
 #include "flow/FlowSequence.h"
 #include "flow/FlowNode.h"
+#include "flow/Flow.h"
 #include "obj/Object.h"
 #include "os/Debug.h"
 
@@ -38,15 +39,56 @@ BEGIN_COPYS(FlowSequence)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(1, 0)
+
 BEGIN_LOADS(FlowSequence)
     LOAD_REVS(bs)
     ASSERT_REVS(1, 0)
-    FlowNode::Load(bs);
+    LOAD_SUPERCLASS(FlowNode)
     d >> mLooping;
-    bs >> mRepeats;
+    d >> mRepeats;
     if (d.rev > 0)
-        bs >> (int &)mStopMode;
+        d >> (int &)mStopMode;
 END_LOADS
+
+bool FlowSequence::Activate() {
+    FLOW_LOG("Activate\n");
+    mRequestingStop = false;
+    if (IsRunning()) {
+        MILO_NOTIFY(
+            "FlowSequence re-entrance error, activated when already running, deactivating and aborting, check your logic"
+        );
+        Deactivate(false);
+    } else {
+        if (unk68 == 0) {
+            PushDrivenProperties();
+        }
+        unk68 = 0;
+        if (!mChildNodes.empty()) {
+            unk70 = true;
+            for (mItr = mChildNodes.begin();; ++mItr) {
+                do {
+                    if (mItr == mChildNodes.end() || !mRunningNodes.empty()
+                        || (ActivateChild(*mItr), mRequestingStop)) {
+                        unk70 = false;
+                        MILO_ASSERT(mRunningNodes.size() < 2, 0x50);
+                        if (mItr == mChildNodes.end() && mRunningNodes.empty()) {
+                            if (!mLooping && mRepeats == 0) {
+                                return false;
+                            }
+                            MILO_NOTIFY_ONCE(
+                                "Instant looping sequence in %s! Stopping Sequence",
+                                GetOwnerFlow()->Name()
+                            );
+                        }
+                        return !mRunningNodes.empty();
+                    }
+                } while (!mRunningNodes.empty());
+            }
+        }
+    }
+    return false;
+}
 
 void FlowSequence::ChildFinished(FlowNode *node) {
     FLOW_LOG(
@@ -56,8 +98,8 @@ void FlowSequence::ChildFinished(FlowNode *node) {
     MILO_ASSERT(mRunningNodes.empty(), 0x74);
     if (unk70)
         return;
-    if (unk58) {
-        unk58 = false;
+    if (mRequestingStop) {
+        mRequestingStop = false;
         FLOW_LOG("Releasing\n");
         mFlowParent->ChildFinished(this);
         return;
@@ -67,14 +109,13 @@ void FlowSequence::ChildFinished(FlowNode *node) {
     }
     FLOW_LOG("Advancing sequence\n");
     unk70 = true;
-    while (mItr != mChildNodes.end()) {
-        ActivateChild(mItr->Obj());
-        if (unk58 || !mRunningNodes.empty())
+    for (; mItr != mChildNodes.end(); ++mItr) {
+        ActivateChild(*mItr);
+        if (mRequestingStop || !mRunningNodes.empty())
             break;
-        ++mItr;
     }
     unk70 = false;
-    if (!unk58 || !mRunningNodes.empty()) {
+    if (!mRequestingStop || !mRunningNodes.empty()) {
         if (mItr != mChildNodes.end())
             goto ret;
         if (!mLooping && unk68 >= mRepeats - 1) {

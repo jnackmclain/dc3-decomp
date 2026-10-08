@@ -4,25 +4,40 @@
 #include "game/GameMode.h"
 #include "game/HamUserMgr.h"
 #include "gesture/GestureMgr.h"
+#include "hamobj/Difficulty.h"
 #include "hamobj/HamDirector.h"
 #include "hamobj/HamGameData.h"
 #include "hamobj/HamMove.h"
 #include "hamobj/HamNavProvider.h"
 #include "hamobj/HamPlayerData.h"
 #include "hamobj/MoveDir.h"
+#include "hamobj/PracticeSection.h"
 #include "hamobj/ScoreUtl.h"
 #include "math/Rand.h"
+#include "math/Utl.h"
+#include "meta_ham/AccomplishmentManager.h"
+#include "meta_ham/CampaignPerformer.h"
 #include "meta_ham/HamProfile.h"
+#include "meta_ham/HamSongMetadata.h"
 #include "meta_ham/HamSongMgr.h"
+#include "meta_ham/PassiveMessenger.h"
 #include "meta_ham/ProfileMgr.h"
+#include "meta_ham/SongStatusMgr.h"
+#include "meta_ham/Utl.h"
+#include "net_ham/DataMinerJobs.h"
 #include "net_ham/RockCentral.h"
 #include "obj/Data.h"
 #include "obj/DataUtl.h"
+#include "obj/Dir.h"
 #include "obj/Object.h"
+#include "obj/Task.h"
 #include "os/DateTime.h"
 #include "os/Debug.h"
+#include "os/PlatformMgr.h"
 #include "os/System.h"
 #include "utl/DataPointMgr.h"
+#include "utl/Locale.h"
+#include "utl/MakeString.h"
 #include "utl/Std.h"
 #include "utl/Symbol.h"
 
@@ -39,9 +54,9 @@ bool CharConflict(Symbol s1, Symbol s2) {
 Symbol GetUnlockedOutfit(Symbol s1) {
     if (!TheProfileMgr.IsContentUnlocked(s1)) {
         Symbol outfit = GetOutfitCharacter(s1);
-        return GetCharacterOutfit(outfit, 0);
-    } else
-        return s1;
+        s1 = GetCharacterOutfit(outfit, 0);
+    }
+    return s1;
 }
 
 #pragma region MetaPerformer
@@ -60,7 +75,7 @@ MetaPerformer::MetaPerformer(const HamSongMgr &mgr, const char *)
     mSkippedSongs.clear();
     mEnrollmentIndex[0] = -1;
     mEnrollmentIndex[1] = -1;
-    unk29 = DateTime(0);
+    mGameplayTimer = DateTime(0);
     mSkillsAwards = new SkillsAwardList();
 }
 
@@ -68,7 +83,7 @@ MetaPerformer::~MetaPerformer() { delete mSkillsAwards; }
 
 void MetaPerformer::HandleSkippedSong() { mSkippedSongs.insert(mPlaylistIndex); }
 void MetaPerformer::HandleSongRestart() { mNumRestarts++; }
-bool MetaPerformer::IsGameplayTimerRunning() const { return unk29.ToCode(); }
+bool MetaPerformer::IsGameplayTimerRunning() const { return mGameplayTimer.ToCode(); }
 bool MetaPerformer::GetPlayedLongIntro(Symbol intro) {
     return mLongIntrosPlayed.count(intro) > 0;
 }
@@ -213,6 +228,95 @@ BEGIN_HANDLERS(MetaPerformer)
     HANDLE_SUPERCLASS(Hmx::Object)
 END_HANDLERS
 
+void MetaPerformer::ResetSongs() {
+    mNumCompleted.clear();
+    mNumRestarts = 0;
+    if (mInstarank) {
+        RELEASE(mInstarank);
+    }
+}
+
+void MetaPerformer::CompleteSong(int stars, int totalScore, int, float, bool b5) {
+    Symbol song = TheGameData->GetSong();
+    static Symbol campaign_outro("campaign_outro");
+    if (TheGameMode->InMode(campaign_outro) || !TheGameMode->IsGameplayModePerform()) {
+        if (TheGameMode->IsGameplayModeDanceBattle()) {
+            TheHamSongMgr.GetSongIDFromShortName(song);
+            if (TheHamUserMgr && !b5) {
+                SaveDanceBattleScores(song);
+            }
+        }
+    } else {
+        TheHamSongMgr.GetSongIDFromShortName(song);
+        PotentiallyUpdateLeaderboards(b5, song, totalScore, stars, false);
+    }
+    if (song != gNullStr) {
+        mPlaylistElapsedTime += TheHamSongMgr.GetDuration(song);
+    }
+    CheckForFitnessAccomplishments();
+    HandleGameplayEnded((EndGameResult)1);
+    if (unke0 && mPlaylist) {
+        if (IsLastSong() && IsPlaylistCustom()) {
+            static Symbol acc_play_custom_play_list("acc_play_custom_play_list");
+            TheAccomplishmentMgr->EarnAccomplishmentForAll(
+                acc_play_custom_play_list, false
+            );
+        }
+    }
+    if (TheHamUserMgr) {
+        TheAccomplishmentMgr->HandleSongCompleted(song);
+    }
+    for (int i = 0; i < 2; i++) {
+        HamPlayerData *pPlayer = TheGameData->Player(i);
+        MILO_ASSERT(pPlayer, 0x2DC);
+        int padnum = pPlayer->PadNum();
+        HamProfile *profile = TheProfileMgr.GetProfileFromPad(padnum);
+        if (profile) {
+            TheAccomplishmentMgr->SetUnk30(padnum, false);
+        }
+    }
+}
+
+void MetaPerformer::OnMovePassed(
+    int playerIndex, HamMove *move, int ratingIndex, float detectFrac
+) {
+    MILO_ASSERT_RANGE(playerIndex, 0, 2, 0x3EB);
+    HamPlayerData *pPlayerData = TheGameData->Player(playerIndex);
+    MILO_ASSERT(pPlayerData, 0x3EE);
+    HamProfile *profile = TheProfileMgr.GetProfileFromPad(pPlayerData->PadNum());
+    static Symbol gameplay_mode("gameplay_mode");
+    Symbol mode = TheGameMode->Property(gameplay_mode)->Sym();
+    if (profile) {
+        AccomplishmentProgress &progress = profile->AccessAccomplishmentProgress();
+        progress.MovePassed(mode, ratingIndex);
+    }
+    mMovesAttempted[playerIndex]++;
+    static Symbol perform("perform");
+    static Symbol dance_battle("dance_battle");
+    static Symbol bustamove("bustamove");
+    static Symbol perform_legacy("perform_legacy");
+    if (mode == perform || mode == dance_battle || mode == perform_legacy) {
+        if (mMoveScores[playerIndex].size() == 0) {
+            MoveDir *moves = TheHamDirector->GetWorld()->Find<MoveDir>("moves");
+            std::vector<HamMoveKey> keys;
+            TheHamDirector->MoveKeys(
+                TheGameData->Player(playerIndex)->GetDifficulty(), moves, keys
+            );
+            mMoveScores[playerIndex].reserve(keys.size());
+        }
+        HamMoveScore score;
+        score.detectFrac = detectFrac;
+        score.move = move;
+        score.ratingIdx = ratingIndex;
+        score.slowMo = false;
+        mMoveScores[playerIndex].push_back(score);
+        if (profile) {
+            profile->GetMoveRatingHistory()->AddHistory(move->DisplayName(), ratingIndex);
+        }
+        TheHamDirector->CheckBeginFatal(playerIndex, move, ratingIndex);
+    }
+}
+
 bool MetaPerformer::IsSetComplete() const { return mNumCompleted.size() == 1; }
 void MetaPerformer::RepeatCurrentPlaylistSong() {
     UpdateSongFromPlaylist();
@@ -230,17 +334,9 @@ bool MetaPerformer::HasRecommendedPracticeMoves() const {
 
 DataNode MetaPerformer::OnMsg(const RCJobCompleteMsg &) { return 1; }
 
-void MetaPerformer::ResetSongs() {
-    mNumCompleted.clear();
-    mNumRestarts = 0;
-    if (mInstarank) {
-        RELEASE(mInstarank);
-    }
-}
-
 MetaPerformer *MetaPerformer::Current() { return sScriptHook->Current(); }
 
-bool MetaPerformer::CanUpdateScoreLeaderboards(bool b1) {
+bool MetaPerformer::CanUpdateScoreLeaderboards(bool unused) {
     if (TheGameMode) {
         if (TheGameMode->Property("update_leaderboards")->Int() == 0) {
             return false;
@@ -260,16 +356,16 @@ void MetaPerformer::SetSong(Symbol song) {
 }
 
 void MetaPerformer::StartGameplayTimer() {
-    if (unk29.ToCode() == 0) {
-        GetDateAndTime(unk29);
+    if (mGameplayTimer.ToCode() == 0) {
+        GetDateAndTime(mGameplayTimer);
     }
 }
 
-void MetaPerformer::JumpGameplayTimerForward(int x) {
-    if (unk29.ToCode() == 0) {
+void MetaPerformer::JumpGameplayTimerForward(int secs) {
+    if (mGameplayTimer.ToCode() == 0) {
         MILO_NOTIFY("This cheat only works while the gameplay timer is running!");
     } else {
-        unk29 = DateTime(unk29.ToCode() - x);
+        mGameplayTimer = DateTime(mGameplayTimer.ToCode() - secs);
     }
 }
 
@@ -278,11 +374,33 @@ void MetaPerformer::GetEraInvalid() {
 }
 
 void MetaPerformer::CalcPrimarySongCharacter(
-    const HamSongMetadata *data, Symbol &s2, Symbol &s3, Symbol &s4
+    const HamSongMetadata *data, Symbol &crew, Symbol &charSym, Symbol &outfit
 ) {
-    s3 = data->Character();
-    s4 = data->Outfit();
-    s2 = GetCrewForCharacter(s3);
+    charSym = data->Character();
+    outfit = data->Outfit();
+    crew = GetCrewForCharacter(charSym);
+}
+
+void MetaPerformer::CalcSecondarySongCharacter(
+    const HamSongMetadata *data, bool b2, Symbol s3, Symbol &s4, Symbol &s5, Symbol &s6
+) {
+    s6 = s3;
+    s5 = GetOutfitCharacter(s6);
+    s4 = GetCrewForCharacter(s5);
+    if (b2) {
+        Symbol rival = GetRivalOutfit(s6);
+        Symbol outfitChar = GetOutfitCharacter(rival);
+        if (!TheProfileMgr.IsContentUnlocked(outfitChar)
+            || !TheProfileMgr.IsContentUnlocked(rival)) {
+            rival = GetBackupRivalOutfit(s6);
+        }
+        s6 = rival;
+        s5 = GetOutfitCharacter(s6);
+    } else {
+        s5 = GetAlternateCharacter(s5);
+        s6 = TheProfileMgr.GetAlternateOutfit(s6);
+    }
+    s4 = GetCrewForCharacter(s5);
 }
 
 int MetaPerformer::GetPlaylistIndex() const { return mPlaylistIndex; }
@@ -300,50 +418,63 @@ bool MetaPerformer::IsLastSong() const {
     if (mPlaylist) {
         return mPlaylist->GetLastValidSongIndex() <= mPlaylistIndex;
     } else {
-        return false;
+        return TheGameMode->Infinite() == false;
     }
 }
 
 void MetaPerformer::StopGameplayTimer() {
-    if (unk29.ToCode()) {
-        unsigned int curCode = unk29.ToCode();
+    if (mGameplayTimer.ToCode()) {
+        unsigned int curCode = mGameplayTimer.ToCode();
         DateTime now;
         GetDateAndTime(now);
         unsigned int nowCode = now.ToCode();
+        unsigned int timeDiff = nowCode - curCode;
         for (int i = 0; i < 2; i++) {
             HamPlayerData *pPlayer = TheGameData->Player(i);
             MILO_ASSERT(pPlayer, 0x35E);
             HamProfile *pProfile = TheProfileMgr.GetProfileFromPad(pPlayer->PadNum());
             if (pProfile && pProfile->HasValidSaveData()) {
-                // metagamestats
+                pProfile->GetMetagameStats()->WriteTimePlayed(pProfile, timeDiff);
             }
         }
-        unk29 = DateTime(0);
+        mGameplayTimer = DateTime(0);
     }
 }
 
 void MetaPerformer::OnFreestylePictureTaken() {
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < NUM_SKELETONS; i++) {
         TheGestureMgr->GetSkeleton(i);
     }
 }
 
-int MetaPerformer::GetMovesPassed(int i1) {
+int MetaPerformer::GetMovesPassed(int player) {
     int num = -1;
-    int numMoves = unk40[i1].size();
-    if (numMoves) {
+    if (mMoveScores[player].size()) {
         int loop_moves = 0;
-        for (int i = 0; i < unk40[i1].size(); i++) {
+        for (int i = 0; i < mMoveScores[player].size(); i++) {
             static Symbol move_perfect("move_perfect");
             static Symbol move_awesome("move_awesome");
-            Symbol rating = RatingState(i);
+            Symbol rating = RatingState(mMoveScores[player][i].ratingIdx);
             if (rating == move_perfect || rating == move_awesome) {
                 loop_moves++;
             }
         }
-        num = loop_moves / numMoves;
+        num = (loop_moves * 100) / mMoveScores[player].size();
     }
     return num;
+}
+
+int MetaPerformer::GetMovesPassedByType(int player, Symbol typeSym) {
+    int numPassed = 0;
+    if (mMoveScores[player].size()) {
+        for (int i = 0; i < mMoveScores[player].size(); i++) {
+            Symbol rating = RatingState(mMoveScores[player][i].ratingIdx);
+            if (rating == typeSym) {
+                numPassed++;
+            }
+        }
+    }
+    return numPassed;
 }
 
 bool MetaPerformer::IsCheatWinning() const { return sCheatFinale && IsLastSong(); }
@@ -371,11 +502,11 @@ bool MetaPerformer::IsCrewAvailable(Symbol crew) const {
     }
 }
 
-Symbol MetaPerformer::GetCrewVenue(Symbol s) const {
+Symbol MetaPerformer::GetCrewVenue(Symbol crew) const {
     static Symbol CREWS("CREWS");
     DataArray *pCrewArray = DataGetMacro(CREWS);
     MILO_ASSERT(pCrewArray, 0x6B0);
-    DataArray *pCrewData = pCrewArray->FindArray(s);
+    DataArray *pCrewData = pCrewArray->FindArray(crew);
     MILO_ASSERT(pCrewData, 0x6B3);
     static Symbol venue("venue");
     return pCrewData->FindSym(venue);
@@ -405,14 +536,14 @@ bool MetaPerformer::SongEndsWithEndgameSequence() const {
     return IsWinning() && IsLastSong();
 }
 
-bool MetaPerformer::IsDifficultyUnlocked(Symbol s) const {
+bool MetaPerformer::IsDifficultyUnlocked(Symbol diffSym) const {
     if (mPlaylist && IsPlaylistPlayable()) {
         int numSongs = GetNumSongsInPlaylist();
         for (int i = 0; i < numSongs; i++) {
             if (mPlaylist->IsValidSong(i)) {
                 int song = mPlaylist->GetSong(i);
                 Symbol shortname = TheHamSongMgr.GetShortNameFromSongID(song);
-                if (!TheProfileMgr.IsDifficultyUnlocked(shortname, s)) {
+                if (!TheProfileMgr.IsDifficultyUnlocked(shortname, diffSym)) {
                     return false;
                 }
             }
@@ -420,7 +551,7 @@ bool MetaPerformer::IsDifficultyUnlocked(Symbol s) const {
         return true;
     } else {
         Symbol song = GetSong();
-        return TheProfileMgr.IsDifficultyUnlocked(song, s);
+        return TheProfileMgr.IsDifficultyUnlocked(song, diffSym);
     }
 }
 
@@ -449,10 +580,10 @@ int MetaPerformer::DetermineDanceBattleWinner() {
 }
 
 void MetaPerformer::PotentiallyUpdateLeaderboards(
-    bool b1, Symbol s2, int i3, int i4, bool b5
+    bool b1, Symbol song, int totalScore, int stars, bool b5
 ) {
     if (TheHamUserMgr && !b1 && CanUpdateScoreLeaderboards(b5)) {
-        SaveAndUploadScores(s2, i3, i4);
+        SaveAndUploadScores(song, totalScore, stars);
     }
 }
 
@@ -476,7 +607,7 @@ bool MetaPerformer::IsRecommendedPracticeMoveGroup(
 }
 
 void MetaPerformer::SetDefaultCrews() {
-    if (!TheGameMode->InMode("campaign", true)) {
+    if (!TheGameMode->InMode("campaign")) {
         ClearCharacters();
         SetupCharacters();
     }
@@ -502,7 +633,7 @@ void MetaPerformer::SetPlaylist(Playlist *playlist) {
 
 void MetaPerformer::StartPlaylist() {
     mPlaylistElapsedTime = 0;
-    if (!TheGameMode->IsInfinite()) {
+    if (!TheGameMode->Infinite()) {
         MILO_ASSERT(mPlaylist, 0x713);
         MILO_ASSERT(!mPlaylist->IsEmpty(), 0x714);
         mPlaylistIndex = 0;
@@ -520,19 +651,17 @@ void MetaPerformer::StartPlaylist() {
 }
 
 void MetaPerformer::ContinuePlaylist() {
-    if (TheGameMode->IsInfinite()
-        || TheHamProvider->Property("is_in_infinite_party_mode")->Int()) {
-        if (!TheGameMode->InMode("campaign", true))
-            goto end;
-    }
-    MILO_ASSERT(mPlaylist, 0x731);
-    mPlaylistIndex++;
-    while (!mPlaylist->IsValidSong(mPlaylistIndex)) {
-        mSkippedSongs.insert(mPlaylistIndex);
+    int infinite = TheGameMode->Infinite();
+    bool infiniteParty = TheHamProvider->Property("is_in_infinite_party_mode")->Int();
+    if ((!infinite && !infiniteParty) || TheGameMode->InMode("campaign")) {
+        MILO_ASSERT(mPlaylist, 0x731);
         mPlaylistIndex++;
-        MILO_ASSERT(mPlaylistIndex < mPlaylist->GetNumSongs(), 0x73B);
+        while (!mPlaylist->IsValidSong(mPlaylistIndex)) {
+            mSkippedSongs.insert(mPlaylistIndex);
+            mPlaylistIndex++;
+            MILO_ASSERT(mPlaylistIndex < mPlaylist->GetNumSongs(), 0x73B);
+        }
     }
-end:
     UpdateSongFromPlaylist();
     UpdateIsLastSong();
 }
@@ -545,8 +674,8 @@ void MetaPerformer::ShufflePlaylist() {
     }
 }
 
-void MetaPerformer::SetPlaylist(Symbol s) {
-    Playlist *pPlaylist = TheHamSongMgr.GetPlaylist(s);
+void MetaPerformer::SetPlaylist(Symbol playlistName) {
+    Playlist *pPlaylist = TheHamSongMgr.GetPlaylist(playlistName);
     MILO_ASSERT(pPlaylist, 0x6D5);
     SetPlaylist(pPlaylist);
 }
@@ -582,7 +711,7 @@ Symbol MetaPerformer::GetRandomVenue() {
 }
 
 void MetaPerformer::OnPracticeMovePassed(
-    int playerIndex, const char *cc, SkillsAward award, bool b4
+    int playerIndex, const char *moveName, SkillsAward award, bool slowMo
 ) {
     MILO_ASSERT_RANGE(playerIndex, 0, 2, 0x41A);
     HamPlayerData *pPlayerData = TheGameData->Player(playerIndex);
@@ -591,14 +720,13 @@ void MetaPerformer::OnPracticeMovePassed(
     MoveDir *moveDir = TheHamDirector->GetWorld()->Find<MoveDir>("moves", true);
     std::vector<HamMoveKey> keys;
     TheHamDirector->MoveKeys(pPlayerData->GetDifficulty(), moveDir, keys);
-    int numKeys = keys.size();
-    for (int i = 0; i != numKeys; i++) {
-        if (streq(keys[i].move->Name(), cc)) {
+    for (int i = 0; i < keys.size(); i++) {
+        if (streq(keys[i].move->Name(), moveName)) {
             theMove = keys[i].move;
         }
     }
-    if (unk40[playerIndex].size() == 0) {
-        unk40[playerIndex].reserve(numKeys);
+    if (mMoveScores[playerIndex].size() == 0) {
+        mMoveScores[playerIndex].reserve(keys.size());
     }
     HamMoveScore score;
     int i4 = -1;
@@ -615,11 +743,11 @@ void MetaPerformer::OnPracticeMovePassed(
     default:
         break;
     }
-    score.unk0 = theMove;
-    score.unk4 = i4;
-    score.unk8 = 0;
-    score.unkc = b4;
-    unk40[playerIndex].push_back(score);
+    score.move = theMove;
+    score.ratingIdx = i4;
+    score.detectFrac = 0;
+    score.slowMo = slowMo;
+    mMoveScores[playerIndex].push_back(score);
     mMovesAttempted[playerIndex]++;
 }
 
@@ -631,8 +759,8 @@ void MetaPerformer::Init() {
 void MetaPerformer::GenerateRecommendedPracticeMoves(int player) {
     MILO_ASSERT(player>=0 && player < MULTIPLAYER_SLOTS, 0x4D4);
     ClearAndShrink(mRecommendedPracticeMoves);
-    for (int i = 0; i < unk40[player].size(); i++) {
-        String name = unk40[player][i].unk0->DisplayName();
+    for (int i = 0; i < mMoveScores[player].size(); i++) {
+        String name = mMoveScores[player][i].move->DisplayName();
         if (!IsRecommendedPracticeMove(name)) {
             if (CheckRecommendedPracticeMove(name, player)) {
                 mRecommendedPracticeMoves.push_back(name);
@@ -707,7 +835,743 @@ DataNode QuickplayPerformer::OnSetSong(DataArray *a) {
     return 0;
 }
 
+void MetaPerformer::SendOmgDatapoint(int p1Score, int p2Score) {
+    TheRockCentral.ManageJob(new OmgScoresJob(nullptr, p1Score, p2Score));
+}
+
+void MetaPerformer::SendDropInDatapoint(int playerIdx) {
+    TheRockCentral.ManageJob(new PlayerDroppedInJob(nullptr, playerIdx));
+}
+
+void MetaPerformer::SendDropOutDatapoint(int playerIdx) {
+    TheRockCentral.ManageJob(new PlayerDroppedOutJob(nullptr, playerIdx));
+}
+
+String MetaPerformer::GetPlaylistElapsedTimeString() const {
+    if (!mPlaylist && !TheGameMode->Infinite())
+        return "";
+    else
+        return FormatTimeMS(mPlaylistElapsedTime);
+}
+
+String MetaPerformer::GetPlaylistNameAndDuration() const {
+    if (!mPlaylist)
+        return "";
+    else {
+        mPlaylist->GetDuration();
+        return MakeString(
+            "%s (%s)",
+            Localize(mPlaylist->GetName(), false, TheLocale),
+            FormatTimeMS(mPlaylist->GetDuration())
+        );
+    }
+}
+
+void MetaPerformer::TriggerSongCompletion(int totalScore, float stars) {
+    if (!mPlaylist) {
+        unke0 = false;
+    }
+    ThePlatformMgr.RemoveSink(TheAccomplishmentMgr);
+    mJustBeatGame = false;
+    static Symbol skipped_song("skipped_song");
+    const DataNode *pSkippedSongNode = TheHamProvider->Property(skipped_song, false);
+    MILO_ASSERT(pSkippedSongNode, 0x286);
+    bool skipped = pSkippedSongNode->Int();
+    if (totalScore >= 0 && !skipped) {
+        CompleteSong((int)stars, totalScore, totalScore, stars, false);
+    }
+}
+
+void MetaPerformer::CheckForFitnessAccomplishments() {
+    for (int i = 0; i < 2; i++) {
+        HamPlayerData *pPlayerData = TheGameData->Player(i);
+        MILO_ASSERT(pPlayerData, 0x2EC);
+        int pad = pPlayerData->PadNum();
+        HamProfile *profile = TheProfileMgr.GetProfileFromPad(pad);
+        if (profile && profile->InFitnessMode() && !TheAccomplishmentMgr->Unk30(pad)) {
+            float f88, f8c;
+            if (mFitnessFilters[i].GetFitnessDataAndReset(f88, f8c)) {
+                profile->SetFitnessStats(i, f88, f8c);
+            }
+            if (profile->IsFitnessDaysGoalMet() && profile->IsFitnessCaloriesGoalMet()) {
+                static Symbol acc_weekly_goal("acc_weekly_goal");
+                TheAccomplishmentMgr->EarnAccomplishmentForProfile(
+                    profile, acc_weekly_goal, false
+                );
+            }
+        }
+    }
+}
+
+void MetaPerformer::SetupCharacters() {
+    Symbol song = TheGameData->GetSong();
+    Symbol p1Crew;
+    Symbol p1Char;
+    Symbol p1Outfit;
+    Symbol p2Crew;
+    Symbol p2Char;
+    Symbol p2Outfit;
+    int songID = TheHamSongMgr.GetSongIDFromShortName(song);
+    const HamSongMetadata *pSongData = TheHamSongMgr.Data(songID);
+    MILO_ASSERT(pSongData, 0x68B);
+    bool b5 = TheGameMode->InMode("dance_battle") || TheGameMode->InMode("strike_a_pose");
+    HamPlayerData *p1;
+    HamPlayerData *p2;
+    CalcCharacters(
+        pSongData,
+        b5,
+        (PlayerFlag)3,
+        p1,
+        p1Crew,
+        p1Char,
+        p1Outfit,
+        p2,
+        p2Crew,
+        p2Char,
+        p2Outfit
+    );
+    p1->SetCharacter(p1Char);
+    p1->SetOutfit(p1Outfit);
+    p1->SetCrew(p1Crew);
+    p2->SetCharacter(p2Char);
+    p2->SetOutfit(p2Outfit);
+    p2->SetCrew(p2Crew);
+}
+
+void MetaPerformer::OnGameInit() {
+    std::vector<HamProfile *> profiles = TheProfileMgr.GetSignedInProfiles();
+    FOREACH (it, profiles) {
+        HamProfile *profile = *it;
+        MILO_ASSERT(profile, 0x3B7);
+        AccomplishmentProgress &progress = profile->AccessAccomplishmentProgress();
+        progress.ClearAllPerfectMoves();
+        progress.ClearPerfectStreak();
+    }
+    mLastPlayedMode = TheGameMode->Mode();
+    for (int i = 0; i < 2; i++) {
+        ClearAndShrink(mMoveScores[i]);
+        mMovesAttempted[i] = 0;
+    }
+    ClearAndShrink(mRecommendedPracticeMoves);
+    mSkillsAwards->Clear();
+    ClearAndShrink(unk74);
+    if (TheGameMode->IsGameplayModePractice()) {
+        SetUpRecapResults();
+    }
+}
+
+void MetaPerformer::SetUpRecapResults() {
+    static Symbol review("review");
+    const std::vector<PracticeStep> &steps = GetPracticeSteps();
+    FOREACH (it, steps) {
+        if (it->mType == review) {
+            std::vector<bool> bVec;
+            int startBeat = Round(TheHamDirector->BeatFromTag(it->mStart));
+            int endBeat = Round(TheHamDirector->BeatFromTag(it->mEnd));
+            int diff = (endBeat - startBeat) / 4;
+            for (int i = 0; i < diff; i++) {
+                bVec.push_back(false);
+            }
+            unk74.push_back(bVec);
+        }
+    }
+}
+
+void MetaPerformer::PopulatePlaylistSongProvider(HamNavProvider *prov) const {
+    if (!prov) {
+        MILO_NOTIFY(
+            "NULL PROVIDER PASSED INTO MetaPerformer::PopulatePlaylistSongProvider!!!"
+        );
+    } else {
+        prov->Items().clear();
+        int numSongs = mPlaylist->GetNumSongs();
+        prov->Items().resize(numSongs);
+        for (int i = 0; i < numSongs; i++) {
+            DataArray *arr;
+            const HamSongMetadata *data = TheHamSongMgr.Data(mPlaylist->GetSong(i));
+            if (data) {
+                const char *str = MakeString("%d. %s", i + 1, data->Title());
+                const char *time = FormatTimeMS(mPlaylist->GetSongDuration(i));
+                arr = new DataArray(2);
+                arr->Node(0) = Symbol(str);
+                arr->Node(1) = Symbol(time);
+                prov->SetLabels(i, arr);
+                arr->Release();
+            } else {
+                static Symbol song_unknown("song_unknown");
+                const char *str = MakeString(
+                    "%d. %s", i + 1, Localize(song_unknown, nullptr, TheLocale)
+                );
+                arr = new DataArray(2);
+                arr->Node(0) = Symbol(str);
+                arr->Node(1) = Symbol(" ");
+                prov->SetLabels(i, arr);
+                arr->Release();
+            }
+        }
+    }
+}
+
+void MetaPerformer::OnReviewMovePassed(
+    int playerIndex, HamMove *move, int ratingIndex, float detectFrac
+) {
+    MILO_ASSERT_RANGE(playerIndex, 0, 2, 0x455);
+    HamPlayerData *pPlayerData = TheGameData->Player(playerIndex);
+    MILO_ASSERT(pPlayerData, 0x458);
+    if (mMoveScores[playerIndex].size() == 0) {
+        MoveDir *moves = TheHamDirector->GetWorld()->Find<MoveDir>("moves");
+        std::vector<HamMoveKey> keys;
+        TheHamDirector->MoveKeys(pPlayerData->GetDifficulty(), moves, keys);
+        mMoveScores[playerIndex].reserve(keys.size());
+    }
+    HamMoveScore score;
+    score.detectFrac = detectFrac;
+    score.move = move;
+    score.ratingIdx = ratingIndex;
+    score.slowMo = false;
+    mMoveScores[playerIndex].push_back(score);
+    static Symbol move_awesome("move_awesome");
+    bool awesome = RatingStateToIndex(move_awesome) >= ratingIndex;
+    int i90, i80;
+    GetCurrentRecapMove(i90, i80);
+    if (i90 >= 0 && i80 >= 0) {
+        unk74[i90][i80] = awesome;
+    }
+}
+
+const std::vector<PracticeStep> &MetaPerformer::GetPracticeSteps() const {
+    MoveDir *moves = TheHamDirector->GetWorld()->Find<MoveDir>("moves");
+    MILO_ASSERT(moves, 0x7AF);
+    PracticeSection *section = nullptr;
+    for (ObjDirItr<PracticeSection> it(moves, true); it != nullptr; ++it) {
+        if (it->GetDifficulty()
+            == TheGameData->Player(TheHamProvider->Property("ui_nav_player")->Int())
+                   ->GetDifficulty()) {
+            section = it;
+            break;
+        }
+    }
+    MILO_ASSERT(section, 0x7BB);
+    return section->Steps();
+}
+
+void MetaPerformer::OnRecallMovePassed(int playerIndex, HamMove *move) {
+    MILO_ASSERT_RANGE(playerIndex, 0, 2, 0x443);
+    auto &scores = mMoveScores[playerIndex];
+    auto found = scores.end();
+    FOREACH (it, scores) {
+        if (it->move == move) {
+            found = it;
+        }
+    }
+    if (found != scores.end()) {
+        scores.erase(found);
+    }
+}
+
+void MetaPerformer::UpdateSongFromPlaylist() {
+    int infinite = TheGameMode->Infinite();
+    bool infiniteParty = TheHamProvider->Property("is_in_infinite_party_mode")->Int();
+    Symbol song;
+    if ((!infinite && !infiniteParty) || TheGameMode->InMode("campaign")) {
+        MILO_ASSERT(mPlaylist, 0x6F5);
+        int songID = mPlaylist->GetSong(mPlaylistIndex);
+        song = TheHamSongMgr.GetShortNameFromSongID(songID);
+
+    } else {
+        song = TheHamSongMgr.GetRandomSong();
+        int songID = TheHamSongMgr.GetSongIDFromShortName(song);
+    }
+    SelectSong(song, mPlaylistIndex);
+}
+
+void MetaPerformer::SaveDanceBattleScores(Symbol song) {
+    static Symbol score("score");
+    int i6 = 0;
+    for (int i = 0; i < 2; i++) {
+        HamPlayerData *pPlayerData = TheGameData->Player(i);
+        MILO_ASSERT(pPlayerData, 0x203);
+        Hmx::Object *pPlayerProvider = pPlayerData->Provider();
+        MILO_ASSERT(pPlayerProvider, 0x205);
+        const DataNode *pScoreNode = pPlayerProvider->Property(score);
+        MILO_ASSERT(pScoreNode, 0x207);
+        int scoreInt = pScoreNode->Int();
+        if (scoreInt > 0) {
+            i6++;
+        }
+    }
+    if (TheGameMode->IsGameplayModeDanceBattle() && i6 >= 2) {
+        int winner = DetermineDanceBattleWinner();
+        static Symbol p1("p1");
+        static Symbol p2("p2");
+        int songID = mSongMgr.GetSongIDFromShortName(song);
+        for (int i = 0; i < 2; i++) {
+            HamPlayerData *pPlayerData = TheGameData->Player(i);
+            MILO_ASSERT(pPlayerData, 0x21E);
+            Hmx::Object *pPlayerProvider = pPlayerData->Provider();
+            MILO_ASSERT(pPlayerProvider, 0x220);
+            int padnum = pPlayerData->PadNum();
+            HamProfile *profile = TheProfileMgr.GetProfileFromPad(padnum);
+            if (profile && !TheAccomplishmentMgr->Unk30(padnum)) {
+                SongStatusMgr *songStatusMgr = profile->GetSongStatusMgr();
+                MILO_ASSERT(songStatusMgr, 0x229);
+                static Symbol score("score");
+                int scoreValue = pPlayerProvider->Property(score)->Int();
+                if (scoreValue > 0) {
+                    profile->UpdateBattleScore(
+                        songID, pPlayerData, scoreValue, i == winner
+                    );
+                }
+            }
+        }
+    }
+}
+
+void MetaPerformer::CalcCharacters(
+    const HamSongMetadata *data,
+    bool b,
+    PlayerFlag flags,
+    HamPlayerData *&primaryPlayer,
+    Symbol &primaryCrew,
+    Symbol &primaryChar,
+    Symbol &primaryOutfit,
+    HamPlayerData *&secondaryPlayer,
+    Symbol &secondaryCrew,
+    Symbol &secondaryChar,
+    Symbol &secondaryOutfit
+) {
+    HamPlayerData *pPlayer1Data = TheGameData->Player(0);
+    HamPlayerData *pPlayer2Data = TheGameData->Player(1);
+    Symbol player1Char = pPlayer1Data->Unk48();
+    Symbol player2Char = pPlayer2Data->Unk48();
+    if (flags == 0 || flags == 2) {
+        player1Char = gNullStr;
+    }
+    if (flags == 1 || flags == 2) {
+        player2Char = gNullStr;
+    }
+    bool hasP1Char = player1Char != gNullStr;
+    bool hasP2Char = player2Char != gNullStr;
+    bool conflict = CharConflict(player1Char, player2Char);
+    if (hasP1Char && hasP2Char && !conflict) {
+        primaryPlayer = pPlayer1Data;
+        secondaryPlayer = pPlayer2Data;
+        primaryCrew = GetCrewForCharacter(player1Char);
+        primaryChar = player1Char;
+        primaryOutfit = GetUnlockedOutfit(pPlayer1Data->GetPreferredOutfit());
+        secondaryCrew = GetCrewForCharacter(player2Char);
+        secondaryChar = player2Char;
+        secondaryOutfit = GetUnlockedOutfit(pPlayer2Data->GetPreferredOutfit());
+    } else {
+        int skeleton1 = pPlayer1Data->GetSkeletonTrackingID();
+        int skeleton2 = pPlayer2Data->GetSkeletonTrackingID();
+
+        Symbol primaryPlayerChar;
+        Symbol secondaryPlayerChar;
+
+        bool skel1Check = skeleton1 > 0;
+        bool skel2Check = skeleton2 > 0;
+
+        if (skel1Check && !skel2Check) {
+            primaryPlayer = pPlayer1Data;
+            primaryPlayerChar = player1Char;
+            secondaryPlayer = pPlayer2Data;
+            secondaryPlayerChar = player2Char;
+        } else if (skel2Check && !skel1Check) {
+            primaryPlayer = pPlayer2Data;
+            primaryPlayerChar = player2Char;
+            secondaryPlayer = pPlayer1Data;
+            secondaryPlayerChar = player1Char;
+        } else if (hasP1Char && !hasP2Char) {
+            primaryPlayer = pPlayer1Data;
+            primaryPlayerChar = player1Char;
+            secondaryPlayer = pPlayer2Data;
+            secondaryPlayerChar = player2Char;
+        } else if (hasP2Char && !hasP1Char) {
+            primaryPlayer = pPlayer2Data;
+            primaryPlayerChar = player2Char;
+            secondaryPlayer = pPlayer1Data;
+            secondaryPlayerChar = player1Char;
+        } else if (pPlayer1Data->TrackingAgeSeconds()
+                   >= pPlayer2Data->TrackingAgeSeconds()) {
+            primaryPlayer = pPlayer1Data;
+            primaryPlayerChar = player1Char;
+            secondaryPlayer = pPlayer2Data;
+            secondaryPlayerChar = player2Char;
+        } else {
+            primaryPlayer = pPlayer2Data;
+            primaryPlayerChar = player2Char;
+            secondaryPlayer = pPlayer1Data;
+            secondaryPlayerChar = player1Char;
+        }
+
+        CalcPrimarySongCharacter(data, primaryCrew, primaryChar, primaryOutfit);
+
+        if (secondaryPlayerChar != gNullStr || primaryPlayerChar != gNullStr) {
+            if (secondaryPlayerChar == gNullStr) {
+                if (!CharConflict(primaryPlayerChar, primaryChar)) {
+                    secondaryChar = primaryPlayerChar;
+                    secondaryOutfit =
+                        GetUnlockedOutfit(secondaryPlayer->GetPreferredOutfit());
+                    secondaryCrew = GetCrewForCharacter(primaryPlayerChar);
+                    return;
+                }
+            } else {
+                Symbol tempCrew = GetCrewForCharacter(primaryPlayerChar);
+                Symbol tempOutfit =
+                    GetUnlockedOutfit(primaryPlayer->GetPreferredOutfit());
+                if (!CharConflict(primaryChar, primaryPlayerChar)) {
+                    secondaryChar = primaryChar;
+                    secondaryOutfit = primaryOutfit;
+                    secondaryCrew = primaryCrew;
+                    primaryCrew = tempCrew;
+                    primaryChar = primaryPlayerChar;
+                    primaryOutfit = tempOutfit;
+                    return;
+                }
+                primaryCrew = tempCrew;
+                primaryChar = primaryPlayerChar;
+                primaryOutfit = tempOutfit;
+            }
+        }
+        CalcSecondarySongCharacter(
+            data, b, primaryOutfit, secondaryCrew, secondaryChar, secondaryOutfit
+        );
+    }
+}
+
+void MetaPerformer::HandleGameplayEnded(const EndGameResult &egr) {
+    for (int i = 0; i < 2; i++) {
+        HamPlayerData *pPlayer = TheGameData->Player(i);
+        MILO_ASSERT(pPlayer, 0x377);
+        int padnum = pPlayer->PadNum();
+        HamProfile *pProfileFromPad = TheProfileMgr.GetProfileFromPad(padnum);
+        Hmx::Object *pPlayerProvider = pPlayer->Provider();
+        MILO_ASSERT(pPlayerProvider, 0x37e);
+
+        static Symbol score("score");
+        int scoreInt = pPlayerProvider->Property(score)->Int();
+        if (TheGameMode->Infinite() != 0 && 0 < scoreInt) {
+            static Symbol cumulative_score("cumulative_score");
+            pPlayerProvider->SetProperty(
+                cumulative_score,
+                scoreInt + pPlayerProvider->Property(cumulative_score)->Int()
+            );
+        }
+
+        if (pProfileFromPad && pProfileFromPad->HasValidSaveData()
+            && !TheAccomplishmentMgr->Unk30(padnum)) {
+            if (0 < scoreInt) {
+                pProfileFromPad->GetMetagameStats()->HandleGameplayEnded(
+                    pProfileFromPad, pPlayer, egr
+                );
+            }
+            bool inmode = TheGameMode->InMode("campaign");
+            if (inmode && egr == kEndGameResult_3) {
+                pProfileFromPad->DiscardRecentCampaignProgress();
+            }
+        }
+    }
+    TheRockCentral.ManageJob(new GameEndedDataPointJob(this, egr));
+}
+
+void MetaPerformer::SaveAndUploadScores(Symbol song, int totalScore, int stars) {
+    static Symbol score("score");
+    int count = 0;
+    for (int i = 0; i < 2; i++) {
+        HamPlayerData *pPlayerData = TheGameData->Player(i);
+        MILO_ASSERT(pPlayerData, 0x189);
+        Hmx::Object *pPlayerProvider = pPlayerData->Provider();
+        MILO_ASSERT(pPlayerProvider, 0x18c);
+        const DataNode *pScoreNode = pPlayerProvider->Property(score);
+        MILO_ASSERT(pScoreNode, 0x18f);
+        if (0 < pScoreNode->Int()) {
+            count++;
+        }
+    }
+    if (0 < count) {
+        if (count <= 1) {
+            totalScore = 0;
+        }
+        static Symbol p1("p1");
+        static Symbol p2("p2");
+        static Symbol alert_highscore_solo("alert_highscore_solo");
+        static Symbol alert_highscore_coop("alert_highscore_coop");
+
+        HamProfile *pCriticalProfile = TheProfileMgr.CriticalProfile();
+        Difficulty easiestDiff = EasiestDifficulty();
+        int songID = mSongMgr.GetSongIDFromShortName(song);
+
+        for (int i = 0; i < 2; i++) {
+            HamPlayerData *pPlayerData = TheGameData->Player(i);
+            MILO_ASSERT(pPlayerData, 0x1ad);
+            Hmx::Object *pPlayerProvider = pPlayerData->Provider();
+            MILO_ASSERT(pPlayerProvider, 0x1af);
+
+            Symbol name = (i == 0) ? p1 : p2;
+            Difficulty diff = pPlayerData->GetDifficulty();
+            if (IsHarderDifficulty(diff, easiestDiff)) {
+                easiestDiff = diff;
+            }
+            int padnum = pPlayerData->PadNum();
+            HamProfile *pProfile = TheProfileMgr.GetProfileFromPad(padnum);
+            if (pProfile && !TheAccomplishmentMgr->Unk30(padnum)) {
+                if (pProfile == pCriticalProfile) {
+                    pCriticalProfile = nullptr;
+                }
+
+                SongStatusMgr *songStatusMgr = pProfile->GetSongStatusMgr();
+                MILO_ASSERT(songStatusMgr, 0x1c1);
+
+                static Symbol score("score");
+                const DataNode *pScoreNode = pPlayerProvider->Property(score);
+                int playerScore = pScoreNode->Int();
+                if (playerScore != 0 || totalScore != 0) {
+                    int coopScore = songStatusMgr->GetCoopScore(songID);
+                    bool noFlashcards;
+                    int baseScore = songStatusMgr->GetScore(songID, noFlashcards);
+
+                    if (playerScore > baseScore) {
+                        ThePassiveMessenger->TriggerGenericMsg(
+                            alert_highscore_solo,
+                            name,
+                            kPassiveMessageGeneral,
+                            gNullStr,
+                            -1
+                        );
+                    }
+
+                    if (totalScore > coopScore) {
+                        ThePassiveMessenger->TriggerGenericMsg(
+                            alert_highscore_coop,
+                            name,
+                            kPassiveMessageGeneral,
+                            gNullStr,
+                            -1
+                        );
+                    }
+
+                    static Symbol expert("expert");
+                    bool isExpertUnlocked =
+                        pProfile->IsDifficultyUnlockedForProfile(song, expert);
+
+                    static Symbol move_awesome("move_awesome");
+                    int awesomeCount = GetMovesPassedByType(i, move_awesome);
+
+                    static Symbol move_perfect("move_perfect");
+                    int perfectCount = GetMovesPassedByType(i, move_perfect);
+
+                    pProfile->UpdateScore(
+                        songID,
+                        pPlayerData,
+                        diff,
+                        playerScore,
+                        totalScore,
+                        stars,
+                        awesomeCount,
+                        perfectCount,
+                        GetMovesPassed(i),
+                        0,
+                        false,
+                        mCompletedSongWithNoFlashcards
+                    );
+
+                    if (!isExpertUnlocked
+                        && pProfile->IsDifficultyUnlockedForProfile(song, expert)) {
+                        static Symbol alert_unlockedhard("alert_unlockedhard");
+                        ThePassiveMessenger->TriggerGenericMsg(
+                            alert_unlockedhard, name, kPassiveMessageUnlock, gNullStr, -1
+                        );
+                    }
+                }
+            }
+        }
+        if (TheGameMode->InMode("campaign") && pCriticalProfile) {
+            pCriticalProfile->UpdateScore(
+                songID,
+                nullptr,
+                easiestDiff,
+                0,
+                totalScore,
+                stars,
+                0,
+                0,
+                0,
+                0,
+                false,
+                mCompletedSongWithNoFlashcards
+            );
+        }
+    }
+}
+
+void MetaPerformer::CalculatePracticeResults() {
+    mNumLearnMovesPassed = 0;
+    mNumLearnMovesFastLaned = 0;
+    mNumLearnMovesTotal = 0;
+    mPracticeLearnScore = 0;
+    mNumReviewMovesPassed = 0;
+    mNumReviewMovesTotal = 0;
+    mPracticeReviewScore = 0;
+    MoveDir *moves = TheHamDirector->GetWorld()->Find<MoveDir>("moves");
+    MILO_ASSERT(moves, 0x4a4);
+    PracticeSection *section = nullptr;
+    for (ObjDirItr<PracticeSection> it(moves, true); it != nullptr; ++it) {
+        int difficulty = it->GetDifficulty();
+        HamPlayerData *pPlayer =
+            TheGameData->Player(TheHamProvider->Property("ui_nav_player")->Int());
+        if (difficulty == pPlayer->GetDifficulty()) {
+            section = it;
+            break;
+        }
+    }
+    MILO_ASSERT(section, 0x4b0);
+    static Symbol learn("learn");
+    auto &steps = section->Steps();
+    FOREACH (it, steps) {
+        if (it->mType == learn) {
+            mNumLearnMovesTotal++;
+        }
+    }
+    mNumLearnMovesPassed = mSkillsAwards->AwardCount((SkillsAward)2);
+    mNumLearnMovesFastLaned = mSkillsAwards->AwardCount((SkillsAward)3);
+    for (int i = 0; i < unk74.size(); i++) {
+        for (int j = 0; j < unk74[i].size(); j++) {
+            if (unk74[i][j]) {
+                mNumReviewMovesPassed++;
+            }
+            mNumReviewMovesTotal++;
+        }
+    }
+
+    if (mNumLearnMovesTotal > 0) {
+        mPracticeLearnScore =
+            (mNumLearnMovesFastLaned + mNumLearnMovesPassed) * 100 / mNumLearnMovesTotal;
+    }
+    if (mNumReviewMovesTotal > 0) {
+        mPracticeReviewScore = mNumReviewMovesPassed * 100 / mNumReviewMovesTotal;
+    }
+    mPracticeOverallScore = (mPracticeLearnScore + mPracticeReviewScore) / 2;
+}
+
+void MetaPerformer::SetDefaultSongCharacter(int playerIdx) {
+    Symbol primaryCrew;
+    Symbol primaryChar;
+    Symbol primaryOutfit;
+    HamPlayerData *primaryPlayer;
+    Symbol secondaryCrew;
+    Symbol secondaryChar;
+    Symbol secondaryOutfit;
+    HamPlayerData *pSecondary;
+
+    const HamSongMetadata *pSongData =
+        TheHamSongMgr.Data(TheHamSongMgr.GetSongIDFromShortName(TheGameData->GetSong()));
+    MILO_ASSERT(pSongData, 0x592);
+    bool modeCheck =
+        TheGameMode->InMode("dance_battle") || TheGameMode->InMode("strike_a_pose");
+    CalcCharacters(
+        pSongData,
+        modeCheck,
+        (PlayerFlag)playerIdx,
+        primaryPlayer,
+        primaryCrew,
+        primaryChar,
+        primaryOutfit,
+        pSecondary,
+        secondaryCrew,
+        secondaryChar,
+        secondaryOutfit
+    );
+    HamPlayerData *pPlayerData = TheGameData->Player(playerIdx);
+    if (pPlayerData == primaryPlayer) {
+        primaryPlayer->SetCharacter(primaryChar);
+        primaryPlayer->SetOutfit(primaryOutfit);
+        primaryPlayer->SetCrew(primaryCrew);
+        if (primaryPlayer->Char() == pSecondary->Char()) {
+            pSecondary->SetCharacter(secondaryChar);
+            pSecondary->SetOutfit(secondaryOutfit);
+            pSecondary->SetCrew(secondaryCrew);
+        }
+    } else {
+        MILO_ASSERT(pPlayerData == pSecondary, 0x5a8);
+        pSecondary->SetCharacter(secondaryChar);
+        pSecondary->SetOutfit(secondaryOutfit);
+        pSecondary->SetCrew(secondaryCrew);
+        if (primaryPlayer->Char() == pSecondary->Char()) {
+            primaryPlayer->SetCharacter(primaryChar);
+            primaryPlayer->SetOutfit(primaryOutfit);
+            primaryPlayer->SetCrew(primaryCrew);
+        }
+    }
+}
+
+bool MetaPerformer::CheckRecommendedPracticeMove(String moveName, int player) const {
+    MILO_ASSERT(player>=0 && player < MULTIPLAYER_SLOTS, 0x4eb);
+    int val1 = 0;
+    int val2 = 0;
+    bool check = false;
+    for (int i = 0; i < mMoveScores[player].size(); i++) {
+        int rating = mMoveScores[player][i].ratingIdx;
+        if (moveName == mMoveScores[player][i].move->DisplayName()) {
+            val1++;
+            check = false;
+            if (2 < rating) {
+                val2++;
+                check = true;
+            }
+        }
+    }
+    if (!check && (float)val2 / (float)val1 <= 0.49f) {
+        return false;
+    } else {
+        return true;
+    }
+}
+
+void MetaPerformer::GetCurrentRecapMove(int &i1, int &i2) const {
+    int x = 0;
+    static Symbol review("review");
+    auto &steps = GetPracticeSteps();
+    FOREACH (it, steps) {
+        if (it->mType == review) {
+            std::vector<bool> vec;
+            int start = Round(TheHamDirector->BeatFromTag(it->mStart));
+            int end = Round(TheHamDirector->BeatFromTag(it->mEnd));
+            int beat = Round(TheTaskMgr.Beat());
+            if (start <= beat && end >= beat) {
+                i1 = x;
+                i2 = ((beat - start) / 4) - 1;
+                return;
+            }
+            x++;
+        }
+    }
+    MILO_NOTIFY("Couldn\'t find a recap move at beat %f", TheTaskMgr.Beat());
+    i1 = -1;
+    i2 = -1;
+}
+
 #pragma endregion
 #pragma region MetaPerformerHook
 
+MetaPerformerHook::MetaPerformerHook(const HamSongMgr &mgr)
+    : mQuickplayPerformer(new QuickplayPerformer(mgr)),
+      mCampaignPerformer(new CampaignPerformer(mgr)) {
+    SetName("meta_performer", ObjectDir::Main());
+}
+
 MetaPerformerHook::~MetaPerformerHook() { delete mQuickplayPerformer; }
+
+BEGIN_HANDLERS(MetaPerformerHook)
+    HANDLE_EXPR(current, Current())
+    HANDLE_MEMBER_PTR(Current())
+    HANDLE_SUPERCLASS(Hmx::Object)
+END_HANDLERS
+
+MetaPerformer *MetaPerformerHook::Current() {
+    if (TheGameMode->InMode("campaign")) {
+        return mCampaignPerformer;
+    } else {
+        return mQuickplayPerformer;
+    }
+}

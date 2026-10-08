@@ -1,19 +1,64 @@
 #include "rndobj/Wind.h"
-
+#include "math/Rand.h"
+#include "math/Utl.h"
 #include "obj/Object.h"
 #include "utl/BinStream.h"
 
 float gUnitsPerMeter = 39.370079f;
+static Rand *sRand = nullptr;
+static float sWhiteField[0x400] = { 0 };
+static float sWindField[0x401] = { 0 };
+
+Vector3 sOffset(0, 0.3384f, 0.66843998f);
+
+void SetWind(int ai, int bi, float av, float bv, float scale) {
+    sWindField[ai] = av;
+    while (bi - ai >= 2) {
+        int mi = (ai + bi) / 2;
+        float mv = (av + bv) / 2;
+
+        mv += sRand->Gaussian() * scale;
+        scale /= sqrtf(2.0);
+
+        SetWind(ai, mi, av, mv, scale);
+        sWindField[mi] = mv;
+        ai = mi;
+        av = mv;
+    }
+}
 
 RndWind::RndWind()
-    : mPrevailing(0, 0, 0), mRandom(0, 0, 0), mTrans(this), mWindOwner(this) {
+    : mPrevailing(0, 0, 0), mRandom(0, 0, 0), mTimeLoop(100),
+      mSpaceLoop(gUnitsPerMeter * 10), mTrans(this), mAboutZ(false),
+      mMaxSpeed(kHugeFloat), mMinSpeed(0), mWindOwner(this, this) {
     SyncLoops();
 }
 
 RndWind::~RndWind() {}
 
+bool RndWind::Replace(ObjRef *from, Hmx::Object *to) {
+    if (&mWindOwner == from) {
+        if (mWindOwner == this) {
+            mWindOwner = this;
+        } else {
+            RndWind *windTo = dynamic_cast<RndWind *>(to);
+            if (windTo) {
+                mWindOwner = windTo->mWindOwner.Ptr();
+            } else {
+                mWindOwner = this;
+            }
+        }
+
+        return true;
+    } else {
+        return Hmx::Object::Replace(from, to);
+    }
+}
+
 BEGIN_HANDLERS(RndWind)
     HANDLE_SUPERCLASS(Hmx::Object)
+    HANDLE_ACTION(set_defaults, SetDefaults())
+    HANDLE_ACTION(set_zero, Zero())
 END_HANDLERS
 
 BEGIN_PROPSYNCS(RndWind)
@@ -47,11 +92,11 @@ BEGIN_COPYS(RndWind)
     COPY_SUPERCLASS(Hmx::Object)
     CREATE_COPY(RndWind)
     BEGIN_COPYING_MEMBERS
-        if (ty == kCopyShallow)
-            mWindOwner = c->mWindOwner;
-        else {
+        if (ty == kCopyShallow) {
+            mWindOwner = c->mWindOwner.Ptr();
+        } else {
             mWindOwner = this;
-            COPY_MEMBER(mWindOwner)
+            mWindOwner = c->mWindOwner.Ptr();
             COPY_MEMBER(mPrevailing)
             COPY_MEMBER(mRandom)
             COPY_MEMBER(mTimeLoop)
@@ -65,6 +110,31 @@ BEGIN_COPYS(RndWind)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(4, 0)
+
+BEGIN_LOADS(RndWind)
+    LOAD_REVS(bs)
+    ASSERT_REVS(4, 0)
+    LOAD_SUPERCLASS(RndHighlightable)
+    d >> mPrevailing;
+    d >> mRandom;
+    d >> mTimeLoop;
+    d >> mSpaceLoop;
+    if (d.rev > 1) {
+        d >> mWindOwner;
+        SetWindOwner(mWindOwner);
+    }
+    if (d.rev > 2) {
+        d >> mTrans;
+        d >> mAboutZ;
+    }
+    if (d.rev > 3) {
+        d >> mMinSpeed;
+        d >> mMaxSpeed;
+    }
+    SyncLoops();
+END_LOADS
+
 void RndWind::SyncLoops() {
     float f1 = (mTimeLoop == 0.0f) ? 0.0f : 1.0f / mTimeLoop;
     mTimeRate.Set(f1, f1 * 0.773437f, f1 * 1.38484f);
@@ -72,4 +142,76 @@ void RndWind::SyncLoops() {
     mSpaceRate.Set(f1, f1 * 0.773437f, f1 * 1.38484f);
 }
 
+void RndWind::Zero() {
+    mRandom.Set(0.0f, 0.0f, 0.0f);
+    mPrevailing.Set(0.0f, 0.0f, 0.0f);
+}
+
+void RndWind::SetDefaults() {
+    mPrevailing.Set(0.0f, 0.0f, 0.0f);
+    mRandom.Set(17.0f, 17.0f, 0.0f);
+    mTimeLoop = 100.0f;
+    mSpaceLoop = gUnitsPerMeter * 10;
+}
+
 void RndWind::SetWindOwner(RndWind *wind) { mWindOwner = wind ? wind : this; }
+
+void RndWind::Init() {
+    REGISTER_OBJ_FACTORY(RndWind);
+    sRand = new Rand(0x7FEF8A);
+    SetWind(0, 0x400, 0, 0, 0.5f);
+    sWindField[0x400] = sWindField[0];
+    int i = 0;
+    do {
+        sWhiteField[i] = RandomFloat(0, 1);
+        i++;
+    } while (i < 0x400);
+    RELEASE(sRand);
+}
+
+float RndWind::GetWind(float f1) {
+    float mod = Mod(f1, 1.0f);
+    int idx = mod * 1024;
+    return (sWindField[idx + 1] - sWindField[idx]) * (mod * 1024 - (float)idx)
+        + sWindField[idx];
+}
+
+float RndWind::GetWhiteNoise(float f1) {
+    float mod = Mod(f1, 1023.0f);
+    int idx = mod;
+    return (sWhiteField[idx + 1] - sWhiteField[idx]) * (mod - (float)idx)
+        + sWhiteField[idx];
+}
+
+void RndWind::SelfGetWind(const Vector3 &vin, float f2, Vector3 &vout) {
+    vout.x = GetWind(mTimeRate.x * f2 + mSpaceRate.x * vin.x + sOffset.x) * mRandom.x
+        + mPrevailing.x;
+    vout.y = GetWind(mTimeRate.y * f2 + mSpaceRate.y * vin.y + sOffset.y) * mRandom.y
+        + mPrevailing.y;
+    vout.z = GetWind(mTimeRate.z * f2 + mSpaceRate.z * vin.z + sOffset.z) * mRandom.z
+        + mPrevailing.z;
+    if (mTrans) {
+        const Transform &xfm = mTrans->WorldXfm();
+        if (mAboutZ) {
+            Vector3 worldV = xfm.v;
+            Vector3 diff;
+            Subtract(vin, xfm.v, diff);
+            ScaleAddEq(diff, worldV, -Dot(diff, worldV));
+            Vector3 v50;
+            Cross(worldV, diff, v50);
+            Normalize(v50, v50);
+            Vector3 tmp;
+            Cross(v50, worldV, tmp);
+            vout.x = vout.x * tmp.x + vout.y * v50.x + vout.z * worldV.x;
+            vout.y = vout.x * tmp.y + vout.y * v50.y + vout.z * worldV.y;
+            vout.z = vout.x * tmp.z + vout.y * v50.z + vout.z * worldV.z;
+        } else {
+            Multiply(xfm.m, vout, vout);
+        }
+    }
+    float len = Length(vout);
+    if (len > 0 && (len > mMaxSpeed || len < mMinSpeed)) {
+        float scale = mMinSpeed / len;
+        vout *= scale;
+    }
+}

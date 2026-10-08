@@ -1,4 +1,5 @@
 #pragma once
+#include "hamobj/HamNavList.h"
 #include "meta_ham/CharacterProvider.h"
 #include "meta_ham/CrewProvider.h"
 #include "meta_ham/DifficultyProvider.h"
@@ -8,6 +9,7 @@
 #include "obj/Data.h"
 #include "obj/Object.h"
 #include "os/JoypadMsgs.h"
+#include "ui/UIComponent.h"
 #include "ui/UIPicture.h"
 #include "utl/Symbol.h"
 
@@ -23,6 +25,8 @@ public:
     virtual void FinishLoad();
     virtual bool HasNavList() const;
     virtual bool Exiting() const;
+
+    NEW_OBJ(MultiUserGesturePanel)
 
     MultiUserGesturePanel();
     void UpdateProviders();
@@ -40,7 +44,7 @@ public:
     int GetCrewIndex(int) const;
     int GetVenueIndex(int, Symbol) const;
     void UpdateCharPic(UIPicture *, int, int, Symbol, Symbol);
-    void UpdateCrewPic(UIPicture *, int, int, class Symbol);
+    void UpdateCrewPic(UIPicture *, int, int, Symbol);
     void SetDefaultCharacter(int);
     void SetRandomOutfit(int);
     Symbol GetCharacter(int, int);
@@ -57,10 +61,8 @@ public:
     void SetCrew(Symbol, int);
 
 protected:
-    u32 unk54;
-    u32 unk58;
-    u32 unk5c;
-    u32 unk60;
+    HamNavList *unk54[2];
+    HamNavList *unk5c[2];
     CharacterProvider mCharacterProviders[2]; // 0x64
     CrewProvider mCrewProviders[2]; // 0xec
     DifficultyProvider mDifficultyProviders[2]; // 0x174

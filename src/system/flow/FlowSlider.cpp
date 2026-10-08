@@ -1,4 +1,5 @@
 #include "flow/FlowSlider.h"
+#include "FlowValueCase.h"
 #include "flow/FlowManager.h"
 #include "flow/FlowNode.h"
 #include "flow/PropertyEventListener.h"
@@ -6,6 +7,8 @@
 #include "math/Easing.h"
 #include "obj/Object.h"
 #include "os/Debug.h"
+
+bool SliderChildSort(FlowNode *, FlowNode *);
 
 FlowSlider::FlowSlider()
     : PropertyEventListener(this), mPersistent(1), mAlwaysRun(0), mValue(0),
@@ -51,22 +54,25 @@ BEGIN_COPYS(FlowSlider)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(0, 0)
+
 BEGIN_LOADS(FlowSlider)
     LOAD_REVS(bs)
     ASSERT_REVS(0, 0)
     LOAD_SUPERCLASS(FlowNode)
     d >> mPersistent;
     d >> mAlwaysRun;
-    bs >> mValue;
-    bs >> (int &)mEaseType;
-    bs >> mEasePower;
-    bs >> (int &)mEaseFunc;
+    d >> mValue;
+    d >> (int &)mEaseType;
+    d >> mEasePower;
+    GenerateAutoNames(this, true);
+    mChildNodes.sort(SliderChildSort);
     UpdateEase();
 END_LOADS
 
 bool FlowSlider::Activate() {
     FLOW_LOG("Activate\n");
-    unk58 = false;
+    mRequestingStop = false;
     if (IsRunning()) {
         MILO_NOTIFY(
             "FlowSlider re-entrance error, activated when already running, deactivating and aborting, check your logic"
@@ -99,10 +105,10 @@ void FlowSlider::ChildFinished(FlowNode *n) {
     FLOW_LOG("Child Finished of class:%s\n", n->ClassName());
     mRunningNodes.remove(n);
     if (mRunningNodes.empty()) {
-        if (mEventsRegistered && unk58) {
+        if (mEventsRegistered && mRequestingStop) {
             UnregisterEvents(this);
             mEventsRegistered = false;
-            unk58 = false;
+            mRequestingStop = false;
         } else if (mEventsRegistered) {
             return;
         }
@@ -131,11 +137,7 @@ void FlowSlider::UpdateIntensity() {
     UpdateActivations();
 }
 
-__declspec(noinline) void FlowSlider::UpdateEase() {
-    EaseType e = mEaseType;
-    MILO_ASSERT(e >= kEaseLinear && e <= kEaseQuarterHalfStairstep, 0x16b);
-    mEaseFunc = GetEaseFunction(e);
-}
+void FlowSlider::UpdateEase() { mEaseFunc = GetEaseFunctionForcedInline(mEaseType); }
 
 void FlowSlider::ReActivate() {
     Timer timer;

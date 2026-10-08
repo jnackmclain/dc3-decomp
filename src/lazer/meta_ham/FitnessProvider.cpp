@@ -9,8 +9,6 @@
 #include "ui/UIListProvider.h"
 #include "utl/Symbol.h"
 
-FitnessProvider::FitnessProvider() {}
-
 FitnessProvider::~FitnessProvider() {}
 
 void FitnessProvider::Text(

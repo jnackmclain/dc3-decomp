@@ -1,5 +1,6 @@
 #pragma once
 #include "math/Mtx.h"
+#include "math/Plane.h"
 #include "math/Sphere.h"
 #include "math/Utl.h"
 #include "math/Vec.h"
@@ -11,11 +12,6 @@
 class Segment {
 public:
     Segment() {}
-
-    Segment &operator=(const Segment &s) {
-        memcpy(this, &s, sizeof(*this));
-        return *this;
-    }
 
     Vector3 start;
     Vector3 end;
@@ -33,6 +29,11 @@ namespace Hmx {
             h = hh;
         }
         float x, y, w, h;
+
+        bool operator==(const Hmx::Rect &r) const {
+            return x == r.x && y == r.y && w == r.w && h == r.h;
+        }
+        bool operator!=(const Hmx::Rect &r) const { return !(*this == r); }
     };
 
     class Polygon {
@@ -42,7 +43,8 @@ namespace Hmx {
         std::vector<Vector2> points;
     };
 
-    struct Ray {
+    class Ray {
+    public:
         Vector2 base, dir;
     };
 }
@@ -59,6 +61,13 @@ inline BinStream &operator>>(BinStream &bs, Hmx::Rect &rect) {
 
 class Triangle {
 public:
+    void Set(const Vector3 &v1, const Vector3 &v2, const Vector3 &v3) {
+        origin = v1;
+        Subtract(v2, v1, frame.x);
+        Subtract(v3, v1, frame.y);
+        Cross(frame.x, frame.y, frame.z);
+    }
+
     Vector3 origin;
     Hmx::Matrix3 frame;
 };
@@ -98,22 +107,23 @@ inline BinStream &operator>>(BinStream &bs, Box &box) {
 
 class BSPNode {
 public:
-    BSPNode() : left(nullptr), right(nullptr) {}
+    BSPNode() : front(nullptr), back(nullptr) {}
     ~BSPNode() {
-        delete left;
-        delete right;
+        delete front;
+        delete back;
     }
 
     POOL_OVERLOAD(BSPNode, 0x216);
 
     Plane plane; // 0x0
-    BSPNode *left; // 0x10 yes they're called front/back but BSP works L/R, not F/B
-    BSPNode *right; // 0x14
+    BSPNode *front; // 0x10
+    BSPNode *back; // 0x14
 };
 
 class BSPFace {
 public:
     void Set(const Vector3 &, const Vector3 &, const Vector3 &);
+    void Update();
 
     Hmx::Polygon p; // 0x0
     Transform t; // 0xc
@@ -141,8 +151,17 @@ inline void Multiply(const Sphere &s, const Transform &t, Sphere &out) {
     out.radius = s.radius * len;
 }
 
+void Intersect(const Hmx::Ray &, const Hmx::Ray &, Vector2 &);
+void Intersect(const Transform &, const Plane &, Hmx::Ray &);
+bool Intersect(const Transform &, const Hmx::Polygon &, const BSPNode *);
+bool Intersect(const Segment &, const Triangle &, bool, float &);
+bool Intersect(const Segment &, const BSPNode *, float &, Plane &);
 bool Intersect(const Segment &, const Sphere &);
 bool Intersect(const Vector3 &, const BSPNode *);
+bool Intersect(const Vector3 &, const Vector3 &, const Triangle &, float &);
+bool Intersect(const Vector3 &, const Vector3 &, const Box &, float &, float &);
+bool Intersect(const Plane &, const Box &);
+bool Intersect(const Triangle &, const Box &);
 
 DataNode SetBSPParams(DataArray *da);
 void GeoInit();
@@ -151,5 +170,7 @@ inline void CalcBoxCenter(Vector3 &center, const Box &box) {
     Add(box.mMin, box.mMax, center);
     Scale(center, 0.5f, center);
 }
+
+void Clip(const Hmx::Polygon &, const Hmx::Ray &, Hmx::Polygon &);
 
 extern float gUnitsPerMeter;

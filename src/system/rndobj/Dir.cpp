@@ -74,18 +74,20 @@ END_LOADS
 
 void RndDir::Export(DataArray *a, bool b2) {
     Hmx::Object::Export(a, b2);
-    for (int i = 0; i < mSubDirs.size(); i++) {
-        if (mSubDirs[i]) {
-            mSubDirs[i]->Export(a, false);
+    for (int i = 0; i < SubDirs().size(); i++) {
+        if (SubDirs()[i]) {
+            SubDirs()[i]->Export(a, false);
         }
     }
 }
+
+INIT_REVS(10, 0)
 
 void RndDir::PreLoad(BinStream &bs) {
     LOAD_REVS(bs)
     ASSERT_REVS(10, 0)
     ObjectDir::PreLoad(bs);
-    d.PushRev(this);
+    bs.PushRev(packRevs(d.altRev, d.rev), this);
 }
 
 void RndDir::PostLoad(BinStream &bs) {
@@ -131,8 +133,8 @@ void RndDir::SyncObjects() {
     mAnims.clear();
     mPolls.clear();
     mEnters.clear();
-    for (int i = 0; i < mSubDirs.size(); i++) {
-        ObjectDir *curSubDir = mSubDirs[i];
+    for (int i = 0; i < SubDirs().size(); i++) {
+        ObjectDir *curSubDir = SubDirs()[i];
         if (curSubDir
             && (curSubDir->InlineSubDirType() == kInlineCached
                 || curSubDir->InlineSubDirType() == kInlineAlways)) {
@@ -161,7 +163,8 @@ void RndDir::SyncObjects() {
         HarvestPollables(pollchildren);
         int numTotalChildren = pollchildren.size();
         int numEnabled = 0;
-        for (; numEnabled < numTotalChildren && pollchildren[numEnabled]->PollEnabled();
+        for (; (unsigned int)numEnabled < (unsigned int)numTotalChildren
+             && pollchildren[numEnabled]->PollEnabled();
              numEnabled++)
             ;
         int numRemaining = numTotalChildren - numEnabled;
@@ -201,7 +204,8 @@ void RndDir::OldLoadProxies(BinStream &bs, int rev) {
         FilePath path;
         String name;
         Transform localXfm;
-        String transName, envName;
+        String transName;
+        String envName;
         bs >> path;
         bs >> name;
         bs >> localXfm;
@@ -290,8 +294,8 @@ bool RndDir::MakeWorldSphere(Sphere &s, bool b) {
         }
         return true;
     } else {
-        if (mSphere.GetRadius()) {
-            Multiply(mSphere, WorldXfm(), s);
+        if (GetSphere().radius) {
+            Multiply(GetSphere(), WorldXfm(), s);
             return true;
         } else
             return false;
@@ -460,7 +464,7 @@ void RndDir::SyncDrawables() {
 }
 
 void RndDir::HarvestPollables(std::vector<RndPollable *> &polls) {
-    MemTemp tmp;
+    MemDoTempAllocations tmp;
     std::list<RndPollable *> pollchildren;
     for (ObjDirItr<RndPollable> it(this, true); it != nullptr; ++it) {
         if (it != this) {

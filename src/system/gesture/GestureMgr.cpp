@@ -18,7 +18,6 @@
 #include "os/System.h"
 #include "rndobj/Dir.h"
 #include "xdk/NUI.h"
-#include "xdk/nuiapi/nuidiagnostics.h"
 
 float GestureMgr::sMaxRecoveryDistance = 0.3;
 float GestureMgr::sMinRecoveryTime = 0.7;
@@ -40,7 +39,7 @@ GestureMgr::GestureMgr()
         mSkeletons[i].Init();
         mFilters[i].Init(sConfidenceLossThreshold, sConfidenceRegainThreshold);
         mIdentityInfos[i].Init();
-        mCallbacks[i] = nullptr;
+        unk30[i] = 0;
     }
     mTrackingAllSkeletons = false;
     SkeletonUpdateHandle handle = SkeletonUpdate::InstanceHandle();
@@ -184,7 +183,9 @@ Skeleton *GestureMgr::GetSkeletonByEnrollmentIndex(int idx) {
     return nullptr;
 }
 
-Skeleton *GestureMgr::GetActiveSkeleton() { return GetSkeletonByTrackingID(unk4260); }
+Skeleton *GestureMgr::GetActiveSkeleton() {
+    return GetSkeletonByTrackingID(mActiveSkelTrackingID);
+}
 
 Skeleton &GestureMgr::GetSkeleton(int idx) {
     MILO_ASSERT((0) <= (idx) && (idx) < (6), 0x99);
@@ -202,14 +203,16 @@ SkeletonQualityFilter &GestureMgr::GetSkeletonQualityFilter(int idx) {
 }
 
 int GestureMgr::GetActiveSkeletonIndex() const {
-    if (unk4260 > 0) {
-        for (int i = 0; i < 6; i++) {
-            if (mSkeletons[i].TrackingID() == unk4260) {
-                return i;
-            }
+    int i;
+    if (mActiveSkelTrackingID > 0) {
+        for (i = 0; i < 6; i++) {
+            if (mSkeletons[i].TrackingID() == mActiveSkelTrackingID)
+                goto done;
         }
     }
-    return -1;
+    i = -1;
+done:
+    return i;
 }
 
 void GestureMgr::SetTrackedSkeletons(int i1, int i2) {
@@ -294,6 +297,17 @@ int GestureMgr::GetPlayerFilteredSkeletonID(int playerIndex, bool b2) {
         }
     }
     return id;
+}
+
+int GestureMgr::GetSecondarySkeletonIndex(bool b) const {
+    for (int i = 0; i < 6; i++) {
+        if (i != GetActiveSkeletonIndex() && GetSkeleton(i).IsTracked()) {
+            if (!b || GetSkeleton(i).IsValid()) {
+                return i;
+            }
+        }
+    }
+    return -1;
 }
 
 DataNode GestureMgr::OnMsg(const KinectHardwareStatusMsg &msg) {

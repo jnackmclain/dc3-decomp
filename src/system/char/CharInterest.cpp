@@ -1,10 +1,13 @@
 #include "char/CharInterest.h"
 #include "CharInterest.h"
+#include "char/CharEyeDartRuleset.h"
+#include "math/Rand.h"
 #include "math/Rot.h"
+#include "math/Utl.h"
 #include "obj/Object.h"
+#include "os/Debug.h"
 #include "rndobj/Graph.h"
 #include "rndobj/Trans.h"
-#include "math/Rand.h"
 
 CharInterest::CharInterest()
     : mMaxViewAngle(20), mPriority(1), mMinLookTime(1), mMaxLookTime(3),
@@ -18,24 +21,26 @@ BEGIN_HANDLERS(CharInterest)
     HANDLE_SUPERCLASS(Hmx::Object)
 END_HANDLERS
 
+INIT_REVS(6, 0)
+
 BEGIN_LOADS(CharInterest)
     LOAD_REVS(bs)
     ASSERT_REVS(6, 0)
     LOAD_SUPERCLASS(Hmx::Object)
     LOAD_SUPERCLASS(RndTransformable)
-    bs >> mMaxViewAngle;
-    bs >> mPriority;
-    bs >> mMinLookTime;
-    bs >> mMaxLookTime;
-    bs >> mRefractoryPeriod;
+    d >> mMaxViewAngle;
+    d >> mPriority;
+    d >> mMinLookTime;
+    d >> mMaxLookTime;
+    d >> mRefractoryPeriod;
     if (d.rev > 1 && d.rev <= 5) {
         ObjPtr<Hmx::Object> obj(this);
-        bs >> obj;
+        d >> obj;
     } else if (d.rev > 5) {
-        bs >> mDartRulesetOverride;
+        d >> mDartRulesetOverride;
     }
     if (d.rev > 2) {
-        bs >> mCategoryFlags;
+        d >> mCategoryFlags;
         if (d.rev == 3) {
             bool x;
             d >> x;
@@ -43,7 +48,7 @@ BEGIN_LOADS(CharInterest)
     }
     if (d.rev > 4) {
         d >> mOverridesMinTargetDist;
-        bs >> mMinTargetDistOverride;
+        d >> mMinTargetDistOverride;
     }
     SyncMaxViewAngle();
 END_LOADS
@@ -125,6 +130,10 @@ void CharInterest::Highlight() {
     }
 }
 
+const CharEyeDartRuleset *CharInterest::GetDartRulesetOverride() const {
+    return mDartRulesetOverride;
+}
+
 bool CharInterest::IsWithinViewCone(const Vector3 &v1, const Vector3 &v2) {
     Vector3 v1c;
     v1c = WorldXfm().v;
@@ -135,4 +144,51 @@ bool CharInterest::IsWithinViewCone(const Vector3 &v1, const Vector3 &v2) {
         return true;
     else
         return false;
+}
+
+bool CharInterest::IsMatchingFilterFlags(int mask) {
+    return (mCategoryFlags & mask) == mCategoryFlags && mCategoryFlags != 0;
+}
+
+float CharInterest::ComputeScore(
+    const Vector3 &v1,
+    const Vector3 &v2,
+    const Vector3 &v3,
+    float f,
+    int filterFlags,
+    bool b
+) {
+    bool b2 = IsMatchingFilterFlags(filterFlags) || (b && mCategoryFlags == 0);
+    if (!b2) {
+        return -1.0f;
+    } else {
+        Vector3 v7c(WorldXfm().v);
+        Vector3 v88;
+        Subtract(v7c, v2, v88);
+        float lensq = (v88.x * v88.x + v88.z * v88.z + v88.y * v88.y);
+        Normalize(v88, v88);
+
+        float dot = Dot(v1, v88);
+        float f1 = 0.0f;
+        if (dot >= mMaxViewAngleCos)
+            f1 = 1.0f;
+
+        float dot2 = Dot(v3, v88);
+        float f2 = 0.0f;
+        if (dot2 >= mMaxViewAngleCos)
+            f2 = 1.0f;
+
+        float f7 = 1.0f - lensq * f;
+        if (f7 < -0.0001f) {
+            MILO_NOTIFY_ONCE(
+                "error scoring interest object: bad normalize factor gave score %f", f7
+            );
+        }
+
+        float f4 = f7 + f2 + f1 - 0.99f;
+        if (f4 >= 0.0f) {
+            f4 += RandomFloat(-0.25f, 0.25f);
+        }
+        return f4 * mPriority;
+    }
 }

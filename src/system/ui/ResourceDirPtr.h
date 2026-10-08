@@ -19,6 +19,10 @@ public:
 protected:
     ResourceDirBase(Hmx::Object *owner) : mOwner(owner) {}
 
+    bool MakeResourcePath(FilePath &path, Symbol className, const char *name) {
+        return MakeResourcePath(path, mOwner->ClassName(), className, name);
+    }
+
     static const char *GetResourcesPath(Symbol, Symbol);
 
     Hmx::Object *mOwner; // 0x0
@@ -29,24 +33,20 @@ class ResourceDirPtr : public ObjDirPtr<T>, public ResourceDirBase {
 public:
     // i have no idea if this is right
     ResourceDirPtr(Hmx::Object *owner) : ResourceDirBase(owner) {}
-    ResourceDirPtr &operator=(const ResourceDirPtr &other) {
-        ObjDirPtr<T>::operator=((T *)other);
-        mOwner = other.mOwner;
-        return *this;
-    }
 
     const char *GetName() const { return FileGetBase(GetFile().c_str()); }
     void SetName(const char *name, bool b2) {
         FilePath path;
-        // maybe classname is accessed via a ResourceDirBase helper?
-        // something going on where the ResourceDirBase is addi'ed
-        if (MakeResourcePath(path, mOwner->ClassName(), T::StaticClassName(), name)) {
+        // it's matched now :EZ:
+        if (MakeResourcePath(path, T::StaticClassName(), name)) {
             LoadFile(path, b2, true, kLoadFront, false);
         } else {
             ObjDirPtr<T>::operator=(nullptr);
         }
     }
 };
+
+// no << overload, will just call ObjDirPtr's
 
 template <class T>
 BinStream &operator>>(BinStream &bs, ResourceDirPtr<T> &ptr) {

@@ -3,6 +3,7 @@
 #include "obj/Data.h"
 #include "obj/Dir.h"
 #include "obj/Object.h"
+#include "rndobj/PropAnim.h"
 #include "synth/Sound.h"
 #include "utl/MemMgr.h"
 #include "utl/TextStream.h"
@@ -14,8 +15,8 @@ public:
     class Generator {
     public:
         struct Weight {
-            unsigned char unk0;
-            unsigned char unk1;
+            unsigned char last; // 0x0
+            unsigned char current; // 0x1
         };
 
         Generator() : mLipSync(nullptr), mLastCount(0) {}
@@ -23,6 +24,9 @@ public:
         void AddWeight(int, float);
         void NextFrame();
         void Finish();
+
+    protected:
+        void RemoveViseme(int);
 
         CharLipSync *mLipSync; // 0x0
         int mLastCount; // 0x4
@@ -32,17 +36,18 @@ public:
     class PlayBack {
     public:
         struct Weight {
-            Weight() : unk0(nullptr) {}
+            Weight() : clip(nullptr), last(0), next(0), current(0) {}
 
-            ObjPtr<CharClip> unk0;
-            float unk14;
-            float unk18;
-            float unk1c;
+            ObjPtr<CharClip> clip; // 0x0
+            float last; // 0x14
+            float next; // 0x18
+            float current; // 0x1c
         };
         PlayBack();
         void Set(CharLipSync *, ObjPtr<ObjectDir>);
         void SetClips(ObjPtr<ObjectDir>);
         void Reset();
+        void Poll(float);
 
         MEM_OVERLOAD(PlayBack, 0x3F)
 
@@ -67,6 +72,7 @@ public:
     OBJ_MEM_OVERLOAD(0x1E)
     NEW_OBJ(CharLipSync)
 
+    /** "duration in seconds" */
     float Duration() { return (float)(mFrames - 1) / 30.0f; }
     void Print(TextStream &);
     void Parse(DataArray *);

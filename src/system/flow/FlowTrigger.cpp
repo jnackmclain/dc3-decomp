@@ -79,6 +79,8 @@ BEGIN_COPYS(FlowTrigger)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(1, 0)
+
 BEGIN_LOADS(FlowTrigger)
     LOAD_REVS(bs)
     ASSERT_REVS(1, 0)
@@ -158,10 +160,6 @@ flow_event:
     timer.Stop();
     TheFlowMgr->AddEventTime(sym, timer.Ms());
     return ret;
-}
-
-FlowTrigger::PropTriggerDefn::PropTriggerDefn(Hmx::Object *owner) : mProvider(owner) {
-    unk20 = 0;
 }
 
 DataNode FlowTrigger::PropTriggerDefn::GetPathDisplay(DataArray *a) {

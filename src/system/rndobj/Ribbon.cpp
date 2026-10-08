@@ -73,6 +73,8 @@ BEGIN_COPYS(RndRibbon)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(0, 0)
+
 BEGIN_LOADS(RndRibbon)
     LOAD_REVS(bs)
     ASSERT_REVS(0, 0)
@@ -119,5 +121,24 @@ void RndRibbon::ExposeMesh() {
     if (!mMesh->Dir()) {
         const char *base = FileGetBase(Name());
         mMesh->SetName(MakeString("%s_mesh.mesh", base), Dir());
+    }
+}
+
+void RndRibbon::ConstructMesh() {
+    if (mNumSegments > 0) {
+        mMesh->Verts().resize(mNumSegments * mNumSides * 2);
+        mMesh->Faces().resize(mNumSegments * mNumSides * 2);
+        for (int i = 0; i < mNumSegments; i++) {
+            int idx = mNumSides * i;
+            int i10 = idx * 2;
+            for (int j = 0; j < mNumSides; j++) {
+                int i6 = idx * -2 + 1 + i10;
+                int mod = i6 % mNumSides;
+                auto *face = &mMesh->Faces(idx);
+                face[0].Set(i10, mod, mod + mNumSides);
+                face[1].Set(mod + mNumSides, i10 + mNumSides, i10);
+            }
+        }
+        mMesh->Sync(0x3F);
     }
 }

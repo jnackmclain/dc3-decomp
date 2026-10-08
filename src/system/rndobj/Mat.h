@@ -59,13 +59,6 @@ public:
         kPropDisplayHidden = 0,
         kPropDisplayReadOnly = 1
     };
-    enum ColorModFlags {
-        kColorModNone = 0,
-        kColorModAlphaPack = 1,
-        kColorModAlphaUnpackModulate = 2,
-        kColorModModulate = 3,
-        kColorModNum = 3
-    };
     virtual ~RndMat();
     OBJ_CLASSNAME(Mat);
     OBJ_SET_TYPE(Mat);
@@ -91,6 +84,10 @@ public:
     }
     void SetBlend(Blend blend) {
         mBlend = blend;
+        mDirty |= 2;
+    }
+    void SetTexGen(TexGen gen) {
+        mTexGen = gen;
         mDirty |= 2;
     }
     void SetAlphaWrite(bool write) {
@@ -123,6 +120,10 @@ public:
         mColor.alpha = a;
         mDirty |= 1;
     }
+    void SetColor(const Hmx::Color &c) {
+        mColor = c;
+        mDirty |= 1;
+    }
     void SetShaderOpts(const MatShaderOptions &opts) { mShaderOptions = opts; }
     void SetTexXfm(const Transform &xfm) {
         mTexXfm = xfm;
@@ -136,6 +137,14 @@ public:
         mCull = cull;
         mDirty |= 2;
     }
+    void SetNormalMap(RndTex *map) {
+        mNormalMap = map;
+        mDirty |= 2;
+    }
+    void SetColorModFlags(ColorModFlags flags) {
+        mFlags = flags;
+        mDirty |= 2;
+    }
     bool Dirty() const { return mDirty; }
 
     void SetColorMod(const Hmx::Color &, int);
@@ -143,6 +152,7 @@ public:
     void SetMetaMat(MetaMaterial *, bool);
     MetaMaterial *CreateMetaMaterial(bool);
     MetaMaterial *GetMetaMaterial() const { return mMetaMaterial; }
+    RndMat *NextPass() const { return dynamic_cast<RndMat *>(mNextPass.Ptr()); }
 
     static void Init();
     static void Terminate();
@@ -169,12 +179,12 @@ protected:
     static ObjectDir *LoadMetaMaterials();
 
     ObjPtr<MetaMaterial> mMetaMaterial; // 0x1f8
-    int unk20c;
+    ColorModFlags mFlags; // 0x20c
     std::vector<Hmx::Color> mColorMod; // 0x210
     MatShaderOptions mShaderOptions; // 0x21c
     bool mToggleDisplayAllProps; // 0x224
     bool unk225;
-    bool unk226;
+    bool unk226; // 0x226 - currently updating properties?
     int mDirty; // 0x228
 };
 

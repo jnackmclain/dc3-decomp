@@ -162,14 +162,19 @@ public:
     void ClearTimelineTasks(TaskUnits);
     void QueueTaskDelete(Task *);
     void ResetTaskTime(float, float);
+    void ResetSecondTaskTime(float);
     void ResetBeatTaskTime(float);
     int CurrentMeasure() const { return mSongPos.GetMeasure(); }
     int CurrentBeat() const { return mSongPos.GetBeat(); }
+    int CurrentTick() const { return mSongPos.GetTick(); }
     float TotalBeat() const { return mSongPos.GetTotalBeat(); }
+    float TotalTick() const { return mSongPos.GetTotalTick(); }
+    void SetAutoSecondsBeats(bool b) { mAutoSecondsBeats = b; }
+    void SetSongPos(const SongPos &pos) { mSongPos = pos; }
+    const SongPos &GetSongPos() const { return mSongPos; }
 
 private:
     DataNode OnTimeTilNext(DataArray *);
-    // const SongPos &GetSongPos() const { return mSongPos; }
 
     TaskTimeline *mTimelines; // 0x2c
     SongPos mSongPos; // 0x30

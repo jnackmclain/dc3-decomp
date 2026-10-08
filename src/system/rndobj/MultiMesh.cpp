@@ -2,6 +2,7 @@
 #include "math/Rot.h"
 #include "obj/Object.h"
 #include "rndobj/Draw.h"
+#include "rndobj/Mat.h"
 #include "rndobj/Mesh.h"
 #include "rndobj/MultiMeshProxy.h"
 #include "rndobj/Utl.h"
@@ -64,6 +65,8 @@ BEGIN_COPYS(RndMultiMesh)
     COPY_MEMBER_FROM(f, mInstances)
     UpdateMesh();
 END_COPYS
+
+INIT_REVS(5, 0)
 
 BEGIN_LOADS(RndMultiMesh)
     LOAD_REVS(bs)
@@ -140,8 +143,8 @@ bool RndMultiMesh::MakeWorldSphere(Sphere &s, bool b) {
         }
         return true;
     } else {
-        if (mSphere.GetRadius()) {
-            s = mSphere;
+        if (GetSphere().radius) {
+            s = GetSphere();
             return true;
         } else
             return false;
@@ -150,7 +153,8 @@ bool RndMultiMesh::MakeWorldSphere(Sphere &s, bool b) {
 
 void RndMultiMesh::Mats(std::list<RndMat *> &mats, bool) {
     if (mMesh && mMesh->Mat()) {
-        mMesh->Mat()->SetShaderOpts(GetDefaultMatShaderOpts(this, mMesh->Mat()));
+        MatShaderOptions opts = GetDefaultMatShaderOpts(this, mMesh->Mat());
+        mMesh->Mat()->SetShaderOpts(opts);
         mats.push_back(mMesh->Mat());
     }
 }
@@ -169,6 +173,45 @@ void RndMultiMesh::DrawShowing() {
 void RndMultiMesh::ListDrawChildren(std::list<RndDrawable *> &draws) {
     if (mMesh)
         draws.push_back(mMesh);
+}
+
+void RndMultiMesh::CollideList(const Segment &seg, std::list<Collision> &colls) {
+    static int stamp = 0;
+    if (TheLoadMgr.EditMode() && CollideSphere(seg)) {
+        stamp++;
+        if (mMesh) {
+            FOREACH (it, mInstances) {
+                mMesh->SetWorldXfm(it->mXfm);
+                float f;
+                Plane pl;
+                if (mMesh->CollideShowing(seg, f, pl)) {
+                    RndMultiMeshProxy *proxy = nullptr;
+                    FOREACH (sit, sProxyPool) {
+                        proxy = sit->first;
+                        if (proxy->MultiMesh() == this && proxy->Index() == it)
+                            break;
+                    }
+                    if (!proxy) {
+                        FOREACH (sit, sProxyPool) {
+                            if (stamp != sit->second) {
+                                proxy = sit->first;
+                                if (!proxy->Children().size()) {
+                                    sit->second = stamp;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (!proxy) {
+                        proxy = Hmx::Object::New<RndMultiMeshProxy>();
+                        sProxyPool.push_front(std::make_pair(proxy, stamp));
+                    }
+                    proxy->SetMultiMesh(this, it);
+                    colls.push_back(Collision(proxy, f, pl));
+                }
+            }
+        }
+    }
 }
 
 void RndMultiMesh::SetMesh(RndMesh *mesh) {

@@ -255,7 +255,7 @@ public:
         stream << lsize;
         for (auto it = map.begin(); it != map.end(); it++) {
             FixedSizeSaveable::SaveSymbolID(stream, it->first);
-            stream << it->second;
+            stream << *it->second;
         }
         if (maxsize > lsize)
             PadStream(stream, (savesize * (maxsize - lsize)));
@@ -268,7 +268,7 @@ public:
         int maxsize,
         int savesize
     ) {
-        if (map.size() != 0) {
+        if (map.size() > 0) {
             MILO_NOTIFY("hash_map is not empty!");
             map.clear();
         }

@@ -1,34 +1,72 @@
 #include "net_ham/RockCentral.h"
+#include "macros.h"
 #include "meta/ConnectionStatusPanel.h"
+#include "meta_ham/Challenges.h"
+#include "meta_ham/ProfileMgr.h"
 #include "net/DingoSvr.h"
+#include "net_ham/DataMinerJobs.h"
+#include "net_ham/KinectShareJobs.h"
+#include "net_ham/MotdJobs.h"
 #include "net_ham/RCJobDingo.h"
+#include "obj/Data.h"
 #include "obj/Dir.h"
+#include "obj/Msg.h"
 #include "obj/Object.h"
 #include "os/Debug.h"
 #include "os/PlatformMgr.h"
+#include "os/System.h"
+#include "rnddx9/Rnd.h"
+#include "rndobj/Bitmap.h"
+#include "rndobj/Tex.h"
+#include "ui/UIPanel.h"
 #include "utl/DataPointMgr.h"
 #include "utl/Symbol.h"
+#include "xdk/XNET.h"
+#include "xdk/xapilibi/xbase.h"
 
-char *g_szMachineIdString;
+char g_szMachineIdString[24]; // i counted this many in objdiff
 const String RockCentral::kServerVer = "1";
 RockCentral TheRockCentral;
 
 namespace {
     void RockCentralTerminate() { TheRockCentral.Terminate(); }
 
-    class DataPointJob {
+    class DataPointJob : public RCJob {
     public:
-        DataPointJob(DataPoint &, String &);
+        DataPointJob(DataPoint &pt, String &url) : RCJob(url.c_str(), nullptr) {
+            SetDataPoint(pt);
+        }
     };
 
-    void SendDataPointNoReturn(DataPoint &);
+    void SendDataPointNoReturn(DataPoint &dataPoint) {
+        const char *type = dataPoint.Type();
+        String str;
+        if (type && strlen(type) != 0 && type[0] != '/') {
+            if (type[strlen(type) - 1] == '/') {
+                str = MakeString("dataminer/%s", dataPoint.Type());
+            } else {
+                str = MakeString("dataminer/%s/", dataPoint.Type());
+            }
+        } else {
+            MILO_WARN(
+                "SendDataPointNoReturn: dataPoint.mType must be in '<url>/' format!"
+            );
+            str = "dataminer/undefined/";
+        }
+        // so if login IS blocked...what do we do with this job?
+        DataPointJob *job = new DataPointJob(dataPoint, str);
+        if (!TheRockCentral.IsLoginBlocked()) {
+            TheServer.ManageJob(job);
+        }
+    }
 }
 
 RockCentral::RockCentral()
-    : mState(), unk7c(0), unk80(0), unk84(60000), unk88(-1), unk8c(0), unk90(0), unkd8(0),
-      mLoginBlocked(0), unkdd(0), unk120(0), unk124(0), unk128(0), unk12c(0) {}
+    : mState(), unk7c(0), mMOTDJob(0), unk84(60000), mRockCentralTime(-1), unk8c(0),
+      unk90(0), mMiscArt(0), mLoginBlocked(0), unkdd(0), mKinectShareConnection(0),
+      unk124(0), unk128(0), unk12c(0) {}
 
-RockCentral::~RockCentral() {}
+RockCentral::~RockCentral() { RELEASE(mKinectShareConnection); }
 
 BEGIN_HANDLERS(RockCentral)
     HANDLE_MESSAGE(ServerStatusChangedMsg)
@@ -67,7 +105,7 @@ void RockCentral::SetLoginPassword(const char *password) {
 void RockCentral::Login() {
     mState = (State)1;
     unkdd = false;
-    if (!TheServer.Authenticate(0)) { // should be TheServer->unk74
+    if (!TheServer.Authenticate(TheServer.GetUnk74())) { // should be TheServer->unk74
         Export(ServerStatusChangedMsg((ServerStatusResult)4), false);
     }
 }
@@ -121,4 +159,198 @@ void RockCentral::ManageJob(RCJob *job) {
     if (!mLoginBlocked) {
         TheServer.ManageJob(job);
     }
+}
+
+void RockCentral::SetMiscArtBitMap(RndBitmap &bmap) {
+    DeleteMiscArt();
+    mMiscArt = Hmx::Object::New<RndTex>();
+    mMiscArt->SetBitmap(bmap, nullptr, false, RndTex::kRegular);
+}
+
+void RockCentral::DeleteMiscArt() {
+    if (mMiscArt) {
+        RELEASE(mMiscArt);
+    }
+}
+
+void RockCentral::CancelOutstandingCalls(Hmx::Object *obj) {
+    for (auto it = unk2c.begin(); it != unk2c.end();) {
+        RCJob *cur = *it;
+        if (cur->GetCallback() == obj) {
+            unk2c.erase(it);
+            cur->Cancel(false);
+            OnJobFinished(cur);
+            it = unk2c.begin();
+        } else {
+            ++it;
+        }
+    }
+}
+
+DataNode RockCentral::OnMsg(const ConnectionStatusChangedMsg &msg) {
+    if (msg.Connected() && (mState == 4 || mState == 0)) {
+        mState = (State)0;
+        unk78 = unk48.Ms();
+    } else if (!msg.Connected() && (mState == 2 || mState == 1)) {
+        mState = (State)3;
+        TheServer.Logout();
+    }
+    return 1;
+}
+
+DataNode RockCentral::OnMsg(const TmsDownloadedMsg &msg) {
+    if (ThePlatformMgr.IsConnected() && (mState == 4 || mState == 0)) {
+        mState = (State)0;
+        unk78 = unk48.Ms();
+    }
+    return 1;
+}
+
+DataNode RockCentral::OnMsg(const RCJobCompleteMsg &msg) {
+    if (msg.Success()) {
+        mMOTDJob->GetMotdData(
+            unk84,
+            mRockCentralTime,
+            unk8c,
+            unk90,
+            mCommunityMsgs,
+            mDLCMsg,
+            unka8,
+            unkb0,
+            mUtilityMsg,
+            unkc0,
+            unkc8,
+            unkd0
+        );
+
+        // void GetMotdData(
+        //     unsigned int &challengeInterval,
+        //     int &lastNewSongDt,
+        //     bool &motdXPFlag,
+        //     int &motdFreq,
+        //     std::vector<String> &toasts,
+        //     String &motd,
+        //     String &motdImage,
+        //     String &motdSound,
+        //     String &motdAux,
+        //     String &motdImageAux,
+        //     String &motdSoundAux,
+        //     String &motdMiscImage
+        // );
+
+        TheProfileMgr.CheckForServerCrewUnlock();
+        static Symbol motd_loaded("motd_loaded");
+        static Message msg(motd_loaded);
+        UIPanel *panel = ObjectDir::Main()->Find<UIPanel>("main_panel");
+        if (panel->GetState() == UIPanel::kUp) {
+            panel->HandleType(msg);
+        }
+    }
+    return 1;
+}
+
+DataNode RockCentral::OnMsg(const ServerStatusChangedMsg &msg) {
+    if (msg.Result() == kServerStatusConnected && mState != 2) {
+        unkdd = true;
+        mState = (State)2;
+        XNetGetTitleXnAddr(&mXNetAddr);
+        XNetXnAddrToMachineId(&mXNetAddr, &mMachineID);
+        Hx_snprintf(g_szMachineIdString, 20, "%llu", mMachineID);
+    } else if (msg.Result() != kServerStatusConnected) {
+        if (mState == 3) {
+            mState = (State)0;
+            unk78 = unk48.Ms() + 8000.0f;
+        } else if (msg.Result() == 1) {
+            mState = kFailed;
+            CreateAccount();
+            unk78 = unk48.Ms() + 8000.0f;
+        } else {
+            mState = kFailed;
+            unk78 = unk48.Ms() + 40000.0f;
+        }
+    }
+    Hmx::Object::Handle(msg, false);
+    return 1;
+}
+
+void RockCentral::Poll() {
+    unk48.Split();
+    switch (mState) {
+    case 0:
+    case kFailed:
+        if (ThePlatformMgr.IsConnected()) {
+            if (unk48.Ms() >= unk78 && !mLoginBlocked) {
+                Login();
+            }
+        }
+        break;
+    case 1:
+    case 2:
+    case 3:
+        break;
+    default:
+        MILO_FAIL("Bad Rock Central state");
+        break;
+    }
+
+    if (IsOnline()) {
+        TheProfileMgr.UploadDeferredFlaunt();
+        TheProfileMgr.UploadDeferredFitnessGoal();
+    }
+
+    if (unkdd) {
+        mMOTDJob = new GetMotdJob(this);
+        if (!mLoginBlocked) {
+            TheServer.ManageJob(mMOTDJob);
+        }
+        if (!sCheckSomething) {
+            sCheckSomething = true;
+            ScreenResJob *screenJob =
+                new ScreenResJob(nullptr, (_XVIDEO_MODE *)TheDxRnd.VideoMode());
+            if (!TheRockCentral.IsLoginBlocked()) {
+                TheServer.ManageJob(screenJob);
+            }
+        }
+
+        TheChallenges->DownloadOfficialChallenges();
+        unkdd = false;
+    }
+
+    if (mKinectShareConnection) {
+        mKinectShareConnection->Poll();
+        int val = mKinectShareConnection->GetUnk78();
+        if (val == 3) {
+            if (unk124 != 0) {
+                RockCentralOpCompleteMsg msg(false, -1, DataNode());
+                unk124->Handle(msg, true);
+                unk124 = nullptr;
+            }
+            RELEASE(mKinectShareConnection);
+        } else if (val == 2) {
+            if (unk124) {
+                RockCentralOpCompleteMsg msg(true, 0, DataNode());
+                unk124->Handle(msg, true);
+                unk124 = nullptr;
+            }
+            RELEASE(mKinectShareConnection);
+            KinectShareJob *job = new KinectShareJob(nullptr);
+            if (!TheRockCentral.IsLoginBlocked()) {
+                TheServer.ManageJob(job);
+            }
+        }
+    }
+
+    if (unk48.Ms() >= unk7c) {
+        if (unk128 != 0 || unk12c != 0) {
+            ControllerModeJob *job = new ControllerModeJob(nullptr, unk128, unk12c);
+            if (!mLoginBlocked) {
+                TheServer.ManageJob(job);
+            }
+        }
+        unk128 = 0;
+        unk12c = 0;
+        unk7c = unk48.Ms() + 600000.0f;
+    }
+
+    TheServer.Poll();
 }

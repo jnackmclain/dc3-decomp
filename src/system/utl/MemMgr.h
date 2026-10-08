@@ -1,12 +1,14 @@
 #pragma once
+#include "MemHeap.h"
 
 extern const char *gStlAllocName;
 extern bool gStlAllocNameLookup;
 extern class CriticalSection *gMemLock;
-extern class CriticalSection *gMemStackLock;
+extern bool gInsideMemFunc;
 
 void PhysDelta(const char *);
 bool MemUseLowestMip();
+bool MemUseLowestMipException(const char *);
 
 /** Get the largest block of physical memory we can successfully allocate. */
 int _GetFreePhysicalMemory();
@@ -21,7 +23,16 @@ int MemFindHeap(const char *);
 void MemPushHeap(int heapNum);
 void MemPopHeap();
 void MemForceNewOperatorAlign(int align);
-void MemTrackAlloc(int, int, const char *, void *, bool, unsigned char, const char *, int);
+void MemTrackAlloc(
+    int req,
+    int act,
+    const char *type,
+    void *mem,
+    bool pooled,
+    unsigned char strat,
+    const char *file,
+    int line
+);
 void MemTrackFree(void *);
 void MemTrackRealloc(void *, int, int, void *);
 int MemHeapSize(int heapNum);
@@ -40,6 +51,8 @@ void *MemResizeElem(
     const char *name
 );
 void MemFreeBlockStats(int, int &, int &, int &, int &, int &);
+MemHeapStack &ThreadMemStack(bool);
+void MemPrintOverview(int, char *const);
 
 #define kNoHeap -3
 #define kSystemHeap -1
@@ -47,9 +60,9 @@ void MemFreeBlockStats(int, int &, int &, int &, int &, int &);
 void MemPushTemp();
 void MemPopTemp();
 
-struct MemTemp {
-    MemTemp() { MemPushTemp(); }
-    ~MemTemp() { MemPopTemp(); }
+struct MemDoTempAllocations {
+    MemDoTempAllocations() { MemPushTemp(); }
+    ~MemDoTempAllocations() { MemPopTemp(); }
 };
 
 struct MemHeapTracker {
@@ -114,9 +127,16 @@ void operator delete[](void *mem);
         MemFree(v, __FILE__, line_num, #class_name);                                     \
     }
 
-// #define NEW_ARRAY_OVERLOAD                                                               \
-//     void *operator new[](size_t t) { return _MemAlloc(t, 0); }                           \
-//     void *operator new[](size_t, void *place) { return place; }
+#define MEM_TEMP_OVERLOAD(class_name, line_num)                                          \
+    static void *operator new(unsigned int s) {                                          \
+        return _MemAllocTemp(s, __FILE__, line_num, #class_name, 0);                     \
+    }                                                                                    \
+    static void *operator new(unsigned int s, void *place) { return place; }             \
+    static void operator delete(void *v) { MemFree(v, __FILE__, line_num, #class_name); }
 
-// #define DELETE_ARRAY_OVERLOAD                                                            \
+// #define NEW_ARRAY_OVERLOAD \
+//     void *operator new[](size_t t) { return _MemAlloc(t, 0); } \ void *operator
+//     new[](size_t, void *place) { return place; }
+
+// #define DELETE_ARRAY_OVERLOAD \
 //     void operator delete[](void *v) { _MemFree(v); }

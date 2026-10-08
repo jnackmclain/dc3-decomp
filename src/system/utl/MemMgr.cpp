@@ -1,37 +1,48 @@
 #include "utl/MemMgr.h"
 #include "MemHeap.h"
 #include "MemTracker.h"
-#include "Memory.h"
+#include "os/Memory.h"
 #include "obj/Data.h"
 #include "os/CritSec.h"
 #include "os/Debug.h"
+#include "os/OSFuncs.h"
 #include "os/System.h"
 #include "utl/Option.h"
 #include "utl/PoolAlloc.h"
 #include "utl/TextStream.h"
 #include "xdk/XAPILIB.h"
+#include "xdk/xapilibi/processthreadsapi.h"
+#include "xdk/xapilibi/winbase.h"
 #include <cstdlib>
 
 #define MAX_HEAPS 16
 #define MAX_BUF_THREADS 32
 
+int MemHeapStack::sDefaultHeap = -1;
 const char *gStlAllocName = "StlAlloc";
-bool gStlAllocNameLookup = false;
 
+// these global offsets need fixing lol
+static MemHeapStack gNullMemStack;
+static MemHeapStack gThreadBuf[MAX_BUF_THREADS];
+int gSingleHeap = 0;
+static MemHeap gHeaps[MAX_HEAPS];
+static bool sUnkB = false;
+static bool gInitted = false;
 bool gbUseLowestMip = false;
 bool gInsideMemFunc = false;
-bool gMemoryUsageTest;
-int gNumHeaps;
-int gCheckConsistency;
-int gNewOperatorAlign;
-int gSingleHeap;
-String gMemLogType;
+static int gCurThread;
+static int gNumThreads;
+static int gNumHeaps;
+static int gCheckConsistency;
+static int gNewOperatorAlign;
+bool gStlAllocNameLookup = false;
+CriticalSection *gMemLock = nullptr;
+CriticalSection *gMemStackLock = nullptr;
 std::vector<String> gUseLowestMipExceptions;
-MemHeapStack gNullMemStack;
 
-bool gInitted;
-
-MemHeap gHeaps[MAX_HEAPS];
+bool gMemoryUsageTest = false;
+String gMemLogType;
+int gThreadIds[MAX_BUF_THREADS];
 
 void *operator new(unsigned int size) {
     return MemAlloc(size, __FILE__, 0x5CF, "new", gNewOperatorAlign);
@@ -97,9 +108,11 @@ int MemNumHeaps() { return gNumHeaps; }
 void MemFree(void *mem, const char *file, int line, const char *name) {
     if (mem) {
         CritSecTracker tracker(gMemLock);
+        int freeTotal = 0;
         int i;
         for (i = 0; i < gNumHeaps; i++) {
-            if (gHeaps[i].Free((int *)mem))
+            freeTotal = gHeaps[i].Free((int *)mem);
+            if (freeTotal)
                 break;
         }
         if (i == gNumHeaps) {
@@ -109,11 +122,12 @@ void MemFree(void *mem, const char *file, int line, const char *name) {
                 free(mem);
             }
         }
-        //     if ((gMemTracker != 0x0) && (MemTrackFree(mem), gMemTracker->field_0x18195
-        //     !=
-        //     '\0')) {
-        //       HeapStats::Free(gMemTracker->mHeapStats + iVar2,iVar1,iVar1);
-        //     }
+        if (gMemTracker) {
+            MemTrackFree(mem);
+            if (gMemTracker->GetHeapOnly()) {
+                gMemTracker->HeapStatsAt((char)i).Free(freeTotal, freeTotal);
+            }
+        }
     }
 }
 
@@ -128,18 +142,19 @@ void *MemTruncate(void *mem, int size, const char *file, int line, const char *n
         return nullptr;
     } else {
         int i;
-        int allocSize = (size + 3) / 4;
+        int allocSize = (size + 3) / sizeof(int);
         int i60;
         void *truncated = nullptr;
         for (i = 0; i < gNumHeaps; i++) {
-            if (gHeaps[i].Truncate((int *)mem, allocSize, i60))
+            truncated = gHeaps[i].Truncate((int *)mem, allocSize, i60);
+            if (truncated)
                 break;
         }
         if (i == gNumHeaps) {
             truncated = realloc(mem, size);
             i60 = allocSize;
         }
-        MemTrackRealloc(mem, size, i60 * 4, truncated);
+        MemTrackRealloc(mem, size, i60 * sizeof(int), truncated);
         return truncated;
     }
 }
@@ -203,33 +218,35 @@ void MemOrPoolFreeSTL(
 
 void AddHeap(
     int heapNum,
-    int i2,
-    const char *c3,
-    bool b4,
-    int i5,
+    int bytes,
+    const char *name,
+    bool handle,
+    int region,
     MemHeap::Strategy strat,
-    int i7,
-    bool b8
+    int debugLevel,
+    bool allowTemp
 ) {
-    void *tmp2 = malloc(i2);
-    if (!tmp2) {
+    void *raw_mem = malloc(bytes);
+    if (!raw_mem) {
         int max = 0x40000000;
-        void *raw_mem = malloc(max);
+        raw_mem = malloc(max);
         MILO_ASSERT(raw_mem, 0x32C);
-        if (i2 > max) {
+        if (bytes > max) {
             MILO_LOG(
                 "not enough memory for heap \"%s\". Requested: %d. Available: %d\n",
-                c3,
-                i2,
+                name,
+                bytes,
                 max
             );
         }
-        i2 = max;
+        bytes = max;
     }
-    gHeaps[heapNum].Init(c3, gNumHeaps, (int *)tmp2, i2 / 4, b4, strat, i7, b8);
+    gHeaps[heapNum].Init(
+        name, gNumHeaps, (int *)raw_mem, bytes >> 2, handle, strat, debugLevel, allowTemp
+    );
 }
 
-void AddHeap(int i1, int i2, DataArray *arr) {
+void AddHeap(int heapNum, int bytes, DataArray *arr) {
     Symbol handle("handle");
     Symbol region("region");
     Symbol debug("debug");
@@ -247,12 +264,19 @@ void AddHeap(int i1, int i2, DataArray *arr) {
     int iStrategy = 0;
     arr->FindData(strategy, iStrategy, false);
     AddHeap(
-        i1, i2, name, iHandle, iRegion, (MemHeap::Strategy)iStrategy, iDebug, iAllowTemp
+        heapNum,
+        bytes,
+        name,
+        iHandle,
+        iRegion,
+        (MemHeap::Strategy)iStrategy,
+        iDebug,
+        iAllowTemp
     );
 }
 
 void *_MemAllocTemp(int size, const char *file, int line, const char *name, int align) {
-    MemTemp tmp;
+    MemDoTempAllocations tmp;
     return MemAlloc(size, file, line, name, align);
 }
 
@@ -260,7 +284,7 @@ void *MemOrPoolAllocSTL(int size, const char *file, int line, const char *name) 
     if (size == 0)
         return nullptr;
     else if (size > 0x80) {
-        MemTemp tmp;
+        MemDoTempAllocations tmp;
         return MemAlloc(size, file, line, name, 0);
     } else {
         return PoolAlloc(size, size, file, line, name);
@@ -321,17 +345,34 @@ void MemInit() {
                 heapArr = cfg->FindArray("discReleaseHeaps");
             }
         }
-        if (gSingleHeap == 0) {
+        if (gSingleHeap != 0) {
+            gNumHeaps = 1;
+        } else {
             gNumHeaps = heapArr->Size();
             MILO_ASSERT(gNumHeaps < MAX_HEAPS, 0x295);
-        } else {
-            gNumHeaps = 1;
         }
+        int o12 = 0;
         Symbol size("size");
         AddHeap(
-            heapArr->Size() - 1, 0x2500000, "tiny", false, 0, MemHeap::kFirstFit, 0, 0
+            heapArr->Size() - 1, 0x2500000, "tiny", false, 0, MemHeap::kFirstFit, 0, false
         );
-        // more...
+        sUnkB = true;
+        for (int i = heapArr->Size() - 1; i > 0; i--) {
+            DataArray *heap = heapArr->Array(i);
+            MILO_ASSERT(heap, 0x2B2);
+            int heapSize = 0;
+            heap->FindData(size, heapSize);
+            if (gSingleHeap != 0) {
+                o12 += heapSize;
+                if (i == 1) {
+                    AddHeap(0, o12, heap);
+                }
+                continue;
+            }
+            AddHeap(i - 1, heapSize, heap);
+        }
+        free(mem);
+        MemHeapStack::sDefaultHeap = 0;
     }
     disableMgr = false;
     if (enableTracking) {
@@ -343,8 +384,7 @@ void MemInit() {
         if (OptionBool("memory_usage_test", false)) {
             gMemoryUsageTest = true;
             MILO_LOG("--- Executing Game in Memory Usage Test Mode ---\n");
-            MemTrackSetReportName(OptionStr("budget_log", "mem_usage_test_x360.0000.csv")
-            );
+            MemTrackSetReportName(OptionStr("budget_log", "mem_usage_test_x360.0000.csv"));
         }
         if (OptionBool("memory_alloc_test", false)) {
             MILO_LOG("--- Executing Game in Memory Alloc Test Mode ---\n");
@@ -353,6 +393,8 @@ void MemInit() {
     }
     gInitted = true;
 }
+
+static bool HeapInitted() { return gInitted && gNumHeaps > 0; }
 
 int MemAllocSize(void *mem) {
     CritSecTracker tracker(gMemLock);
@@ -381,8 +423,8 @@ void *MemResizeElem(
     const char *name
 ) {
     void *old = mem;
-    int prefixSize = (char *)cutPoint - (char *)mem;
     int suffixSize = 0;
+    int prefixSize = (char *)cutPoint - (char *)mem;
     int newTotalSize = prefixSize;
     if (insertLength > -1) {
         suffixSize = (totalSize - newTotalSize) - cutLength;
@@ -422,10 +464,48 @@ MemRealloc(void *mem, int size, const char *file, int line, const char *name, in
     }
 }
 
-MemHeapStack &ThreadMemStack(bool);
+MemHeapStack &ThreadMemStack(bool b1) {
+    CritSecTracker t(gMemStackLock);
+    if (gNumThreads == 0) {
+        gThreadIds[0] = GetCurrentThreadId();
+        gNumThreads = 1;
+    } else {
+        if (gThreadIds[gCurThread] != GetCurrentThreadId()) {
+            int i;
+            for (i = 0; i < gNumThreads; i++) {
+                if (gThreadIds[i] == GetCurrentThreadId())
+                    break;
+            }
+            if (!b1) {
+                return gNullMemStack;
+            }
+            if (i == gNumThreads) {
+                int cur = 0;
+                for (; cur < gNumThreads; cur++) {
+                    if (!ValidateThreadId(gThreadIds[cur])) {
+                        MILO_ASSERT(gThreadBuf[cur].mSize == 0, 0x12E);
+                        MILO_ASSERT(gThreadBuf[cur].mTempRefs == 0, 0x12F);
+                        gThreadIds[cur] = GetCurrentThreadId();
+                        break;
+                    }
+                }
+                if (cur == gNumThreads) {
+                    MILO_ASSERT(gNumThreads < MAX_BUF_THREADS, 0x138);
+                    DWORD id = GetCurrentThreadId();
+                    gNumThreads++;
+                    gThreadIds[cur] = id;
+                }
+                gCurThread = cur;
+            } else {
+                gCurThread = i;
+            }
+        }
+    }
+    return gThreadBuf[gCurThread];
+}
 
 void MemPushHeap(int iHeap) {
-    if (gInitted && gNumHeaps > 0) {
+    if (HeapInitted()) {
         MemHeapStack &s = ThreadMemStack(true);
         MILO_ASSERT_FMT(
             iHeap > kNoHeap && iHeap < gNumHeaps,
@@ -436,5 +516,145 @@ void MemPushHeap(int iHeap) {
         MILO_ASSERT(s.mSize + 1 < DIM(s.mStack), 0x1EA);
         s.mStack[s.mSize] = iHeap;
         s.mSize++;
+    }
+}
+
+void MemPopHeap() {
+    if (HeapInitted()) {
+        MemHeapStack &s = ThreadMemStack(true);
+        MILO_ASSERT(s.mSize > 0, 0x1f6);
+        s.mSize--;
+    }
+}
+
+void MemFreeBlockStats(
+    int heapNum, int &i2, int &i3, int &numFreeBytes, int &i5, int &biggestFreeBlock
+) {
+    CritSecTracker tracker(gMemLock);
+    MILO_ASSERT(heapNum < MAX_HEAPS, 0x154);
+    gHeaps[heapNum].FreeBlockStats(i2, i3, numFreeBytes, i5, biggestFreeBlock);
+}
+
+int GetCurrentHeapNum() {
+    MemHeapStack &s = ThreadMemStack(false);
+    if (s.mSize != 0) {
+        return s.mStack[s.mSize - 1];
+    } else {
+        return MemHeapStack::sDefaultHeap;
+    }
+}
+
+void MemPushTemp() {
+    if (HeapInitted()) {
+        MemHeapStack &s = ThreadMemStack(true);
+        s.mTempRefs++;
+    }
+}
+
+void MemPopTemp() {
+    if (HeapInitted()) {
+        MemHeapStack &s = ThreadMemStack(true);
+        MILO_ASSERT(s.mTempRefs > 0, 0x209);
+        s.mTempRefs--;
+    }
+}
+
+bool MemUseLowestMipException(const char *cc1) {
+    String str(cc1);
+    str.ToLower();
+    FOREACH (it, gUseLowestMipExceptions) {
+        if (strstr(str.c_str(), it->c_str())) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int MemFindHeap(const char *cc) {
+    for (int i = 0; i < gNumHeaps; i++) {
+        if (gHeaps[i].Name() && streq(gHeaps[i].Name(), cc)) {
+            return i;
+        }
+    }
+    if (streq("char", cc)) {
+        return 0;
+    } else if (streq("physical", cc)) {
+        return -2;
+    } else if (gSingleHeap) {
+        return 0;
+    } else {
+        if (HeapInitted()) {
+            MILO_FAIL("could not find heap \"%s\"", cc);
+        }
+        return -1;
+    }
+}
+
+void MemDelta(const char *msg, int heapNum) {
+    int lfrag = 0;
+    int rfrag = 0;
+    int numFree = 0;
+    int i5 = 0;
+    int largest = 0;
+    MemFreeBlockStats(heapNum, lfrag, rfrag, numFree, i5, largest);
+
+    static int sFreeHeaps[8] = { -1, -1, -1, -1, -1, -1, -1, -1 };
+
+    if (sFreeHeaps[heapNum] == -1) {
+        sFreeHeaps[heapNum] = numFree;
+    }
+    int delta = sFreeHeaps[heapNum] - numFree;
+    TheDebug << msg << " lfrag:" << lfrag << " rfrag:" << rfrag << " largest:" << largest
+             << " free:" << numFree << " fragmentation:" << numFree - largest
+             << " delta:" << delta << "\n";
+    sFreeHeaps[heapNum] = numFree;
+}
+
+void MemPrintOverview(int i1, char *const c) {
+    char *p = c;
+    if (i1 == -2 || i1 == -3) {
+        const char *str = "physical";
+        MEMORYSTATUS status;
+        GlobalMemoryStatus(&status);
+        static SIZE_T sAvailPhys;
+        if (sAvailPhys >= status.dwAvailPhys) {
+            sAvailPhys = status.dwAvailPhys;
+        }
+        strcpy(
+            p,
+            MakeString(
+                " [%5s] KB free:%7u(%7u) usage:%5i\n",
+                str,
+                status.dwAvailPhys >> 10,
+                sAvailPhys >> 10,
+                PhysicalUsage() / 1024
+            )
+        );
+        p += strlen(p);
+    }
+    for (int i = 0; i < gNumHeaps; i++) {
+        if (i1 == -3 || i1 == i) {
+            int i7c, i80, i88, i8c, i84;
+            MemFreeBlockStats(i, i7c, i80, i88, i8c, i84);
+            int waste = (i88 - i84) >> 10;
+            int big = i84 >> 10;
+            int free2 = i8c >> 10;
+            int freeAmt = i88 >> 10;
+            const char *str = "physical";
+            strcpy(
+                p,
+                MakeString(
+                    " [%5s] KB free:%7d(%7d) big:%7d lfrag:%5d rfrag:%5d waste:%5d\n",
+                    str,
+                    freeAmt,
+                    free2,
+                    big,
+                    i7c,
+                    i80,
+                    waste
+                )
+            );
+            p += strlen(p);
+        }
     }
 }

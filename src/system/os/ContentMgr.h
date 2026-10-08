@@ -129,8 +129,8 @@ public:
     void RefreshSynchronously();
     void OnReadFailure(bool, const char *);
     bool Contains(const char *, String &);
-    void RegisterCallback(Callback *, bool);
-    void UnregisterCallback(Callback *, bool);
+    void RegisterCallback(Callback *callback, bool midRefreshAllowed);
+    void UnregisterCallback(Callback *callback, bool midRefreshAllowed);
 
 private:
     DataNode OnAddContent(DataArray *);
@@ -152,7 +152,8 @@ protected:
         kDiscoveryLoading = 3,
         kDiscoveryCheckIfDone = 4,
         kMounting = 5,
-        kContentMgrState6 = 6
+        kContentMgrState6 = 6,
+        kContentMgrState7 = 7
     } mState; // 0x2c
     std::list<Callback *> mCallbacks; // 0x30
     std::list<Content *> mContents; // 0x38
@@ -173,11 +174,12 @@ extern ContentMgr &TheContentMgr;
 
 DECLARE_MESSAGE(ContentReadFailureMsg, "content_read_failure");
 ContentReadFailureMsg(bool b, const char *cc) : Message(Type(), b, cc) {}
-// // TODO: rename these methods once you actually know what the bool and const char*
-// // represent
-// bool GetBool() const { return mData->Int(2); }
-// const char *GetStr() const { return mData->Str(3); }
+// TODO: rename these methods once you actually know what the bool and const char*
+// represent
+bool GetBool() const { return mData->Int(2); }
+const char *GetStr() const { return mData->Str(3); }
 END_MESSAGE
 
 DECLARE_MESSAGE(ContentInstalledMsg, "content_installed")
+ContentInstalledMsg() : Message(Type()) {}
 END_MESSAGE

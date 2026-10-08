@@ -27,17 +27,19 @@ public:
     }
     void SetCallback(Callback *cb) { mCallback = cb; }
     Callback *GetCallback() const { return mCallback; }
+    void SetCursorChar(int cursChar) { mCursorChar = cursChar; }
     Timer GetTimer() { return mTimer; }
     void Clear();
     void SetLines(int);
     void SetTimeout(float);
     String &CurrentLine();
+    float Height() const;
 
     static void Init();
     static void Terminate();
     static void TogglePosition();
     static void DrawAll(bool);
-    static RndOverlay *Find(Symbol, bool);
+    static RndOverlay *Find(Symbol name, bool fail = true);
 
 private:
     RndOverlay(const DataArray *);

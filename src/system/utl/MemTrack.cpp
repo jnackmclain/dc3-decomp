@@ -1,4 +1,5 @@
 #include "utl/MemTrack.h"
+#include "obj/DataFunc.h"
 #include "obj/Data.h"
 #include "os/CritSec.h"
 #include "os/Debug.h"
@@ -10,13 +11,25 @@
 #include "utl/PoolAlloc.h"
 #include "utl/TextFileStream.h"
 
-AllocInfo *gAllocInfoHeap;
-MemTracker *gMemTracker;
-bool gMemTrackerTracking;
-bool gMemoryUsageTest;
-// HeapTracker* gHeapTracker;
-int gNumDiffs;
-TextFileStream *gLog;
+static AllocInfo *gAllocInfoHeap = nullptr;
+MemTracker *gMemTracker = nullptr;
+bool gMemTrackerTracking = false;
+bool gMemoryUsageTest = false;
+class HeapTracker *gHeapTracker = nullptr;
+
+static int gNumDiffs = 0;
+static TextFileStream *gLog = nullptr;
+
+#define STACK_SIZE 64
+#define MAX_NAME_SIZE 128
+
+static char *s_MemTrackObjectName[STACK_SIZE + 1] = { 0 };
+static int s_MemTrackObjectNameStackPos = 0;
+static char *s_MemTrackFileName[STACK_SIZE + 1] = { 0 };
+static int s_MemTrackFileNameStackPos = 0;
+
+String gMemTrackSourceFile;
+String gMemTrackSourceObject;
 
 void StopLog() {
     if (gLog) {
@@ -121,10 +134,10 @@ void StartLog(const char *base) {
         StopLog();
     }
     MILO_ASSERT(!gLog, 0x5B);
+    int num = gNumDiffs;
     if (strstr(base, "diff")) {
         gNumDiffs++;
     }
-    int num = gNumDiffs;
     while (true) {
         MILO_ASSERT(strlen( base ) < 55, 0x68);
         strcpy(buffer, MakeString("%s_%03i.txt", base, num));
@@ -190,4 +203,82 @@ DataNode MemTrackLogDF(DataArray *a) {
         StopLog();
     }
     return 0;
+}
+
+void MemTrackInit(int heap, int numAllocs, bool heapOnly) {
+    CritSecTracker tracker(gMemLock);
+    MILO_ASSERT(!gMemTracker, 0x82);
+    if (heapOnly) {
+        numAllocs = 1;
+    }
+    gMemTracker = new MemTracker(heap, numAllocs);
+    gMemTracker->SetHeapOnly(heapOnly);
+    gAllocInfoHeap = (AllocInfo *)malloc(numAllocs * sizeof(AllocInfo));
+    MILO_ASSERT(gAllocInfoHeap, 0x89);
+    AllocInfo::SetPoolMemory(gAllocInfoHeap, numAllocs * sizeof(AllocInfo));
+    DataRegisterFunc("heap_report", MemTrackReportDF);
+    DataRegisterFunc("heap_dump", MemTrackHeapDumpDF);
+    DataRegisterFunc("mem_log", MemTrackLogDF);
+    MemTrackReport(0, false);
+    AllocInfoInit();
+    for (int i = 0; i <= (int)DIM(s_MemTrackFileName) - 1; i++) {
+        s_MemTrackFileName[i] =
+            (char *)MemAlloc(MAX_NAME_SIZE, __FILE__, 0x9a, "MemTrackStack", 0);
+        memset(s_MemTrackFileName[i], 0, MAX_NAME_SIZE);
+        s_MemTrackObjectName[i] =
+            (char *)MemAlloc(MAX_NAME_SIZE, __FILE__, 0x9c, "MemTrackStack", 0);
+        memset(s_MemTrackObjectName[i], 0, MAX_NAME_SIZE);
+    }
+}
+
+void BeginMemTrackObjectName(const char *objName) {
+    if (gMemTracker) {
+        s_MemTrackObjectNameStackPos++;
+        MILO_ASSERT(s_MemTrackObjectNameStackPos <= STACK_SIZE, 0xBE);
+        strncpy(
+            s_MemTrackObjectName[s_MemTrackObjectNameStackPos],
+            gMemTracker->GetTopLevelObjName().c_str(),
+            MAX_NAME_SIZE
+        );
+        s_MemTrackObjectName[s_MemTrackObjectNameStackPos][MAX_NAME_SIZE - 1] = '\0';
+        static bool sNavPlayerToggle = false;
+        if (streq(objName, "flow/nav_player.milo")) {
+            sNavPlayerToggle = !sNavPlayerToggle;
+        }
+        gMemTracker->SetTopLevelObjName(objName);
+    }
+}
+
+void EndMemTrackObjectName() {
+    if (gMemTracker) {
+        s_MemTrackObjectNameStackPos--;
+        MILO_ASSERT(0<=s_MemTrackObjectNameStackPos && s_MemTrackObjectNameStackPos<STACK_SIZE, 0xCF);
+        if (s_MemTrackObjectNameStackPos >= 0) {
+            gMemTracker->SetTopLevelObjName(
+                s_MemTrackObjectName[s_MemTrackObjectNameStackPos]
+            );
+        }
+    }
+}
+
+void BeginMemTrackFileName(const char *fileName) {
+    if (gMemTracker) {
+        s_MemTrackFileNameStackPos++;
+        MILO_ASSERT(s_MemTrackFileNameStackPos <= STACK_SIZE, 0xDA);
+        strncpy(s_MemTrackFileName[s_MemTrackFileNameStackPos], fileName, MAX_NAME_SIZE);
+        s_MemTrackFileName[s_MemTrackFileNameStackPos][MAX_NAME_SIZE - 1] = '\0';
+        gMemTracker->SetTopLevelFileName(fileName);
+    }
+}
+
+void EndMemTrackFileName() {
+    if (gMemTracker) {
+        s_MemTrackFileNameStackPos--;
+        MILO_ASSERT(0<=s_MemTrackFileNameStackPos && s_MemTrackFileNameStackPos<STACK_SIZE, 0xE6);
+        if (s_MemTrackFileNameStackPos >= 0) {
+            gMemTracker->SetTopLevelFileName(
+                s_MemTrackFileName[s_MemTrackFileNameStackPos]
+            );
+        }
+    }
 }

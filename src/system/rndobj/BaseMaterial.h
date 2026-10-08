@@ -124,6 +124,14 @@ public:
         kDarken = 10
     };
 
+    enum ColorModFlags {
+        kColorModNone = 0,
+        kColorModAlphaPack = 1,
+        kColorModAlphaUnpackModulate = 2,
+        kColorModModulate = 3,
+        kColorModNum = 3
+    };
+
     virtual ~BaseMaterial() {}
     OBJ_CLASSNAME(BaseMaterial);
     OBJ_SET_TYPE(BaseMaterial);
@@ -138,7 +146,6 @@ public:
     static void Init() { REGISTER_OBJ_FACTORY(BaseMaterial) }
 
     const DataNode *GetDefaultPropVal(Symbol);
-    BaseMaterial *NextPass() const { return mNextPass; }
     RndTex *GetDiffuseTex() const { return mDiffuseTex; }
     RndTex *NormalMap() const { return mNormalMap; }
     ZMode GetZMode() const { return mZMode; }
@@ -150,6 +157,15 @@ public:
     bool PointLights() const { return mPointLights; }
     bool ColorAdjust() const { return mColorAdjust; }
     bool FadeOut() const { return mFadeout; }
+    float ShockwaveMult() const { return mShockwaveMult; }
+    bool NeverFitToSpline() const { return mNeverFitToSpline; }
+    bool AllowDistortionEffects() const { return mAllowDistortionEffects; }
+    bool AlphaWrite() const { return mAlphaWrite; }
+    bool ForceAlphaWrite() const { return mForceAlphaWrite; }
+    Cull GetCull() const { return mCull; }
+    RndFur *Fur() const { return mFur; }
+    TexWrap GetTexWrap() const { return mTexWrap; }
+    bool PreLit() const { return mPrelit; }
 
 protected:
     BaseMaterial();

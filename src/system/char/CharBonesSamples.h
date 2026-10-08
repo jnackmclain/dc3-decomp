@@ -23,11 +23,14 @@ public:
     int FracToSample(float *) const;
     void RotateBy(CharBones &, int);
     void RotateTo(CharBones &, float, int, float);
-    void LoadData(BinStream &);
+    void LoadData(BinStreamRev &);
     void Set(const std::vector<CharBones::Bone> &, int, CharBones::CompressionType);
+    void LoadHeader(BinStreamRev &);
 
 protected:
     void ReadCounts(BinStream &, int);
+    void SetPreview(int);
+    void SetSamplePointers(int idx) { mStart = mRawData + mTotalSize * idx; }
 
     /** "how many keyframes" */
     int mNumSamples; // 0x54

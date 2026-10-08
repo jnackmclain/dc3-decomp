@@ -16,6 +16,11 @@ DECLARE_MESSAGE(KinectHardwareStatusMsg, "kinect_status_changed")
 KinectHardwareStatusMsg(int i) : Message(Type(), i) {}
 END_MESSAGE
 
+DECLARE_MESSAGE(KinectGuideGestureMsg, "kinect_guide_gesture")
+KinectGuideGestureMsg(int i1) : Message(Type(), i1) {}
+DWORD TrackingID() const { return mData->Int(2); }
+END_MESSAGE
+
 DECLARE_MESSAGE(KinectUserBindingChangedMsg, "kinect_user_binding_changed")
 KinectUserBindingChangedMsg(int i) : Message(Type(), i) {}
 END_MESSAGE
@@ -23,6 +28,8 @@ END_MESSAGE
 DECLARE_MESSAGE(SkeletonEnrollmentChangedMsg, "skeleton_enrollment_changed")
 SkeletonEnrollmentChangedMsg() : Message(Type()) {}
 END_MESSAGE
+
+#define NUM_SKELETONS 6
 
 // size 0x4294
 class GestureMgr : public Hmx::Object, public SkeletonCallback {
@@ -63,13 +70,17 @@ public:
     int GetPlayerSkeletonID(int);
     void SetPlayerSkeletonID(int, int);
     int GetPlayerFilteredSkeletonID(int, bool);
+    int GetSecondarySkeletonIndex(bool) const;
+    void DrawSkeletonKinectData();
+    bool IDEnabled() { return mIDEnabled; }
     bool GetBool4271() { return unk4271; } // change once context found
+    void SetBool4271(bool b) { unk4271 = b; }
     int GetVal425C() { return unk425c; } // change once context found
 
     void ShowGestureGuide() {
         int id = 0;
-        if (unk4260 > 0) {
-            id = unk4260;
+        if (mActiveSkelTrackingID > 0) {
+            id = mActiveSkelTrackingID;
         }
         XShowNuiGuideUI(id);
     }
@@ -81,7 +92,7 @@ public:
         return unk425c;
     }
     void AutoTilt() {
-        if (mOverlapped.InternalLow != 0x3E5) {
+        if (mOverlapped.InternalLow != ERROR_IO_PENDING) {
             memset(&mOverlapped, 0, sizeof(XOVERLAPPED));
         }
     }
@@ -90,6 +101,16 @@ public:
         return mat ? mat->GetDiffuseTex() : nullptr;
     }
     bool InControllerMode() const { return mInControllerMode; }
+    bool InDoubleUserMode() const { return mInDoubleUserMode; }
+    bool InVoiceMode() const { return mInVoiceMode; }
+    bool GesturingWithVoice() const { return mGesturingWithVoice; }
+    SkeletonRecoverer &Recoverer() { return mRecoverer; }
+    void SetActiveSkeletonTrackingID(int id) { mActiveSkelTrackingID = id; }
+    void SetUnk30AtPos(int idx, int val) { unk30[idx] = val; }
+    int ActiveSkeletonTrackingId() const { return mActiveSkelTrackingID; }
+    static float MaxRecoveryDistance() { return sMaxRecoveryDistance; }
+    static float MinRecoveryTime() { return sMinRecoveryTime; }
+    static float MaxRecoveryTime() { return sMaxRecoveryTime; }
 
     static bool sIdentityOpInProgress;
     static void Init();
@@ -108,22 +129,22 @@ private:
     static float sConfidenceLossThreshold;
     static float sConfidenceRegainThreshold;
 
-    SkeletonCallback *mCallbacks[6]; // 0x30
+    int unk30[NUM_SKELETONS]; // 0x30 - maybe this is SkeletonJoint?
     LiveCameraInput *mLiveCamInput; // 0x48
-    Skeleton mSkeletons[6]; // 0x4c
-    IdentityInfo mIdentityInfos[6]; // 0x4144
-    SkeletonQualityFilter mFilters[6]; // 0x41a4
+    Skeleton mSkeletons[NUM_SKELETONS]; // 0x4c
+    IdentityInfo mIdentityInfos[NUM_SKELETONS]; // 0x4144
+    SkeletonQualityFilter mFilters[NUM_SKELETONS]; // 0x41a4
     bool mTrackingAllSkeletons; // 0x424c
     SkeletonRecoverer mRecoverer; // 0x4250
     int unk425c;
-    int unk4260; // 0x4260 - active skeleton tracking ID
+    int mActiveSkelTrackingID; // 0x4260 - active skeleton tracking ID
     int mPlayerSkeletonIDs[2]; // 0x4264
     bool mIDEnabled; // 0x426c
     bool mInControllerMode; // 0x426d
     bool mInVoiceMode; // 0x426e
     bool mGesturingWithVoice; // 0x426f
     bool mInDoubleUserMode; // 0x4270
-    bool unk4271;
+    bool unk4271; // 0x4271 - not in gameplay?
     RndDir *unk4274;
     XOVERLAPPED mOverlapped; // 0x4278
 };

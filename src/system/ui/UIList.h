@@ -43,8 +43,11 @@ public:
     virtual void Load(BinStream &);
     virtual void PreLoad(BinStream &);
     virtual void PostLoad(BinStream &);
+    // UIComponent
+    virtual void Enter();
+    virtual void Poll();
     // UIListProvider
-    virtual int NumData() const;
+    virtual int NumData() const { return mNumData; }
     // RndDrawable
     virtual float GetDistanceToPlane(const Plane &, Vector3 &);
     virtual void DrawShowing();
@@ -54,16 +57,15 @@ public:
     virtual void StartScroll(const UIListState &, int, bool);
     virtual void CompleteScroll(const UIListState &);
 
-    // unsure where these go
-    virtual void Enter();
-    virtual void Poll();
+    virtual void AdjustTrans(Transform &, const UIListElementDrawState &) {}
+    virtual void AdjustTransSelected(Transform &) {}
 
     static void Init();
 
     void SetNumDisplay(int);
     void SetGridSpan(int);
     void SetCircular(bool);
-    void SetSpeed(float speed); // { mListState.SetSpeed(speed); }
+    void SetSpeed(float speed);
     void SetParent(UIList *);
     void LimitCircularDisplay(bool);
     void SetProvider(UIListProvider *);
@@ -77,6 +79,7 @@ public:
     void StopAutoScroll();
     void SetSelected(int, int);
     bool SetSelected(Symbol, bool, int);
+    int Selected() const;
     int SelectedPos() const;
     void Scroll(int);
     void CalcBoundingBox(Box &);
@@ -84,22 +87,27 @@ public:
     void SetSelectedSimulateScroll(int);
     bool SetSelectedSimulateScroll(Symbol, bool);
     UIListDir *GetUIListDir() const;
+    UIListState &GetListState();
+    const std::vector<UIListWidget *> &GetWidgets() const;
+    UIList *ChildList();
 
-    int NumDisplay() const { return mListState.NumDisplay(); }
+    int NumDisplay() const;
     int GridSpan() const { return mListState.GridSpan(); }
     bool Circular() const { return mListState.Circular(); }
     float Speed() const;
     int SelectedData() const { return mListState.SelectedData(); }
-    int FirstShowing() const { return mListState.FirstShowing(); }
+    int FirstShowing() const;
     bool IsScrolling() const;
+    UIList *ParentList() const;
 
     NEW_OBJ(UIList)
     OBJ_MEM_OVERLOAD(0x21)
     static void Register() { REGISTER_OBJ_FACTORY(UIList) }
 
 private:
+    virtual void OldResourcePreload(BinStream &);
+
     void Update();
-    void OldResourcePreload(BinStream &);
 
 protected:
     // ScrollSelect

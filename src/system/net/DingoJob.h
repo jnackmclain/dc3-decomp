@@ -17,6 +17,8 @@ public:
     virtual void SendCallback(bool success, bool cancelled);
 
     const char *GetResponseString();
+    int GetTimeoutMs() const { return mTimeoutMs; }
+    int GetResult() const { return mResult; }
 
 private:
     void ParseResponse(JsonConverter *reader, JsonObject **response, int *retVersion);
@@ -35,7 +37,7 @@ protected:
 
     int mResult; // 0x7c
     DataPoint *mDataPoint; // 0x80
-    void *unk84;
+    char *unk84;
     String mResponseStr; // 0x88
     JsonConverter mJsonReader; // 0x90
     JsonObject *mJsonResponse; // 0xa4
@@ -45,4 +47,6 @@ protected:
 
 DECLARE_MESSAGE(DingoJobCompleteMsg, "dingo_job_complete")
 DingoJobCompleteMsg(DingoJob *job, bool success) : Message(Type(), job, success) {}
+DingoJob *GetJob() const { return mData->Obj<DingoJob>(2); }
+int GetVal3() const { return mData->Int(3); }
 END_MESSAGE

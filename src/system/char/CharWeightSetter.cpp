@@ -56,6 +56,8 @@ BEGIN_COPYS(CharWeightSetter)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(9, 0)
+
 BEGIN_LOADS(CharWeightSetter)
     LOAD_REVS(bs)
     ASSERT_REVS(9, 0)
@@ -136,8 +138,8 @@ void CharWeightSetter::PollDeps(
          ++it) {
         changedBy.push_back(*it);
     }
-    FOREACH (it, Refs()) {
-        CharWeightable *weightowner = dynamic_cast<CharWeightable *>((*it).RefOwner());
+    FOREACH_OBJREF (it, this) {
+        CharWeightable *weightowner = dynamic_cast<CharWeightable *>(it->RefOwner());
         if (weightowner && weightowner->WeightOwner() == this)
             change.push_back(weightowner);
     }

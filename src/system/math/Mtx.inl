@@ -1,0 +1,231 @@
+#pragma once
+#include "Mtx.h"
+#include "math/Utl.h"
+
+#pragma region Hmx::Matrix3
+
+inline BinStream &operator<<(BinStream &bs, const Hmx::Matrix3 &mtx) {
+    bs << mtx.x << mtx.y << mtx.z;
+    return bs;
+}
+
+inline BinStream &operator>>(BinStream &bs, Hmx::Matrix3 &mtx) {
+    bs >> mtx.x >> mtx.y >> mtx.z;
+    return bs;
+}
+
+void Interp(const Hmx::Matrix3 &, const Hmx::Matrix3 &, float, Hmx::Matrix3 &);
+void Multiply(const Hmx::Matrix3 &, const Hmx::Matrix3 &, Hmx::Matrix3 &);
+
+inline void Normalize(const Hmx::Matrix3 &in, Hmx::Matrix3 &out) {
+    Normalize(in.y, out.y);
+    Cross(out.y, in.z, out.x);
+    Normalize(out.x, out.x);
+    Cross(out.x, out.y, out.z);
+}
+
+inline void NormalizeAboutX(Hmx::Matrix3 &mtx) {
+    Cross(mtx.x, mtx.y, mtx.z);
+    Normalize(mtx.z, mtx.z);
+    Cross(mtx.z, mtx.x, mtx.y);
+}
+
+inline void NormalizeAboutY(Hmx::Matrix3 &mtx) {
+    Cross(mtx.x, mtx.y, mtx.z);
+    Normalize(mtx.z, mtx.z);
+    Cross(mtx.y, mtx.z, mtx.x);
+}
+
+inline void Multiply(const Hmx::Matrix3 &m, const Vector3 &v, Vector3 &vout) {
+    vout.Set(
+        m.x.x * v.x + m.y.x * v.y + m.z.x * v.z,
+        m.x.y * v.x + m.y.y * v.y + m.z.y * v.z,
+        m.x.z * v.x + m.y.z * v.y + m.z.z * v.z
+    );
+}
+
+inline void Multiply(const Vector3 &v, const Hmx::Matrix3 &m, Vector3 &vout) {
+    vout.Set(
+        m.x.x * v.x + m.y.x * v.y + m.z.x * v.z,
+        m.x.y * v.x + m.y.y * v.y + m.z.y * v.z,
+        m.x.z * v.x + m.y.z * v.y + m.z.z * v.z
+    );
+}
+
+inline void Transpose(const Hmx::Matrix3 &in, Hmx::Matrix3 &out) {
+    out.Set(in.x.x, in.y.x, in.z.x, in.x.y, in.y.y, in.z.y, in.x.z, in.y.z, in.z.z);
+}
+
+// i have no clue if this actually exists, but it helped UIListSlot::Draw
+inline void ScaleDiagonal(const Vector3 &v, Hmx::Matrix3 &out) {
+    out.x.x *= v.x;
+    out.y.y *= v.y;
+    out.z.z *= v.z;
+}
+
+// so Scale with Matrix first, then Vector, calls Scale(Vector3,Vector3,Vector3)...
+inline void Scale(const Hmx::Matrix3 &mtx, const Vector3 &vec, Hmx::Matrix3 &res) {
+    Scale(mtx.x, vec, res.x);
+    Scale(mtx.y, vec, res.y);
+    Scale(mtx.z, vec, res.z);
+}
+
+// but Scale with Vector first, then Matrix, calls Scale(Vector3,float,Vector3)
+// ok HMX that's cool and totally won't trip somebody up in the future
+inline void Scale(const Vector3 &vec, const Hmx::Matrix3 &mtx, Hmx::Matrix3 &res) {
+    Scale(mtx.x, vec.x, res.x);
+    Scale(mtx.y, vec.y, res.y);
+    Scale(mtx.z, vec.z, res.z);
+}
+
+inline void ScaleAddEq(Hmx::Matrix3 &dst, const Hmx::Matrix3 &src, float scalar) {
+    ScaleAddEq(dst.x, src.x, scalar);
+    ScaleAddEq(dst.y, src.y, scalar);
+    ScaleAddEq(dst.z, src.z, scalar);
+}
+
+#pragma endregion
+#pragma region Transform
+
+inline void Transform::LookAt(const Vector3 &v1, const Vector3 &v2) {
+    Subtract(v1, v, m.y);
+    m.z = v2;
+    Normalize(m, m);
+}
+
+inline BinStream &operator<<(BinStream &bs, const Transform &tf) {
+    bs << tf.m << tf.v;
+    return bs;
+}
+
+inline BinStream &operator>>(BinStream &bs, Transform &tf) {
+    bs >> tf.m >> tf.v;
+    return bs;
+}
+
+inline BinStream &operator>>(BinStreamRev &d, Transform &tf) { return d.stream >> tf; }
+
+void Multiply(const Transform &, const Hmx::Matrix3 &, Transform &);
+
+inline void MultiplyTranspose(const Vector3 &v, const Transform &t, Vector3 &out) {
+    Subtract(v, t.v, out);
+    out.Set(Dot(out, t.m.x), Dot(out, t.m.y), Dot(out, t.m.z));
+}
+
+inline void Multiply(const Vector3 &v, const Transform &t, Vector3 &out) {
+    if (&t.v != &out) {
+        Multiply(t.m, v, out);
+        Add(out, t.v, out);
+    } else {
+        Vector3 tmp;
+        Multiply(t.m, v, tmp);
+        Add(tmp, t.v, out);
+    }
+}
+
+inline void Invert(const Transform &in, Transform &out) {
+    Vector3 inV;
+    Negate(in.v, inV);
+    Invert(in.m, out.m);
+    Multiply(inV, out.m, out.v);
+}
+
+inline void FastInvert(const Transform &in, Transform &out) {
+    Vector3 inV;
+    Negate(in.v, inV);
+    FastInvert(in.m, out.m);
+    Multiply(inV, out.m, out.v);
+}
+
+inline void Transpose(const Transform &in, Transform &out) {
+    Transpose(in.m, out.m);
+    Vector3 inV;
+    Negate(in.v, inV);
+    out.v.Set(
+        out.m.x.x * inV.x + out.m.y.x * inV.y + out.m.z.x * inV.z,
+        out.m.x.y * inV.x + out.m.y.y * inV.y + out.m.z.y * inV.z,
+        out.m.x.z * inV.x + out.m.y.z * inV.y + out.m.z.z * inV.z
+    );
+}
+
+inline void MultiplyInverse(const Transform &t1, const Transform &t2, Transform &tres) {
+    Hmx::Matrix3 m50;
+    Invert(t2.m, m50);
+    Multiply(t1.m, m50, tres.m);
+    Vector3 diff;
+    Subtract(t1.v, t2.v, diff);
+    Multiply(diff, m50, tres.v);
+}
+
+inline void ScaleAddEq(Transform &dst, const Transform &src, float scalar) {
+    ScaleAddEq(dst.m, src.m, scalar);
+    ScaleAddEq(dst.v, src.v, scalar);
+}
+
+#pragma endregion
+#pragma region Hmx::Matrix4
+
+inline Hmx::Matrix4::Matrix4(const Transform &xfm) {
+    m[0].x = xfm.m.x.x;
+    m[0].y = xfm.m.x.y;
+    m[0].z = xfm.m.x.z;
+    m[0].w = 0;
+    m[1].x = xfm.m.y.x;
+    m[1].y = xfm.m.y.y;
+    m[1].z = xfm.m.y.z;
+    m[1].w = 0;
+    m[2].x = xfm.m.z.x;
+    m[2].y = xfm.m.z.y;
+    m[2].z = xfm.m.z.z;
+    m[2].w = 0;
+    m[3].x = xfm.v.x;
+    m[3].y = xfm.v.y;
+    m[3].z = xfm.v.z;
+    m[3].w = 1;
+}
+
+void Multiply(const Vector4 &, const Hmx::Matrix4 &, Vector4 &);
+
+inline void Transpose(const Hmx::Matrix4 &min, Hmx::Matrix4 &mout) {
+    Vector4 oldX(min.m[0].x, min.m[0].y, min.m[0].z, min.m[0].w);
+    Vector4 oldY(min.m[1].x, min.m[1].y, min.m[1].z, min.m[1].w);
+    Vector4 oldZ(min.m[2].x, min.m[2].y, min.m[2].z, min.m[2].w);
+    Vector4 oldW(min.m[3].x, min.m[3].y, min.m[3].z, min.m[3].w);
+
+    mout.m[0].Set(oldX.x, oldY.x, oldZ.x, oldW.x);
+    mout.m[1].Set(oldX.y, oldY.y, oldZ.y, oldW.y);
+    mout.m[2].Set(oldX.z, oldY.z, oldZ.z, oldW.z);
+    mout.m[3].Set(oldX.w, oldY.w, oldZ.w, oldW.w);
+
+    // mout.m[0].Set(min.m[0].x, min.m[1].x, min.m[2].x, min.m[3].x);
+    // mout.m[1].Set(min.m[0].y, min.m[1].y, min.m[2].y, min.m[3].y);
+    // mout.m[2].Set(min.m[0].z, min.m[1].z, min.m[2].z, min.m[3].z);
+    // mout.m[3].Set(min.m[0].w, min.m[1].w, min.m[2].w, min.m[3].w);
+}
+
+namespace Hmx {
+
+    inline Hmx::Matrix4 operator*(const Transform &xfm, const Hmx::Matrix4 &mtx4) {
+        Hmx::Matrix4 out;
+        out.m[0].x = Dot(xfm.m.x, mtx4.Col3(0));
+        out.m[0].y = Dot(xfm.m.x, mtx4.Col3(1));
+        out.m[0].z = Dot(xfm.m.x, mtx4.Col3(2));
+        out.m[0].w = Dot(xfm.m.x, mtx4.Col3(3));
+        out.m[1].x = Dot(xfm.m.y, mtx4.Col3(0));
+        out.m[1].y = Dot(xfm.m.y, mtx4.Col3(1));
+        out.m[1].z = Dot(xfm.m.y, mtx4.Col3(2));
+        out.m[1].w = Dot(xfm.m.y, mtx4.Col3(3));
+        out.m[2].x = Dot(xfm.m.z, mtx4.Col3(0));
+        out.m[2].y = Dot(xfm.m.z, mtx4.Col3(1));
+        out.m[2].z = Dot(xfm.m.z, mtx4.Col3(2));
+        out.m[2].w = Dot(xfm.m.z, mtx4.Col3(3));
+        out.m[3].x = Dot(xfm.v, mtx4.Col3(0)) + mtx4.m[3].x;
+        out.m[3].y = Dot(xfm.v, mtx4.Col3(1)) + mtx4.m[3].y;
+        out.m[3].z = Dot(xfm.v, mtx4.Col3(2)) + mtx4.m[3].z;
+        out.m[3].w = Dot(xfm.v, mtx4.Col3(3)) + mtx4.m[3].w;
+        return out;
+    }
+
+}
+
+#pragma endregion

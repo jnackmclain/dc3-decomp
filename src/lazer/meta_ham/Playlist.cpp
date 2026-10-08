@@ -5,13 +5,15 @@
 #include "math/Rand.h"
 #include "meta/FixedSizeSaveable.h"
 #include "meta/FixedSizeSaveableStream.h"
+#include "net_ham/DataMinerJobs.h"
+#include "net_ham/RockCentral.h"
 #include "os/Debug.h"
 #include "utl/NetLoader.h"
 #include "utl/Symbol.h"
 
 #pragma region Playlist
 
-Playlist::Playlist() : mName(gNullStr), unk8(0), unk9(0) { m_vSongs.clear(); }
+Playlist::Playlist() : mName(gNullStr), mFitness(0), unk9(0) { m_vSongs.clear(); }
 
 Playlist::~Playlist() { m_vSongs.clear(); }
 
@@ -26,8 +28,14 @@ void Playlist::SwapSongs(int index1, int index2) {
 
 void Playlist::MoveSong(int from_index, int to_index) {
     MILO_ASSERT_RANGE(from_index, 0, GetNumSongs(), 0xCF);
-    if (to_index - from_index < 1) {
+    int song = m_vSongs[from_index];
+    int direction = (to_index - from_index > 0) ? 1 : -1;
+
+    while (to_index != from_index) {
+        m_vSongs[from_index] = m_vSongs[from_index + direction];
+        from_index += direction;
     }
+    m_vSongs[to_index] = song;
     HandleChange();
 }
 
@@ -130,7 +138,9 @@ void CustomPlaylist::SaveFixed(FixedSizeSaveableStream &fs) const {
     FixedSizeSaveable::SaveStd(fs, m_vSongs, 20, 4);
     fs << mOnlineID;
     if (unk24) {
+        TheRockCentral.ManageJob(new PlaylistChangedJob(0, mName, GetNumSongs()));
     }
+    static_cast<bool>(unk24) = false;
 }
 
 void CustomPlaylist::LoadFixed(FixedSizeSaveableStream &fs, int) {
@@ -153,7 +163,7 @@ void CustomPlaylist::Copy(CustomPlaylist *customP) {
     mOnlineID = customP->mOnlineID;
     mProfile = customP->mProfile;
     mName = customP->mName;
-    unk8 = customP->unk8;
+    mFitness = customP->mFitness;
     unk9 = customP->unk9;
     m_vSongs = customP->m_vSongs;
     HandleChange();

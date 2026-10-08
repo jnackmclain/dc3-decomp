@@ -4,6 +4,7 @@
 #include "rndobj/Bitmap.h"
 #include "rndobj/FontBase.h"
 #include "rndobj/Mat.h"
+#include "rndobj/Mesh.h"
 #include "rndobj/Tex.h"
 #include "utl/BinStream.h"
 #include "utl/MemMgr.h"
@@ -42,13 +43,14 @@ public:
 class RndFont : public RndFontBase {
 public:
     struct CharInfo {
-        int unk0; // 0x0 - page?
-        float unk4;
-        float unk8;
+        int page; // 0x0
+        float normX; // 0x4
+        float normY; // 0x8
         float charWidth; // 0xc
-        float unk10;
-        float unk14;
+        // how much horizontal space this character takes up
+        float charAdvance; // 0x10
     };
+
     virtual ~RndFont();
     virtual bool Replace(ObjRef *, Hmx::Object *);
     OBJ_CLASSNAME(Font);
@@ -85,6 +87,7 @@ public:
     bool
     CharWidthAdvanceCoords(unsigned short, float &, float &, Vector2 &, Vector2 &) const;
     int NumMats() const { return mMats.size(); }
+    float DeprecatedSize() const { return mDeprecatedSize; }
 
 protected:
     RndFont();
@@ -92,6 +95,8 @@ protected:
     virtual void SetASCIIChars(String);
 
     void UpdateChars();
+    void SetBitmapSize(const Vector2 &);
+    void SetCharInfo(CharInfo *, RndBitmap &, const Vector2 &, int);
 
     ObjPtrVec<RndMat> mMats; // 0x44
     ObjOwnerPtr<RndFont> mTextureOwner; // 0x60
@@ -105,11 +110,11 @@ protected:
 class RndFont3d : public RndFontBase {
 public:
     struct CharInfo {
-        ~CharInfo() {}
+        CharInfo(Hmx::Object *owner) : unk24(owner) {}
 
         Box unk0;
-        int unk20;
-        // ObjPtr<RndMesh> unk24;
+        float unk20;
+        ObjPtr<RndMesh> unk24;
         bool unk38;
 
         MEM_OVERLOAD(CharInfo, 0x12A);
@@ -127,10 +132,14 @@ public:
     virtual float CharAdvance(unsigned short) const;
     virtual float Kerning(unsigned short, unsigned short) const;
     virtual float AspectRatio() const;
-    virtual RndMat *Mat() const;
-    virtual const RndFontBase *DataOwner() const;
+    virtual RndMat *Mat() const { return unk44; }
+    virtual const RndFontBase *DataOwner() const { return mTextureOwner; }
     virtual float FontUnit() const { return mTextureOwner->unk6c.x; }
     virtual float FontUnitInverse() const { return mTextureOwner->unk7c.x; }
+
+    CharInfo *GetCharInfo(unsigned short) const;
+    bool CharWidthAdvanceMesh(unsigned short, float &, float &, RndMesh **) const;
+    Vector3 CharOriginOffset() const;
 
     OBJ_MEM_OVERLOAD(0x10A)
     NEW_OBJ(RndFont3d)
@@ -157,9 +166,11 @@ public:
     ~BitmapLocker();
     void LoadPage(int);
 
+    RndBitmap *PtrToBitmap() const { return mPbm; }
+
 private:
     RndFont *mFont; // 0x0
-    RndTex *mTex; // 0x4
-    RndBitmap *unk8; // 0x8
-    RndBitmap unkc; // 0xc
+    RndTex *mTexture; // 0x4
+    RndBitmap *mPbm; // 0x8
+    RndBitmap mBm; // 0xc
 };

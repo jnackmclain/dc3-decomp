@@ -18,6 +18,8 @@
 #include "ThreeDSound.h"
 #include "Utl.h"
 #include "flow/Flow.h"
+#include "math/Color.h"
+#include "math/Decibels.h"
 #include "obj/Data.h"
 #include "obj/DataFile.h"
 #include "obj/DataFunc.h"
@@ -28,6 +30,7 @@
 #include "os/Platform.h"
 #include "os/System.h"
 #include "rndobj/Overlay.h"
+#include "rndobj/Rnd.h"
 #include "synth/ADSR.h"
 #include "synth/FxSend.h"
 #include "synth/FxSendDelay.h"
@@ -37,39 +40,44 @@
 #include "synth/Pollable.h"
 #include "synth/Sequence.h"
 #include "synth/Sfx.h"
+#include "synth/StreamNull.h"
 #include "synth/SynthSample.h"
 #include "synth/WavMgr.h"
 #include "utl/Cache.h"
 #include "utl/Loader.h"
+#include <cstdio>
+
+static const float sDrawMeterFloats[3] = { 0.2f, 40, 0.7f };
 
 namespace {
     struct DebugGraph {
         DebugGraph(const Hmx::Color &c) {
-            unk0.resize(200);
-            unk8 = 0;
-            unkc = c;
+            mVals.resize(200);
+            mIdx = 0;
+            mColor = c;
         }
 
-        std::vector<float> unk0;
-        int unk8;
-        Hmx::Color unkc;
+        std::vector<float> mVals; // 0x0
+        int mIdx; // 0xc
+        Hmx::Color mColor; // 0x10
     };
 
     std::vector<DebugGraph> gDebugGraphs;
 }
 
-Loader *WavFactory(const FilePath &path, LoaderPos pos) {
+Loader *WavFactory(const FilePath &file, LoaderPos pos) {
     CacheResourceResult res;
     return new FileLoader(
-        path, CacheWav(path.c_str(), res), pos, 0, false, true, nullptr, nullptr
+        file, CacheWav(file.c_str(), res), pos, 0, false, true, nullptr, nullptr
     );
 }
 
-DataNode returnMasterKey(DataArray *a) {
+DataNode returnMasterKey(DataArray *msg) {
     unsigned char str[16];
     unsigned char masher[64];
-    if (a->Size() > 1) {
+    if (msg->Size() > 1) {
         KeyChain::getMasher(masher);
+        // obfuscation moment, becomes "{Na}"
         str[0] = 'z';
         str[1] = 'M';
         str[2] = '`';
@@ -81,7 +89,7 @@ DataNode returnMasterKey(DataArray *a) {
         DataArray *data = DataReadString((char *)str);
         int i2 = data->Evaluate(0).Int();
         data->Release();
-        int i3 = a->Int(1);
+        int i3 = msg->Int(1);
         memcpy((void *)(i3 ^ i2), masher, 0x40);
     }
     return 0;
@@ -90,8 +98,8 @@ DataNode returnMasterKey(DataArray *a) {
 Synth *TheSynth;
 
 Synth::Synth()
-    : mTrackLevels(false), mMuted(false), mMicClientMapper(nullptr), unk98(0), unk9c(0),
-      mADSR(nullptr) {
+    : mTrackLevels(false), mMuted(false), mMicClientMapper(nullptr), unk98(0),
+      mDebugStream(0), mADSR(nullptr) {
     SetName("synth", ObjectDir::Main());
     DataArray *cfg = SystemConfig("synth");
     cfg->FindData("mics", mNumMics, true);
@@ -198,7 +206,7 @@ void Synth::Terminate() {
     RELEASE(mSfxFader);
     RELEASE(mMidiInstrumentFader);
     RELEASE(mMicClientMapper);
-    // there's a return stub here
+    SynthUtlTerm();
 }
 
 void Synth::Poll() {
@@ -222,18 +230,18 @@ void Synth::Poll() {
     }
 }
 
-// Stream *Synth::NewStream(const char *, float f1, float, bool) {
-//     return new StreamNull(f1);
-// }
+Stream *Synth::NewStream(const char *, float f1, float, bool) {
+    return new StreamNull(f1);
+}
 
-// Stream *Synth::NewBufStream(const void *, int, Symbol, float f1, bool) {
-//     return new StreamNull(f1);
-// }
+Stream *Synth::NewBufStream(const void *, int, Symbol, float f1, bool) {
+    return new StreamNull(f1);
+}
 
-void Synth::NewStreamFile(const char *cc, File *&file, Symbol &sym) {
+void Synth::NewStreamFile(const char *fileBase, File *&fileOut, Symbol &extOut) {
     static char gFakeFile[16];
-    file = new BufFile(gFakeFile, sizeof(gFakeFile));
-    sym = "fake";
+    fileOut = new BufFile(gFakeFile, sizeof(gFakeFile));
+    extOut = "fake";
 }
 
 FxSendPitchShift *Synth::CreatePitchShift(int stage, SendChannels channels) {
@@ -244,6 +252,48 @@ FxSendPitchShift *Synth::CreatePitchShift(int stage, SendChannels channels) {
 }
 
 void Synth::DestroyPitchShift(FxSendPitchShift *shift) { delete shift; }
+
+float Synth::UpdateOverlay(RndOverlay *o, float y) {
+    Hmx::Color white(1, 1, 1);
+    float f24 = (float)TheRnd.Height() * (y + 0.265f);
+    if (mDebugStream) {
+        DrawMeterScale(f24);
+        float volume = mDebugStream->Faders()->GetVolume();
+        DrawMeter(f24, volume, 0, "stream");
+        for (int i = 0; i < mDebugStream->GetNumChannels(); i++) {
+            DrawMeter(
+                f24,
+                mDebugStream->ChannelFaders(i).GetVolume(),
+                0,
+                MakeString("chan %i", i)
+            );
+        }
+    }
+    if (!mLevelData.empty()) {
+        DrawMeterScale(f24);
+    }
+    for (int i = 0; i < mLevelData.size(); i++) {
+        float rms = RatioToDb(mLevelData[i].mRMS);
+        float peakhold = RatioToDb(mLevelData[i].mPeakHold);
+        if (rms > 2) {
+            rms = -30;
+        }
+        DrawMeter(f24, rms, peakhold, mLevelData[i].mName.c_str());
+    }
+    auto pollIt = SynthPollable::Pollables().begin();
+    char buf[64];
+    sprintf(buf, "Total active Sequences: %d", SynthPollable::Pollables().size());
+    TheRnd.DrawString(buf, Vector2(100, f24), white, true);
+    float f12 = f24 + 12.0f;
+    for (; pollIt != SynthPollable::Pollables().end(); ++pollIt) {
+        const char *name = (*pollIt)->GetSoundDisplayName();
+        if (*name != '\0') {
+            TheRnd.DrawString(name, Vector2(100, f12), white, true);
+            f12 += 12.0f;
+        }
+    }
+    return f12 / (float)TheRnd.Height();
+}
 
 void Synth::SetMasterVolume(float volume) { mMasterFader->SetVolume(volume); }
 
@@ -351,7 +401,10 @@ void Synth::StopAllSfx(bool stop) {
 
 void Synth::PauseAllSfx(bool pause) {
     FOREACH (it, SynthPollable::Pollables()) {
-        // Sfx* cast
+        Sfx *sfx = dynamic_cast<Sfx *>(*it);
+        if (sfx) {
+            sfx->Pause(pause);
+        }
         Sound *sound = dynamic_cast<Sound *>(*it);
         if (sound) {
             sound->Pause(pause);
@@ -359,11 +412,11 @@ void Synth::PauseAllSfx(bool pause) {
     }
 }
 
-void Synth::PlaySound(const char *name, float f1, float f2, float f3) {
+void Synth::PlaySound(const char *name, float volume, float pan, float transpose) {
     if (CheckCommonBank(false)) {
         Sound *sound = Find<Sound>(name, false);
         if (sound) {
-            sound->Play(f1, f2, f3, nullptr, 0);
+            sound->Play(volume, pan, transpose, nullptr, 0);
         } else {
             MILO_NOTIFY(
                 "Synth::PlaySound() - Sound %s not found in %s",
@@ -391,7 +444,30 @@ int Synth::GetSampleMem(ObjectDir *dir, Platform p) {
     return num;
 }
 
-void Synth::AddZombie(SampleInst *inst) { mZombieInsts.push_back(inst); }
+void Synth::AddZombie(SampleInst *inst) {
+    inst->Stop(false);
+    mZombieInsts.push_back(inst);
+}
+
+void Synth::CullZombies() {
+    for (auto it = mZombieInsts.begin(); it != mZombieInsts.end();) {
+        auto next = it++;
+        if ((*it)->DonePlaying()) {
+            mZombieInsts.erase(it);
+        }
+        it = next;
+    }
+}
+
+void Synth::DrawMeterScale(float &y0) {
+    float x1 = TheRnd.Width() * sDrawMeterFloats[0];
+    float x2 = TheRnd.Width() * sDrawMeterFloats[2];
+    Hmx::Color white(1, 1, 1);
+    TheRnd.DrawString(MakeString("%i", -0x28), Vector2(x1, y0), white, true);
+    TheRnd.DrawString(MakeString("%i", -0x14), Vector2(x2 / 2 + x1, y0), white, true);
+    TheRnd.DrawString("0", Vector2(x2 + x1, y0), white, true);
+    y0 += 16;
+}
 
 DataNode Synth::OnPassthrough(DataArray *a) {
     if (!CheckCommonBank(false))
@@ -443,10 +519,10 @@ void SynthPreInit() {
     if (useNullSynth) {
         TheSynth = new Synth();
     } else {
-        // TheSynth = Synth::New();
+        TheSynth = Synth::New();
     }
     if (TheSynth->Fail()) {
-        // RELEASE(TheSynth);
+        RELEASE(TheSynth);
         TheSynth = new Synth();
     }
     TheSynth->PreInit();
@@ -466,8 +542,9 @@ void SynthInit() {
 }
 
 void SynthTerminate() {
+    TheSynth->StopAllSounds();
     TheSynth->Poll();
     TheDebug.RemoveExitCallback(SynthTerminate);
     TheSynth->Terminate();
-    // RELEASE(TheSynth);
+    RELEASE(TheSynth);
 }

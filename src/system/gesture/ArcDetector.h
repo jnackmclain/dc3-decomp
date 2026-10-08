@@ -16,6 +16,9 @@ public:
     void ResetHoverTimer();
     bool IsLockedIn() const;
     float UpdateOverlay(RndOverlay *, float);
+    void Update(const Skeleton &, int);
+    void Draw(const Skeleton &, SkeletonViz &);
+    int NumJointsInPath() const { return mJointPath.size(); }
 
 private:
     Vector3 GetCurveStart() const;
@@ -23,6 +26,9 @@ private:
     float GetPathLength() const;
     float GetPathError() const;
     void SwipeFailed(const Skeleton &);
+    void CullPath();
+    void DrawPath(std::list<Vector3>, SkeletonViz &, Hmx::Color, const Vector3 &) const;
+    bool IsPathAcceptable() const;
 
     static float _swipeRetentionFactor;
     static float _acceptablePathErrorRatio;
@@ -39,4 +45,5 @@ private:
     bool unk35;
     float unk38;
     int unk3c;
+    Vector3 unk40; // last frame hand pos?
 };

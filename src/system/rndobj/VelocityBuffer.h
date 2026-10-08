@@ -10,14 +10,20 @@ class RndXfmCache {
     friend class RndVelocityBuffer;
 
     RndXfmCache() : unk0(), unk1f40(), unk19640(), unk1b580(0) {}
-    bool
-    GetXfms(unsigned int *, volatile RndMesh &, unsigned int, unsigned int, const float *&)
-        const;
-    bool
-    CacheXfms(unsigned int *, volatile RndMesh &, unsigned int *, volatile float &, unsigned int, unsigned int &);
 
-    int unk0[2000]; // 0x0
-    int unk1f40[24000]; // 0x1f40
+    bool GetXfms(
+        const RndMesh *__restrict mesh, unsigned int, unsigned int, const float *&
+    ) const;
+
+    bool CacheXfms(
+        const RndMesh *__restrict mesh,
+        const float *__restrict floats,
+        unsigned int,
+        unsigned int &
+    );
+
+    RndMesh *unk0[2000]; // 0x0
+    float unk1f40[2000][12]; // 0x1f40
     int unk19640[2000]; // 0x19640
     unsigned int unk1b580; // 0x1b580
 };
@@ -33,8 +39,11 @@ public:
     void ResetFrame();
     bool Draw(RndCam *, ObjPtrList<RndDrawable> &);
     void DrawMesh(RndMesh *) const;
+    void CacheTransform(class RndMesh *__restrict, float const *__restrict, unsigned int);
 
     static RndVelocityBuffer &Singleton() { return sSingleton; }
+
+    float GetUnk36be8() { return unk36be8; };
 
 private:
     RndVelocityBuffer();

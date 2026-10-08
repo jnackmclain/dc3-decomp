@@ -82,6 +82,8 @@ public:
     const ObjVector<DrivenPropertyEntry> &DrivenPropEntries() const {
         return mDrivenPropEntries;
     }
+    bool HasChildNodes() const { return !mChildNodes.empty(); }
+    const ObjPtrVec<FlowNode> &ChildNodes() const { return mChildNodes; }
 
 protected:
     FlowNode();
@@ -99,7 +101,7 @@ protected:
     ObjPtrList<FlowNode> mRunningNodes; // 0x30
     FlowNode *mFlowParent; // 0x44
     ObjVector<DrivenPropertyEntry> mDrivenPropEntries; // 0x48
-    bool unk58; // 0x58
+    bool mRequestingStop; // 0x58
 };
 
 #define FLOW_LOG(...)                                                                    \
@@ -108,4 +110,15 @@ protected:
         if (!mDebugComment.empty()) {                                                    \
             MILO_LOG("Debug comment: %s\n", mDebugComment.c_str());                      \
         }                                                                                \
+    }
+
+#define FLOW_TIMED_RELEASE_FROM_PARENT                                                   \
+    {                                                                                    \
+        FLOW_LOG("Timed Release From Parent \n");                                        \
+        Timer timer;                                                                     \
+        timer.Reset();                                                                   \
+        timer.Start();                                                                   \
+        mFlowParent->ChildFinished(this);                                                \
+        timer.Stop();                                                                    \
+        TheFlowMgr->AddMs(timer.Ms());                                                   \
     }

@@ -35,6 +35,8 @@ BEGIN_LOADS(MiniLeaderboardDisplay)
     PostLoad(bs);
 END_LOADS
 
+INIT_REVS(0, 0)
+
 void MiniLeaderboardDisplay::PreLoad(BinStream &bs) {
     LOAD_REVS(bs)
     ASSERT_REVS(0, 0)
@@ -51,7 +53,7 @@ void MiniLeaderboardDisplay::PostLoad(BinStream &bs) {
 void MiniLeaderboardDisplay::DrawShowing() {
     if (mResourceDir) {
         mResourceDir->SetWorldXfm(WorldXfm());
-        mResourceDir->DrawShowing();
+        mResourceDir->Draw();
     } else {
         MILO_NOTIFY_ONCE("MiniLeaderboardDisplay: %s missing resource dir", Name());
     }
@@ -64,3 +66,5 @@ void MiniLeaderboardDisplay::OldResourcePreload(BinStream &bs) {
 }
 
 void MiniLeaderboardDisplay::Init() { REGISTER_OBJ_FACTORY(MiniLeaderboardDisplay); }
+
+void MiniLeaderboardDisplay::Update() {}

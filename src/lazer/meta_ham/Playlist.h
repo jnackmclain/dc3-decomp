@@ -22,7 +22,15 @@ public:
     virtual void SetOnlineID(int) {} // 0x8
     virtual int GetOnlineID() { return -1; } // 0xc
     virtual bool IsDirty() { return false; } // 0x10
-    virtual PlaylistType GetType() const; // 0x14
+    virtual PlaylistType GetType() const {
+        if (unk9) {
+            return (PlaylistType)2;
+        } else if (mFitness) {
+            return (PlaylistType)4;
+        } else {
+            return IsCustom() ? (PlaylistType)1 : (PlaylistType)3;
+        }
+    } // 0x14
 
     void SwapSongs(int, int);
     void MoveSong(int, int);
@@ -42,13 +50,16 @@ public:
     bool IsFull() const { return m_vSongs.size() >= 20; }
     Symbol GetName() const { return mName; }
     void SetName(Symbol name) { mName = name; }
-    void SetUnk8(bool b) { unk8 = b; }
+    void SetFitness(bool b) { mFitness = b; }
+    bool IsFitness() const { return mFitness; }
+    void SetUnk9(bool b) { unk9 = b; }
+    bool GetUnk9() const { return unk9; }
 
 protected:
     virtual void HandleChange() {}
 
     Symbol mName; // 0x4
-    bool unk8; // 0x8
+    bool mFitness; // 0x8 - is fitness
     bool unk9; // 0x9
     std::vector<int> m_vSongs; // 0xc
 };

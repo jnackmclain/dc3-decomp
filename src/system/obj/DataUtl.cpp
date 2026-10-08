@@ -1,4 +1,5 @@
 #include "obj/Data.h"
+#include "obj/DataFile.h"
 #include "obj/DataFunc.h"
 #include "obj/Dir.h"
 #include "obj/Object.h"
@@ -30,7 +31,9 @@ void DataMacroWarning(bool b) { gDataMacroWarning = b; }
 
 Hmx::Object *DataThis() { return gDataThis; }
 
-Loader *DataFactory(const FilePath &, LoaderPos);
+Loader *DataFactory(const FilePath &fp, LoaderPos pos) {
+    return new DataLoader(fp, pos, true);
+}
 
 bool DataUpdateArray(DataArray *a1, DataArray *a2) {
     if (a2->Size() != 0) {
@@ -67,9 +70,9 @@ void DataMergeTags(DataArray *dest, DataArray *src) {
         for (int i = 0; i < src->Size(); i++) {
             DataNode &node = src->Node(i);
             if (node.Type() == kDataArray) {
-                DataArray *arr = node.UncheckedArray();
+                DataArray *arr = node.ArrayValue();
                 if (arr->Size() != 0) {
-                    DataArray *found = dest->FindArray(arr->UncheckedInt(0), false);
+                    DataArray *found = dest->FindArray(arr->Node(0).IntValue(), false);
                     if (!found) {
                         dest->Resize(dest->Size() + 1);
                         const DataNode &destNode = arr;
@@ -87,10 +90,10 @@ void DataReplaceTags(DataArray *dest, DataArray *src) {
         for (int i = 0; i < dest->Size(); i++) {
             DataNode &node = dest->Node(i);
             if (node.Type() == kDataArray) {
-                DataArray *arr = node.UncheckedArray();
+                DataArray *arr = node.ArrayValue();
                 if (arr->Size() != 0) {
-                    DataArray *found = src->FindArray(arr->UncheckedInt(0), false);
-                    if (found != 0) {
+                    DataArray *found = src->FindArray(arr->Node(0).IntValue(), false);
+                    if (found) {
                         DataReplaceTags(arr, found);
                         int inner_cnt = arr->Size();
                         found->Resize(inner_cnt);
@@ -98,8 +101,7 @@ void DataReplaceTags(DataArray *dest, DataArray *src) {
                             found->Node(j) = arr->Node(j);
                         }
                         found->SetFileLine(arr->File(), arr->Line());
-                        const DataNode &destNode = arr;
-                        node = destNode;
+                        node = found;
                     }
                 }
             }
@@ -132,7 +134,6 @@ void DataInit() {
     TheLoadMgr.RegisterFactory("dtx", DataFactory);
     REGISTER_OBJ_FACTORY(TextFile);
     gDataMacroWarning = OptionBool("no_macro_warn", true);
-    //   gDataMacroWarning = OptionBool("no_macro_warn",true);
     ObjectDir::PreInit(19997, 150000);
 }
 
@@ -145,17 +146,15 @@ DataArray *DataGetMacro(Symbol s) {
 }
 
 Symbol DataGetMacroByInt(int value, const char *prefix) {
-    for (std::map<Symbol, DataArray *>::iterator it = gMacroTable.begin();
-         it != gMacroTable.end();
-         it++) {
-        DataArray *macro_array = (*it).second;
+    FOREACH (it, gMacroTable) {
+        DataArray *macro_array = it->second;
         if (macro_array->Size() != 0) {
-            DataNode &node = (*it).second->Node(0);
+            DataNode &node = macro_array->Node(0);
             if (node.Type() == kDataInt) {
                 if (node.Int() == value) {
-                    String name((*it).first);
+                    String name(it->first);
                     if (name.find(prefix) == 0) {
-                        return (*it).first;
+                        return it->first;
                     }
                 }
             }

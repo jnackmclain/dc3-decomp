@@ -155,7 +155,7 @@ Symbol GetCrewForCharacter(Symbol theChar, bool fail) {
         for (int j = 0; j < num; j++) {
             Symbol crewChar = GetCrewCharacter(crew, j);
             if (crewChar == theChar) {
-                return crewChar;
+                return crew;
             }
         }
     }
@@ -245,8 +245,7 @@ int GetOutfitGender(Symbol outfit, bool fail) {
 }
 
 const char *GetOutfitModel(Symbol outfit, bool fail) {
-    DataArray *entry;
-    GetEntriesForOutfit(outfit, nullptr, &entry, fail);
+    DataArray *entry = GetOutfitEntry(outfit, fail);
     if (entry) {
         static Symbol model("model");
         DataArray *modelArr = entry->FindArray(model, false);
@@ -468,11 +467,11 @@ bool HamGameData::SetAssociatedPadNum(int player, int padnum) {
     HamPlayerData *pPlayer = mPlayers[player];
     MILO_ASSERT(pPlayer, 0x2D0);
     if (padnum >= 0 && ThePlatformMgr.IsSignedIn(padnum)) {
-        HamPlayerData *playerData = mPlayers[player];
+        HamPlayerData *playerData = mPlayers[1 - player];
         if (playerData->PadNum() == padnum) {
             playerData->SetAssociatedPadNum(-1, gNullStr);
         }
-        return playerData->SetAssociatedPadNum(padnum, ThePlatformMgr.GetName(padnum));
+        return pPlayer->SetAssociatedPadNum(padnum, ThePlatformMgr.GetName(padnum));
     } else {
         return pPlayer->SetAssociatedPadNum(-1, gNullStr);
     }
@@ -511,7 +510,7 @@ void HamGameData::AutoAssignSkeletons(const SkeletonUpdateData *data) {
     for (int i = 0; i < 2; i++) {
         if (!(int)data->unk0[i]) {
             for (int j = 0; j < 6; j++) {
-                Skeleton *cur = data->unk4[j];
+                const Skeleton *cur = data->unk4[j];
                 if (cur->IsValid()) {
                     int id = cur->TrackingID();
                     bool b1;
@@ -529,5 +528,11 @@ void HamGameData::AutoAssignSkeletons(const SkeletonUpdateData *data) {
                 }
             }
         }
+    }
+}
+
+void HamGameData::SetPlayerSidesLocked(bool locked) {
+    if (mPlayerSidesLocked != locked) {
+        mPlayerSidesLocked = locked;
     }
 }

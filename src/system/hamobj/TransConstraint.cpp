@@ -1,11 +1,15 @@
 #include "hamobj/TransConstraint.h"
+#include "math/Color.h"
+#include "math/Geo.h"
 #include "math/Mtx.h"
 #include "math/Rot.h"
 #include "obj/Object.h"
+#include "obj/Task.h"
 #include "os/Debug.h"
 #include "rndobj/Highlight.h"
 #include "rndobj/Poll.h"
 #include "rndobj/Trans.h"
+#include "rndobj/Utl.h"
 
 TransConstraint::TransConstraint()
     : mParent(this), mChild(this), mSpeed(10), mAffectScale(0), mUseUITime(0), unk52(1) {
@@ -71,20 +75,22 @@ BEGIN_COPYS(TransConstraint)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(4, 0)
+
 BEGIN_LOADS(TransConstraint)
     LOAD_REVS(bs)
     ASSERT_REVS(4, 0)
     LOAD_SUPERCLASS(Hmx::Object)
     LOAD_SUPERCLASS(RndPollable)
     LOAD_SUPERCLASS(RndHighlightable)
-    bs >> mParent;
-    bs >> mChild;
-    bs >> mStaticCube;
+    d >> mParent;
+    d >> mChild;
+    d >> mStaticCube;
     for (int i = 0; i < 3; i++) {
         d >> mTracks[i];
     }
     if (d.rev > 0) {
-        bs >> mSpeed;
+        d >> mSpeed;
     }
     if (d.rev > 1) {
         if (d.rev <= 3) {
@@ -97,6 +103,105 @@ BEGIN_LOADS(TransConstraint)
         d >> mUseUITime;
     }
 END_LOADS
+
+void TransConstraint::Highlight() {
+    if (mParent && mChild) {
+        Transform trans = mParent->WorldXfm();
+        trans.m.Identity();
+
+        Box b;
+        for (int i = 0; i < 3; i++) {
+            float f = mStaticCube[i] / 2.0f;
+            b.mMin[i] = -f;
+            b.mMax[i] = f;
+        }
+
+        UtilDrawAxes(mParent->WorldXfm(), 10.0f, Hmx::Color(1, 1, 1));
+        UtilDrawAxes(mChild->WorldXfm(), 10.0f, Hmx::Color(1, 1, 1));
+        UtilDrawBox(trans, b, Hmx::Color(1, 1, 0), true);
+    }
+}
+
+void TransConstraint::Poll() {
+    if (mParent && mChild && unk52) {
+        float f12 = mUseUITime ? TheTaskMgr.DeltaUISeconds() : TheTaskMgr.DeltaSeconds();
+        Vector3 va0 = mParent->WorldXfm().v;
+        Vector3 ve0 = mChild->WorldXfm().v;
+        Vector3 vd0;
+        Subtract(va0, ve0, vd0);
+        for (int i = 0; i < 3; i++) {
+            if (!mTracks[i]) {
+                vd0[i] = 0;
+            }
+        }
+        if (Length(vd0) > mSpeed * 3) {
+            SnapToParent();
+        } else {
+            Vector3 v90;
+            Normalize(vd0, v90);
+            for (int i = 0; i < 3; i++) {
+                if (mTracks[i]) {
+                    float f10 = mStaticCube[i] / 2;
+                    float f11 = va0[i] - f10;
+                    f10 += va0[i];
+                    if (ve0[i] < f11 || ve0[i] > f10) {
+                        float f9 = v90[i] * mSpeed;
+                        if (ve0[i] < f11) {
+                            ve0[i] += f9 * f12;
+                            MinEq(ve0[i], f11);
+                        } else if (ve0[i] > f10) {
+                            ve0[i] += f9 * f12;
+                            MaxEq(ve0[i], f10);
+                        }
+                    }
+                }
+            }
+            mChild->SetWorldPos(ve0);
+            if (mAffectScale) {
+                Vector3 vb0;
+                MakeScale(mParent->WorldXfm().m, vb0);
+                Vector3 vf0;
+                MakeScale(mChild->WorldXfm().m, vf0);
+                Vector3 v70;
+                MakeScale(mChild->LocalXfm().m, v70);
+                Vector3 vc0;
+                Subtract(vb0, vf0, vc0);
+                for (int i = 0; i < 3; i++) {
+                    if (!mTracks[i]) {
+                        vc0[i] = 0;
+                    }
+                }
+                float f7 = 1;
+                float f8 = Length(vd0);
+                if (f8 > 0) {
+                    f7 = Length(vc0) / f8;
+                }
+                Vector3 v80;
+                Normalize(vc0, v80);
+                f7 *= mSpeed;
+                for (int i = 0; i < 3; i++) {
+                    if (mTracks[i]) {
+                        float f8 = vb0[i];
+                        float f11 = vb0[i];
+                        if (vf0[i] < f8 || vf0[i] > f11) {
+                            float f10 = v80[i] * f7;
+                            if (vf0[i] < f8) {
+                                vf0[i] += f10 * f12;
+                                MinEq(vf0[i], f8);
+                            } else if (vf0[i] > f11) {
+                                vf0[i] += f10 * f12;
+                                MaxEq(vf0[i], f11);
+                            }
+                        }
+                    } else {
+                        vf0[i] = v70[i] + vb0[i];
+                    }
+                }
+                SetScaleVectorOnTransform(mChild, vf0);
+            }
+        }
+    }
+}
 
 void TransConstraint::Enter() {
     RndPollable::Enter();

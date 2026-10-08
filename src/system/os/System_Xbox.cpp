@@ -1,14 +1,19 @@
 #include "obj/Data.h"
 #include "os/Debug.h"
 #include "os/File.h"
+#include "os/MapFile_Xbox.h"
+#include "os/PlatformMgr.h"
 #include "os/System.h"
 #include "xdk/XAPILIB.h"
 #include "xdk/XBDM.h"
-#include "Memory.h"
+#include "os/Memory.h"
 
 namespace {
-    DiscErrorCallbackFunc *gCallback;
+    DiscErrorCallbackFunc *gCallback = ShowDirtyDiscError;
 }
+
+bool (*ParseStack)(char const *, struct StackData *, int, class FixedString &) =
+    XboxMapFile::ParseStack;
 
 unsigned long ULSystemLocale() { return XGetLocale(); }
 unsigned long ULSystemLanguage() { return XTLGetLanguage(); }
@@ -20,8 +25,6 @@ DiscErrorCallbackFunc *SetDiskErrorCallback(DiscErrorCallbackFunc *func) {
 }
 
 DiscErrorCallbackFunc *GetDiskErrorCallback() { return gCallback; }
-
-#define SUCCEEDED(hr) hr >= 0
 
 namespace {
     void XDKCheck() {
@@ -57,32 +60,45 @@ Symbol GetSystemLanguage(Symbol s) {
     static Symbol cht("cht");
     static Symbol kor("kor");
     static Symbol jpn("jpn");
+
     unsigned long lang = ULSystemLanguage();
     unsigned long locale = ULSystemLocale();
+
     switch (locale) {
-    case XC_LOCALE_DENMARK:
-        if (IsSupportedLanguage(dan, false))
-            return dan;
-    case XC_LOCALE_FINLAND:
-        if (IsSupportedLanguage(fin, false))
-            return fin;
-    case XC_LOCALE_NETHERLANDS:
-        if (IsSupportedLanguage(dut, false))
-            return dut;
-    case XC_LOCALE_NORWAY:
-        if (IsSupportedLanguage(nor, false))
-            return nor;
     case XC_LOCALE_SWEDEN:
-        if (IsSupportedLanguage(swe, false))
+        if (IsSupportedLanguage(swe, false)) {
             return swe;
+        }
+        break;
+    case XC_LOCALE_NORWAY:
+        if (IsSupportedLanguage(nor, false)) {
+            return nor;
+        }
+        break;
+    case XC_LOCALE_NETHERLANDS:
+        if (IsSupportedLanguage(dut, false)) {
+            return dut;
+        }
+        break;
+    case XC_LOCALE_FINLAND:
+        if (IsSupportedLanguage(fin, false)) {
+            return fin;
+        }
+        break;
+    case XC_LOCALE_DENMARK:
+        if (IsSupportedLanguage(dan, false)) {
+            return dan;
+        }
+        break;
     default:
         break;
     }
 
     switch (lang) {
     case XC_LANGUAGE_ENGLISH:
-        if (locale == XC_LOCALE_BELGIUM && IsSupportedLanguage(dut, false))
+        if (locale == XC_LOCALE_BELGIUM && IsSupportedLanguage(dut, false)) {
             return dut;
+        }
     case XC_LANGUAGE_SCHINESE:
         return eng;
     case XC_LANGUAGE_JAPANESE:
@@ -92,11 +108,12 @@ Symbol GetSystemLanguage(Symbol s) {
     case XC_LANGUAGE_FRENCH:
         return fre;
     case XC_LANGUAGE_SPANISH:
-        if (locale == XC_LOCALE_CHILE || locale == XC_LOCALE_COLOMBIA
-            || locale == XC_LOCALE_MEXICO) {
-            return IsSupportedLanguage(mex, false) ? mex : esl;
+        if ((locale == XC_LOCALE_CHILE || locale == XC_LOCALE_COLOMBIA
+             || locale == XC_LOCALE_MEXICO)
+            && IsSupportedLanguage(mex, false)) {
+            return mex;
         }
-        break;
+        return esl;
     case XC_LANGUAGE_ITALIAN:
         return ita;
     case XC_LANGUAGE_KOREAN:
@@ -235,7 +252,8 @@ Symbol GetSystemLocale(Symbol s) {
 }
 
 bool HongKongExceptionMet() {
-    if (ULSystemLanguage() == 8 && ULSystemLocale() == XC_LOCALE_HONG_KONG) {
+    if (ULSystemLanguage() == XC_LANGUAGE_TCHINESE
+        && ULSystemLocale() == XC_LOCALE_HONG_KONG) {
         return true;
     } else
         return false;
@@ -272,4 +290,30 @@ bool PlatformDebugBreak() {
         return true;
     }
     return false;
+}
+
+void ShowDirtyDiscError() {
+    unsigned long ul;
+
+    if (ThePlatformMgr.sXShowCallback(ul)) {
+        XShowNuiDirtyDiscErrorUI(ul, 0);
+    }
+
+    XShowDirtyDiscErrorUI(0);
+}
+
+void CaptureStackTrace(int p1, struct StackData *stackData, void *p3) {
+    stackData->mFailThreadStack[0] = 0;
+
+    DmCaptureStackBackTrace(p1, stackData);
+
+    memmove(stackData->mFailThreadStack, stackData->mFailThreadStack + 3, (p1 + -3) * 4);
+
+    if (p3 != 0) {
+        memmove(
+            stackData->mFailThreadStack + 2,
+            stackData->mFailThreadStack + 8,
+            (p1 + -8) * 4
+        );
+    }
 }

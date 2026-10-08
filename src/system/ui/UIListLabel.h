@@ -15,10 +15,11 @@ public:
     virtual void Save(BinStream &);
     virtual void Copy(const Hmx::Object *, CopyType);
     virtual void Load(BinStream &);
-    virtual RndTransformable *RootTrans();
+    virtual RndTransformable *RootTrans() { return mLabel; }
 
     const char *GetDefaultText() const;
     UILabel *ElementLabel(int) const;
+    bool GetUnk8c() const { return unk8c; }
 
     NEW_OBJ(UIListLabel)
     OBJ_MEM_OVERLOAD(0x11)
@@ -41,6 +42,9 @@ public:
     }
     virtual void Draw(const Transform &, float, UIColor *, Box *);
 
-    UIListLabel *mListLabel;
-    UILabel *mLabel;
+    UILabel *Label() const { return mLabel; }
+
+private:
+    UIListLabel *mListLabel; // 0x4
+    UILabel *mLabel; // 0x8
 };

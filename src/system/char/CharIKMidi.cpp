@@ -40,6 +40,27 @@ BEGIN_SAVES(CharIKMidi)
     bs << mMaxAnimBlend;
 END_SAVES
 
+INIT_REVS(5, 0)
+
+BEGIN_LOADS(CharIKMidi)
+    LOAD_REVS(bs)
+    ASSERT_REVS(5, 0)
+    LOAD_SUPERCLASS(Hmx::Object)
+    d >> mBone;
+    if (d.rev < 3) {
+        ObjPtrVec<RndTransformable> vec(this);
+        d >> vec;
+    }
+    if (d.rev == 2 || d.rev == 3) {
+        String asdf;
+        d >> asdf;
+    }
+    if (d.rev > 4) {
+        d >> mAnimBlender;
+        d >> mMaxAnimBlend;
+    }
+END_LOADS
+
 BEGIN_COPYS(CharIKMidi)
     COPY_SUPERCLASS(Hmx::Object)
     CREATE_COPY(CharIKMidi)
@@ -152,7 +173,7 @@ void CharIKMidi::Highlight() {
         TheRnd.DrawString(MakeString("%s:", PathName(this)), v2, white, true);
         v2.y += 16.0f;
         TheRnd.DrawString(
-            MakeString("frac %.3f new:%s", mFrac, mCurSpot ? mCurSpot->Name() : "NULL"),
+            MakeString("frac %.3f new:%s", Frac(), mCurSpot ? mCurSpot->Name() : "NULL"),
             v2,
             white,
             true

@@ -77,7 +77,7 @@ enum EaseType {
     kEaseQuarterHalfStairstep = 34
 };
 
-float EaseLinear(float, float, float);
+inline float EaseLinear(float t, float, float) { return t; }
 
 inline float EasePolyIn(float t, float power, float) {
     MILO_ASSERT(t >= 0 && t <= 1 && power != 0, 88);
@@ -131,11 +131,24 @@ inline float EaseBounceOutIn(float t, float power, float) {
 
 inline float EaseElasticIn(float t, float power, float f3) {
     MILO_ASSERT(t >= 0 && t <= 1, 145);
-    if (t > 0 && t < 1.0f) {
-        if (f3 <= 0)
-            f3 = 0.45;
+    if (t > 0 && t < 1) {
+        if (f3 <= 0) {
+            f3 = 0.45f;
+        }
+        float f7;
+        if (power < 1) {
+            f7 = f3 / 4;
+            power = 1;
+        } else {
+            f7 = (asinf(1.0f / power)) * f3 * 0.15915494f;
+        }
+        float sub6 = t - 1;
+        float powed = pow(2.0, sub6 * 10.0f);
+        float sined = FastSin(((sub6 - f7) / f3) * 2 * PI);
+        return -(sined * powed * f3);
+    } else {
+        return t;
     }
-    return t;
 }
 
 inline float EaseElasticOut(float t, float power, float f3) {
@@ -189,12 +202,12 @@ inline float EaseBackOutIn(float t, float power, float) {
 
 inline float EaseSineIn(float t, float power, float) {
     MILO_ASSERT(t >= 0 && t <= 1, 210);
-    return 1.0f - FastSin((t + 1) * 1.570796370506287f);
+    return 1.0f - FastSin((t + 1) * (PI / 2));
 }
 
 inline float EaseSineOut(float t, float power, float) {
     MILO_ASSERT(t >= 0 && t <= 1, 216);
-    return FastSin((t + 1) * 1.570796370506287f);
+    return FastSin((t + 1) * (PI / 2));
 }
 
 inline float EaseSineInOut(float t, float power, float) {
@@ -232,16 +245,17 @@ inline float EaseExpoOut(float t, float power, float) {
 
 inline float EaseExpoInOut(float t, float power, float) {
     MILO_ASSERT(t >= 0 && t <= 1, 248);
-    if (t != 0.0f && t != 1.0f) {
-        if (t < 0.5) {
+    if (t != 0 && t != 1) {
+        if (t < 0.5f) {
             float ret = pow(2, (t * 2.0f - 1.0f) * 10);
-            return ret * 0.5 - 0.005f;
+            return ret / 2 - 0.0005f;
         } else {
             float ret = pow(2, (t * 2.0f - 1.0f) * -10);
-            return (1.0f - ret) * 0.50025f;
+            return (2.0f - ret) * 0.50025f;
         }
-    } else
+    } else {
         return t;
+    }
 }
 
 inline float EaseExpoOutIn(float t, float power, float) {
@@ -262,10 +276,12 @@ inline float EaseCircIn(float t, float power, float) {
 inline float EaseSigmoid(float t, float, float) {
     MILO_ASSERT(t >= 0 && t <= 1, 0x51);
     float ret = (t * t * 3.0f) - (t * t * t * 2.0f);
-    if (ret < 0)
-        return 0;
-    if (ret > 1.0f)
-        return 1.0f;
+    return Clamp(0.0f, 1.0f, ret);
+}
+
+inline float EaseInExp(float t) {
+    MILO_ASSERT(t >= 0 && t <= 1, 0x39);
+    return std::pow(t, 3.03f);
 }
 
 inline float EaseCircOut(float t, float power, float) {
@@ -375,6 +391,11 @@ EaseFunc *gEaseFuncs[35] = {
 };
 
 inline EaseFunc *GetEaseFunction(EaseType e) {
+    MILO_ASSERT(e >= kEaseLinear && e <= kEaseQuarterHalfStairstep, 0x16B);
+    return gEaseFuncs[e];
+}
+
+__forceinline EaseFunc *GetEaseFunctionForcedInline(EaseType e) {
     MILO_ASSERT(e >= kEaseLinear && e <= kEaseQuarterHalfStairstep, 0x16B);
     return gEaseFuncs[e];
 }

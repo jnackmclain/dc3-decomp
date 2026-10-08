@@ -1,4 +1,5 @@
 #pragma once
+#include "NavListNode.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
 #include "ui/UIListProvider.h"
@@ -12,19 +13,19 @@ public:
     virtual int NumData() const { return unk30.size(); }
     virtual bool IsActive(int idx) const { return unk30[idx]->IsActive(); }
     virtual void BuildTree() = 0;
-    virtual void DeleteItemList();
+    virtual void DeleteItemList(); // 0x70
     virtual void BuildItemList() = 0;
     virtual void SetHighlightedIx(int) = 0;
     virtual void SetHighlightItem(const NavListSortNode *) = 0;
     virtual void UpdateHighlight();
     virtual void OnSelectShortcut(int);
     virtual bool GetHeaderSelectable() { return false; }
-    virtual void Init() {}
+    virtual void Init() {} // 0x8c
     virtual NavListItemNode *NewItemNode(void *) const = 0;
-    virtual NavListShortcutNode *NewShortcutNode(NavListItemNode *) const = 0;
+    virtual NavListShortcutNode *NewShortcutNode(NavListItemNode *) const = 0; // 0x94
+    virtual NavListHeaderNode *NewHeaderNode(NavListItemNode *) const = 0;
     virtual NavListHeaderNode *
     NewHeaderNode(NavListItemNode *, NavListItemNode *) const = 0;
-    virtual NavListHeaderNode *NewHeaderNode(NavListItemNode *) const = 0;
 
     int GetCurrentShortcut();
     void ChangeHighlightHeader(int);
@@ -39,7 +40,9 @@ public:
     void SetUnk50(NavListSortNode *sortnode) { unk50 = sortnode; }
     void SetUnk54(NavListSortNode *sortnode) { unk54 = sortnode; }
     Symbol GetSortName() { return mSortName; }
+    void SetSortName(Symbol name) { mSortName = name; }
     NavListSortNode *GetListFromIdx(int idx) { return mList[idx]; }
+    std::vector<NavListSortNode *> &GetList() { return mList; }
     int GetListSize() { return mList.size(); }
 
 protected:
@@ -49,4 +52,16 @@ protected:
     NavListSortNode *unk50; // 0x50
     NavListSortNode *unk54; // 0x54
     Symbol mSortName; // 0x58
+};
+
+struct CompareHeaders {
+    bool operator()(NavListSortNode *left, NavListSortNode *right) const {
+        return left->Compare(right, kNodeHeader) < 0;
+    }
+};
+
+struct CompareItems {
+    bool operator()(NavListSortNode *left, NavListSortNode *right) const {
+        return left->Compare(right, kNodeItem) < 0;
+    }
 };

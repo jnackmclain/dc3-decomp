@@ -1,14 +1,17 @@
 #pragma once
-
+#include "meta_ham/HamScreen.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
 #include "os/PlatformMgr.h"
 #include "ui/UI.h"
 #include "ui/UIScreen.h"
 #include "utl/Symbol.h"
-class SigninScreen : public UIScreen {
+
+class SigninScreen : public HamScreen {
 public:
+    SigninScreen();
     // UIScreen
+    virtual ~SigninScreen() {}
     OBJ_CLASSNAME(SigninScreen);
     OBJ_SET_TYPE(SigninScreen);
     virtual DataNode Handle(DataArray *, bool);
@@ -16,9 +19,9 @@ public:
     virtual void Enter(UIScreen *);
     virtual void Exit(UIScreen *);
 
-    SigninScreen();
+    NEW_OBJ(SigninScreen)
 
 protected:
-    DataNode OnMsg(SigninChangedMsg const &);
-    DataNode OnMsg(UIChangedMsg const &);
+    DataNode OnMsg(const SigninChangedMsg &);
+    DataNode OnMsg(const UIChangedMsg &);
 };

@@ -4,6 +4,7 @@
 #include "math/Mtx.h"
 #include "obj/Object.h"
 #include "os/System.h"
+#include "rndobj/Cam.h"
 #include "rndobj/TransAnim.h"
 #include "rndobj/Utl.h"
 #include "obj/Data.h"
@@ -64,7 +65,8 @@ BEGIN_HANDLERS(RndTransformable)
     HANDLE_ACTION(
         set_trans_parent,
         SetTransParent(
-            _msg->Obj<RndTransformable>(2), _msg->Size() > 3 ? _msg->Int(3) != 0 : false
+            _msg->Obj<RndTransformable>(2),
+            _msg->Size() > 3 ? (bool)(_msg->Int(3) != 0) : false
         )
     )
     HANDLE_EXPR(trans_parent, mParent.Ptr())
@@ -72,7 +74,7 @@ BEGIN_HANDLERS(RndTransformable)
     HANDLE_ACTION(
         distribute_children, DistributeChildren(_msg->Int(2) != 0, _msg->Float(3))
     )
-    HANDLE(get_children, OnGetChildren)
+    HANDLE(get_trans_children, OnGetChildren)
     HANDLE_VIRTUAL_SUPERCLASS(Hmx::Object)
 END_HANDLERS
 
@@ -96,7 +98,7 @@ BEGIN_PROPSYNCS(RndTransformable)
         SetTransConstraint(mConstraint, mTarget, _val.Int())
     )
     SYNC_PROP_MODIFY(local_xfm, mLocalXfm, SetDirty())
-    SYNC_PROP_MODIFY(world_xfm, mWorldXfm, ComputeLocalXfm(mLocalXfm))
+    SYNC_PROP_MODIFY(world_xfm, mWorldXfm, SyncWorldXfm())
     SYNC_VIRTUAL_SUPERCLASS(Hmx::Object)
 END_PROPSYNCS
 
@@ -126,42 +128,37 @@ BEGIN_COPYS(RndTransformable)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(9, 0)
+
 BEGIN_LOADS(RndTransformable)
     LOAD_REVS(bs)
-    int gRev = d.rev;
     ASSERT_REVS(9, 0)
-    if (ClassName() == StaticClassName()) {
-        Hmx::Object::Load(bs);
-    }
+    LOAD_VIRTUAL_SUPERCLASS(Hmx::Object)
     if (gLoadingProxyFromDisk) {
         Transform t;
-        bs >> t >> t;
+        d >> t >> t;
     } else {
-        bs >> mLocalXfm >> mWorldXfm;
+        d >> mLocalXfm >> mWorldXfm;
     }
-    if (gRev < 9) {
+    if (d.rev < 9) {
         ObjPtrList<RndTransformable> l(this);
-        bs >> l;
+        d >> l;
         FOREACH (it, l) {
             (*it)->SetTransParent(this, false);
         }
     }
 
-    switch (gRev) {
-    default:
-        bs >> (int &)mConstraint;
-        break;
-    case 7:
-    case 8:
-        bs >> (int &)mConstraint;
+    if (d.rev > 8) {
+        d >> (int &)mConstraint;
+    } else if (d.rev > 6) {
+        d >> (int &)mConstraint;
         if (mConstraint == 4) {
             mConstraint = kConstraintNone;
-        } else if (mConstraint == 2 || mConstraint == 3 || mConstraint == 4) {
+        } else if (mConstraint > 1 && mConstraint < 5) {
             mConstraint = (Constraint)(mConstraint + kConstraintLocalRotate);
         }
-        break;
-    case 6:
-        bs >> (int &)mConstraint;
+    } else if (d.rev == 6) {
+        d >> (int &)mConstraint;
         mPreserveScale = mConstraint > kConstraintTargetWorld;
         if (mConstraint > 9) {
             mConstraint = (Constraint)(mConstraint - kConstraintBillboardZ);
@@ -170,14 +167,10 @@ BEGIN_LOADS(RndTransformable)
         } else if (mConstraint == 2) {
             mConstraint = kConstraintParentWorld;
         }
-        break;
-    case 3:
-    case 4:
-    case 5:
+    } else if (d.rev >= 3) {
         int unkb0;
-        bs >> unkb0;
-        mPreserveScale = unkb0;
-
+        d >> unkb0;
+        mPreserveScale = unkb0 & 0x80;
         switch (unkb0) {
         case 0x4:
         case 0x84:
@@ -202,64 +195,60 @@ BEGIN_LOADS(RndTransformable)
             mConstraint = kConstraintNone;
             break;
         }
-        break;
-    case 1:
-    case 2: {
-        int numb4;
-        bs >> numb4;
+    } else if (d.rev > 0) {
+        unsigned int numb4;
+        d >> numb4;
         int sp80[6] = { 0, 0, 0, 5, 6, 7 };
         if (numb4 >= 0x18) {
             mConstraint = kConstraintNone;
         } else {
             mConstraint = (Constraint)sp80[numb4];
         }
-        break;
     }
-    case 0:
-        break;
-    }
-    if (gRev != 0 && gRev < 7) {
+    if (d.rev > 0 && d.rev < 7) {
         Vector3 v;
-        bs >> v;
-        if (!v.IsZero()) {
+        d >> v;
+        bool isZero = v == Vector3(0, 0, 0);
+        if (!isZero) {
             MILO_LOG("Transform origin no longer supported\n");
         }
     }
-    if (gRev > 1 && gRev < 5) {
+    if (d.rev > 1 && d.rev < 5) {
         bool b3u;
         d >> b3u;
     }
-    if (gRev > 5 && gRev < 8) {
+    if (d.rev > 5 && d.rev < 8) {
         Sphere s;
-        bs >> s;
+        d >> s;
         RndDrawable *draw = dynamic_cast<RndDrawable *>(this);
         if (draw)
             draw->SetSphere(s);
     }
-    if (gRev > 5) {
+    if (d.rev > 5) {
         if (gLoadingProxyFromDisk) {
             ObjPtr<RndTransformable> tPtr(this);
-            tPtr.Load(bs, false, 0);
+            tPtr.Load(d.stream, false, nullptr);
         } else
-            bs >> mTarget;
+            d >> mTarget;
     }
-    if (gRev > 6)
+    if (d.rev > 6)
         d >> mPreserveScale;
-    if (gRev > 8) {
+    if (d.rev > 8) {
         ObjPtr<RndTransformable> tPtr(this);
         if (!gLoadingProxyFromDisk) {
-            bs >> tPtr;
+            d >> tPtr;
             SetTransParent(tPtr, false);
-        } else
-            tPtr.Load(bs, false, 0);
-    } else if (gRev > 6) {
+        } else {
+            tPtr.Load(d.stream, false, nullptr);
+        }
+    } else if (d.rev > 6) {
         ObjPtr<RndTransformable> tPtr(this);
-        bs >> tPtr;
+        d >> tPtr;
         if (tPtr != this) {
             SetTransParent(tPtr, false);
             mConstraint = kConstraintParentWorld;
         }
-    } else if (gRev == 6 && mConstraint == kConstraintParentWorld) {
+    } else if (d.rev == 6 && mConstraint == kConstraintParentWorld) {
         SetTransParent(mTarget, false);
     }
 END_LOADS
@@ -585,12 +574,13 @@ void RndTransformable::SetLocalRotIndex(int index, float f2) {
     v5c[index] = f2 * DEG2RAD;
     Hmx::Matrix3 m50;
     MakeRotMatrix(v5c, m50, true);
+    float harness_scalar = v68.y;
     Scale(v68, m50, m50);
     SetLocalRot(m50);
 }
 
 void RndTransformable::TransformTransAnims(const Transform &tf) {
-    FOREACH (it, Refs()) {
+    FOREACH_OBJREF (it, this) {
         RndTransAnim *transAnim = dynamic_cast<RndTransAnim *>(it->RefOwner());
         if (transAnim && transAnim->Trans() == this) {
             TransformKeys(transAnim, tf);
@@ -649,4 +639,84 @@ const Transform &RndTransformable::WorldXfm_Force() {
     else
         UpdatedWorldXfm();
     return mWorldXfm;
+}
+
+void RndTransformable::ApplyDynamicConstraint() {
+    if (mConstraint == kConstraintTargetWorld) {
+        if (mTarget) {
+            mWorldXfm = mTarget->WorldXfm();
+        }
+    } else if (mConstraint == kConstraintShadowTarget) {
+        Transform tf40;
+        if (mTarget) {
+            Transpose(mTarget->WorldXfm(), tf40);
+            Multiply(mWorldXfm, tf40, mWorldXfm);
+        } else {
+            tf40.Reset();
+        }
+        Plane pl50;
+        Multiply(sShadowPlane, tf40, pl50);
+        float planeB;
+        if (pl50.b != 0) {
+            planeB = 1 / pl50.b;
+        } else {
+            planeB = 0.001f;
+        }
+        tf40.m.Set(1, -pl50.a * planeB, 0, 0, 0, 0, 0, -pl50.c * planeB, 1);
+        tf40.v.Set(0, -pl50.d * planeB, 0);
+        Multiply(mWorldXfm, tf40, mWorldXfm);
+        Multiply(mWorldXfm, mTarget->WorldXfm(), mWorldXfm);
+    } else if (RndCam::Current()) {
+        Vector3 v60;
+        RndTransformable *cur = mTarget ? mTarget.Ptr() : RndCam::Current();
+        const Transform &curWorld = cur->WorldXfm();
+        if (mPreserveScale) {
+            MakeScale(mWorldXfm.m, v60);
+        }
+        switch (mConstraint) {
+        case kConstraintLookAtTarget:
+            if (mTarget) {
+                Subtract(mTarget->WorldXfm().v, mWorldXfm.v, mWorldXfm.m.y);
+                Normalize(mWorldXfm.m, mWorldXfm.m);
+            }
+            break;
+        case kConstraintBillboardZ:
+            Subtract(mWorldXfm.v, curWorld.v, mWorldXfm.m.y);
+            if (mPreserveScale) {
+                Normalize(mWorldXfm.m.z, mWorldXfm.m.z);
+            }
+            Cross(mWorldXfm.m.y, mWorldXfm.m.z, mWorldXfm.m.x);
+            Normalize(mWorldXfm.m.x, mWorldXfm.m.x);
+            Cross(mWorldXfm.m.z, mWorldXfm.m.x, mWorldXfm.m.y);
+            break;
+        case kConstraintBillboardXZ:
+            Subtract(mWorldXfm.v, curWorld.v, mWorldXfm.m.y);
+            Normalize(mWorldXfm.m.y, mWorldXfm.m.y);
+            Cross(mWorldXfm.m.y, mWorldXfm.m.z, mWorldXfm.m.x);
+            Normalize(mWorldXfm.m.x, mWorldXfm.m.x);
+            Cross(mWorldXfm.m.x, mWorldXfm.m.y, mWorldXfm.m.z);
+            break;
+        case kConstraintBillboardXYZ:
+            Subtract(mWorldXfm.v, curWorld.v, mWorldXfm.m.y);
+            mWorldXfm.m.z = curWorld.m.z;
+            Normalize(mWorldXfm.m, mWorldXfm.m);
+            break;
+        case kConstraintFastBillboardXYZ:
+            mWorldXfm.m = curWorld.m;
+            break;
+        case kConstraintSkyBox:
+            Add(mLocalXfm.v, curWorld.v, mWorldXfm.v);
+            mWorldXfm.m = mLocalXfm.m;
+            break;
+        case kConstraintSkyBoxXY:
+            Add(mLocalXfm.v, curWorld.v, mWorldXfm.v);
+            mWorldXfm.v.z = mLocalXfm.v.z;
+            mWorldXfm.m = mLocalXfm.m;
+            break;
+        }
+        if (mPreserveScale) {
+            Scale(v60, mWorldXfm.m, mWorldXfm.m);
+        }
+    }
+    SetDirty_Force();
 }

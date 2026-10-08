@@ -1,21 +1,25 @@
 #include "synth/ThreeDSound.h"
+#include "math/Decibels.h"
 #include "math/Easing.h"
 #include "math/Rot.h"
+#include "math/Utl.h"
 #include "math/Vec.h"
 #include "obj/Object.h"
 #include "os/Debug.h"
 #include "rndobj/Trans.h"
 #include "rndobj/Utl.h"
+#include "synth/Sound.h"
 #include "synth/Utl.h"
 #include "utl/BinStream.h"
+
+const float sSpeedCaps[2] = { 0.00390625f, 4.0f };
 
 ThreeDSound::ThreeDSound()
     : unk194(0), unk195(0), unk198(0), unk19c(0), unk1a0(0), unk1a4(0), unk1a8(0),
       mFalloffType(kEaseLinear), mFalloffParameter(2), mMinFalloffDistance(10),
       mSilenceDistance(100), mDopplerEnabled(1), mPanEnabled(1), mShape(0), mRadius(10),
-      unk20c(100), unk210(0), mDopplerPower(1), mStartedPlaying(0) {
-    Fader *fader = static_cast<Fader *>(Fader::NewObject());
-    unk1c8 = fader;
+      mDistance(100.0f), unk210(0), mDopplerPower(1), mStartedPlaying(0) {
+    unk1c8 = static_cast<Fader *>(Fader::NewObject());
     mFaders.Add(unk1c8);
     CalculateFaderVolume();
     Vector3 v(mMinFalloffDistance, mSilenceDistance, 1);
@@ -91,6 +95,8 @@ BEGIN_COPYS(ThreeDSound)
     CalculateFaderVolume();
 END_COPYS
 
+INIT_REVS(6, 0)
+
 BEGIN_LOADS(ThreeDSound)
     LOAD_REVS(bs)
     ASSERT_REVS(6, 0)
@@ -103,7 +109,12 @@ BEGIN_LOADS(ThreeDSound)
     d >> mFalloffParameter;
     d >> mMinFalloffDistance;
     d >> mSilenceDistance;
-
+    mDistance = mSilenceDistance;
+    if (d.rev < 2) {
+        ObjPtr<RndTransformable> t(this);
+        d >> t;
+        SetTransParent(t, false);
+    }
     if (d.rev >= 1) {
         d >> mDopplerEnabled;
     }
@@ -125,33 +136,36 @@ BEGIN_LOADS(ThreeDSound)
 END_LOADS
 
 void ThreeDSound::Highlight() {
-    if (mShape >= 1) {
-        if (mShape != 1) {
+    if (mShape >= 1U) {
+        if (mShape != 1U) {
             MILO_FAIL("Trying to drawn unknown sound shape %d\n", mShape);
-            return;
-        }
-        Transform xfm = WorldXfm();
-        Vector3 vscale;
-        MakeScale(xfm.m, vscale);
-        vscale.x = 1.0f / vscale.x;
-        vscale.y = 1.0f / vscale.y;
-        vscale.z = 1.0f / vscale.z;
-        Scale(vscale, xfm.m, xfm.m);
-        if (mRadius < mMinFalloffDistance) {
-            UtilDrawCylinder(xfm, mRadius, mMinFalloffDistance, Hmx::Color(1, 0, 0), 0x40);
         } else {
-            UtilDrawSphere(
-                WorldXfm().v, mMinFalloffDistance, Hmx::Color(1, 0, 0), nullptr
-            );
+            Transform xfm = WorldXfm();
+            Vector3 vscale;
+            MakeScale(xfm.m, vscale);
+            vscale.x = 1.0f / vscale.x;
+            vscale.y = 1.0f / vscale.y;
+            vscale.z = 1.0f / vscale.z;
+            Scale(vscale, xfm.m, xfm.m);
+            if (mMinFalloffDistance <= mRadius) {
+                UtilDrawSphere(
+                    WorldXfm().v, mMinFalloffDistance, Hmx::Color(1, 0, 0), nullptr
+                );
+            } else {
+                UtilDrawCylinder(
+                    xfm, mRadius, mMinFalloffDistance, Hmx::Color(1, 0, 0), 8
+                );
+            }
+            if (mSilenceDistance <= mRadius) {
+                UtilDrawSphere(
+                    WorldXfm().v, mSilenceDistance, Hmx::Color(0, 1, 0), nullptr
+                );
+            } else {
+                UtilDrawCylinder(xfm, mRadius, mSilenceDistance, Hmx::Color(0, 1, 0), 8);
+            }
         }
-        if (mRadius < mSilenceDistance) {
-            UtilDrawCylinder(xfm, mRadius, mSilenceDistance, Hmx::Color(0, 1, 0), 0x40);
-            return;
-        }
-        UtilDrawSphere(WorldXfm().v, mSilenceDistance, Hmx::Color(0, 1, 0), nullptr);
     } else {
         UtilDrawSphere(WorldXfm().v, mMinFalloffDistance, Hmx::Color(1, 0, 0), nullptr);
-
         UtilDrawSphere(WorldXfm().v, mSilenceDistance, Hmx::Color(0, 1, 0), nullptr);
     }
 }
@@ -177,9 +191,7 @@ void ThreeDSound::Stop(Hmx::Object *obj, bool b2) {
     Sound::Stop(obj, b2);
 }
 
-bool ThreeDSound::IsPlaying() const {
-    return !unk194 && (!mSamples.empty() || !mDelayArgs.empty());
-}
+bool ThreeDSound::IsPlaying() const { return unk194 || SoundEmpty(); }
 
 void ThreeDSound::SaveWorldXfm() { unk1cc = WorldXfm(); }
 
@@ -203,8 +215,55 @@ void ThreeDSound::SetAngle(float radians) {
 
 void ThreeDSound::SetDoppler(float doppler) {
     float powed = std::pow(doppler, mDopplerPower);
-    if (powed > 4.0f || powed < 0.00390625f) {
+    if (powed > sSpeedCaps[1] || powed < sSpeedCaps[0]) {
         powed = 1.0f;
     }
     unk1c8->SetTranspose(CalcTransposeFromSpeed(powed));
+}
+
+void ThreeDSound::SetDistance(float f1, float f2) {
+    mDistance = f1;
+    mStartedPlaying = false;
+    MILO_ASSERT(!IsNaN(mDistance), 0x182);
+    unk210 = f2;
+    CalculateFaderVolume();
+    float f = -96.0f;
+    if (unk194 && unk1c8->DuckedValue() > f && !SoundEmpty()) {
+        Sound::Play(unk198, unk19c, unk1a0, unk1a4, unk1a8);
+    } else if (unk194 && unk1c8->DuckedValue() <= f && SoundEmpty()) {
+        Sound::Stop(nullptr, true);
+    }
+}
+
+void ThreeDSound::CalculateFaderVolume() {
+    float volume;
+    if (mDistance >= mSilenceDistance) {
+        volume = -96.0f;
+    } else if (mDistance <= mMinFalloffDistance) {
+        volume = 0;
+    } else {
+        switch (mShape) {
+        case 1: {
+            if (unk210 > mRadius) {
+                unk1c8->SetVolume(-96.0f);
+                return;
+            }
+        }
+        case 0:
+            break;
+        default:
+            MILO_FAIL("Calculating volume for unknown shape %d\n", mShape);
+            break;
+        }
+
+        float val1 = 1.0f / (mMinFalloffDistance - mSilenceDistance);
+        float val2 = val1 * mDistance + (-(mMinFalloffDistance * val1 - 1.0f));
+        EaseType e = mFalloffType;
+        MILO_ASSERT(e >= kEaseLinear && e <= kEaseQuarterHalfStairstep, 0x16b);
+        float ease = gEaseFuncs[e](val2, mFalloffParameter, 0);
+        ease = Clamp(0.0f, 1.0f, ease);
+        volume = RatioToDb(ease);
+        volume = Max(volume, -96.0f);
+    }
+    unk1c8->SetVolume(volume);
 }

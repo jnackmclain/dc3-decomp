@@ -71,7 +71,7 @@ enum MatPropEditAction {
     kPropForce = 1,
     /** "Allow property to be edited in Material" */
     kPropEdit = 2,
-    kNumEditActions = 3
+    kNumEditActions = 3,
 };
 
 // size 0x204

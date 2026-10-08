@@ -3,9 +3,15 @@
 #include "utl/TextFileStream.h"
 #include <list>
 #include <string.h>
+#include "utl/Std.h"
 
 typedef void ExitCallbackFunc(void);
 typedef void FixedStringFunc(FixedString &);
+
+struct StackData {
+    /** Addresses in memory corresponding to called functions. */
+    unsigned int mFailThreadStack[50]; // 0x0
+};
 
 // size 0x134
 class Debug : public TextStream {
@@ -17,6 +23,7 @@ public:
     };
 
     typedef void ModalCallbackFunc(ModalType &, FixedString &, bool);
+    typedef void DataPointFunc(ModalType, class DataPoint &);
 
 private:
     void Modal(ModalType &, const char *, void *);
@@ -33,18 +40,17 @@ private:
     ModalCallbackFunc *mModalCallback; // 0x1c
     std::list<ExitCallbackFunc *> mFailCallbacks; // 0x20
     std::list<ExitCallbackFunc *> mExitCallbacks; // 0x28
-    std::list<FixedStringFunc *> unk30; // 0x30
-    int unk38; // 0x38
-    // 0x3c is a struct, StackData
-    unsigned int mFailThreadStack[50]; // starts at 0x3c
+    std::list<FixedStringFunc *> mFailAppendCallbacks; // 0x30
+    DataPointFunc *mDataPointCallback; // 0x38
+    StackData mStackData; // 0x3c
     const char *mFailThreadMsg; // 0x104
     const char *mNotifyThreadMsg; // 0x108
-    int unk10c;
-    int unk110;
-    String unk114;
-    String unk11c;
-    String unk124;
-    String unk12c;
+    const char *mHostname; // 0x10c
+    const char *mApp; // 0x110
+    String mProject; // 0x114
+    String mSDK; // 0x11c
+    String unk124; // 0x124
+    String mSource; // 0x12c
 
 public:
     Debug();
@@ -54,8 +60,12 @@ public:
     void Poll();
     void SetDisabled(bool);
     void SetTry(bool);
+    void DoCrucible(ModalType, const char *, void *);
     void AddExitCallback(ExitCallbackFunc *func) { mExitCallbacks.push_front(func); }
     void RemoveExitCallback(ExitCallbackFunc *);
+    void AddFailAppendCallback(FixedStringFunc *func) {
+        mFailAppendCallbacks.push_front(func);
+    }
     bool CheckModalCallback(ModalCallbackFunc *func) { return mModalCallback == func; }
     ModalCallbackFunc *ModalCallback() const { return mModalCallback; }
     bool NoModal() const { return mNoModal; }
@@ -68,7 +78,7 @@ public:
     void Exit(int, bool);
     void Warn(const char *msg);
     void Notify(const char *msg);
-    void Fail(const char *msg, void *);
+    void Fail(const char *msg, void *context);
     TextStream *Reflect() const { return mReflect; }
     TextStream *SetReflect(TextStream *ts) {
         TextStream *ret = mReflect;
@@ -87,9 +97,19 @@ extern Debug TheDebug;
 extern const char *kAssertStr;
 
 #define MILO_ASSERT(cond, line)                                                          \
-    ((cond) || (TheDebugFailer << (MakeString(kAssertStr, __FILE__, line, #cond)), 0))
+    do {                                                                                 \
+        if (!(cond)) {                                                                   \
+            TheDebugFailer << MakeString(kAssertStr, __FILE__, line, #cond);             \
+        }                                                                                \
+    } while (0)
+
 #define MILO_ASSERT_FMT(cond, ...)                                                       \
-    ((cond) || (TheDebugFailer << (MakeString(__VA_ARGS__)), 0))
+    do {                                                                                 \
+        if (!(cond)) {                                                                   \
+            TheDebugFailer << MakeString(__VA_ARGS__);                                   \
+        }                                                                                \
+    } while (0)
+
 #define MILO_FAIL(...) TheDebugFailer << MakeString(__VA_ARGS__)
 #define MILO_WARN(...) TheDebugWarner << MakeString(__VA_ARGS__)
 #define MILO_NOTIFY(...) TheDebugNotifier << MakeString(__VA_ARGS__)
@@ -104,13 +124,9 @@ extern const char *kAssertStr;
 //     MILO_NOTIFY("An unexpected thing happened: %s", errMsg);
 // }
 #define MILO_TRY                                                                         \
-    try {                                                                                \
-        TheDebug.SetTry(true);                                                           \
-        do
-
+    TheDebug.SetTry(true);                                                               \
+    try {
 #define MILO_CATCH(name)                                                                 \
-    while (false)                                                                        \
-        ;                                                                                \
     TheDebug.SetTry(false);                                                              \
     }                                                                                    \
     catch (const char *name)
@@ -161,7 +177,20 @@ extern DebugNotifyOncePrinter TheDebugNotifyOncePrinter;
 #define MILO_PRINT_ONCE(...) TheDebugNotifyOncePrinter << MakeString(__VA_ARGS__)
 
 namespace {
-    bool AddToStrings(const char *name, std::list<String> &strings);
+    bool AddToStrings(const char *name, std::list<String> &strings) {
+        if (strings.size() > 16) {
+            return false;
+        }
+
+        FOREACH (it, strings) {
+            if (streq(it->c_str(), name)) {
+                return false;
+            }
+        }
+
+        strings.push_back(name);
+        return true;
+    }
 }
 
 class DebugNotifyOncer {
@@ -182,5 +211,26 @@ public:
 #define MILO_NOTIFY_ONCE(...)                                                            \
     {                                                                                    \
         static DebugNotifyOncer _dw;                                                     \
+        _dw << MakeString(__VA_ARGS__);                                                  \
+    }
+
+class DebugWarnOncer {
+private:
+    std::list<String> mStrings;
+
+public:
+    DebugWarnOncer() {}
+    ~DebugWarnOncer() {}
+
+    void operator<<(const char *cc) {
+        if (AddToStrings(cc, mStrings)) {
+            TheDebugWarner << cc;
+        }
+    }
+};
+
+#define MILO_WARN_ONCE(...)                                                              \
+    {                                                                                    \
+        static DebugWarnOncer _dw;                                                       \
         _dw << MakeString(__VA_ARGS__);                                                  \
     }

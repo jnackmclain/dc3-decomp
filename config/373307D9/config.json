@@ -12,7 +12,7 @@
             "flags": [
                 "/nologo",
                 "/wd4355",
-                "/wd4164",
+                "/wd4351",
                 "/c",
                 "/GR",
                 "/O1",
@@ -22,38 +22,42 @@
         },
         "engine": {
             "base": "base",
-            "flags": [
-                
-            ]
+            "flags": []
         },
         "xdk": {
             "base": "base",
             "flags": [
-                
+                "/I src/xdk"
             ]
         },
-        "jpeg":{
+        "jpeg": {
             "base": "base",
-            "flags": [ 
+            "flags": [
                 "/TP"
             ]
         },
-        "soundtouch":{
+        "tomcrypt": {
             "base": "base",
-            "flags":[
-                
+            "flags": [
+                "/TP"
             ]
+        },
+        "soundtouch": {
+            "base": "base",
+            "flags": []
         },
         "curl": {
             "base": "base",
             "flags": [
                 "/TC",
-                "/GS"
+                "/GS",
+                "/D_XBOX360"
             ]
         },
         "net_xbox": {
             "base": "base",
             "flags": [
+                "/TP",
                 "/GS"
             ]
         }

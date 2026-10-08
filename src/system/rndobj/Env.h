@@ -29,6 +29,7 @@ public:
     virtual int NumLights_Approx() const { return mLightsApprox.size(); }
     virtual bool IsFake(RndLight *) const;
     virtual bool IsReal(RndLight *) const;
+    virtual void Draw();
 
     OBJ_MEM_OVERLOAD(0x1B);
     NEW_OBJ(RndEnviron)
@@ -65,6 +66,17 @@ public:
     bool UseColorAdjust() const { return mUseColorAdjust; }
     float FadeStart() const { return mFadeStart; }
     float FadeEnd() const { return mFadeEnd; }
+    static BoxMapLighting &GetGlobalLighting() { return sGlobalLighting; }
+    bool GetAnimateFromPreset() const { return mAnimateFromPreset; }
+    const Hmx::Color &FogColor() const { return mAmbientFogOwner->mFogColor; }
+    float GetFogStart() const { return mAmbientFogOwner->mFogStart; }
+    float GetFogEnd() const { return mAmbientFogOwner->mFogEnd; }
+    void SetFogRange(float start, float end) {
+        mAmbientFogOwner->mFogStart = start;
+        mAmbientFogOwner->mFogEnd = end;
+    }
+    const ObjPtrList<RndLight> &LightsReal() const { return mLightsReal; }
+    const ObjPtrList<RndLight> &LightsApprox() const { return mLightsApprox; }
 
 protected:
     RndEnviron();

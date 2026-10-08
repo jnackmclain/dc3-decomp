@@ -18,7 +18,7 @@
 class CamShot;
 
 class CamShotFrame {
-public:
+public: // RB2 says it's all public
     enum BlendEaseMode {
         /** "blend in and out the same amount" */
         kBlendEaseInAndOut = 0,
@@ -42,11 +42,6 @@ public:
     OnSyncTargets(ObjPtrList<RndTransformable> &, DataNode &, DataArray *, int, PropOp);
     bool OnSyncParent(ObjPtr<RndTransformable> &, DataNode &, DataArray *, int, PropOp);
     bool HasTargets() const;
-
-    float GetDuration() { return mDuration; }
-    float GetBlend() { return mBlend; }
-    float GetFrame() { return mFrame; }
-    void SetFrame(float f) { mFrame = f; }
 
     /** "Duration this keyframe holds steady" */
     float mDuration; // 0x0
@@ -104,15 +99,6 @@ inline BinStream &operator<<(BinStream &bs, const CamShotFrame &f) {
     return bs;
 }
 
-enum CrowdRotate {
-    /** "Face along the placement mesh, or along focus, if set" */
-    kCrowdRotateNone = 0,
-    /** "Face towards the camera" */
-    kCrowdRotateFace = 1,
-    /** "Face away from the camera" */
-    kCrowdRotateAway = 2
-};
-
 class CamShotCrowd {
 public:
     CamShotCrowd(Hmx::Object *);
@@ -123,14 +109,13 @@ public:
     void AddCrowdChars();
     void SetCrowdChars();
     void ClearCrowdChars();
-    void
-    GetSelectedCrowd(std::list<
-                     std::pair<RndMultiMesh *, std::list<RndMultiMesh::Instance>::iterator> >
-                         &);
-    void
-    AddCrowdChars(std::list<
-                  std::pair<RndMultiMesh *, std::list<RndMultiMesh::Instance>::iterator> >
-                      &);
+    void GetSelectedCrowd(
+        std::list<std::pair<RndMultiMesh *, std::list<RndMultiMesh::Instance>::iterator> > &
+    );
+    void AddCrowdChars(
+        const std::list<
+            std::pair<RndMultiMesh *, std::list<RndMultiMesh::Instance>::iterator> > *
+    );
 
     /** "The crowd to show for this shot" */
     ObjPtr<WorldCrowd> mCrowd; // 0x0
@@ -147,6 +132,9 @@ inline BinStream &operator<<(BinStream &bs, const CamShotCrowd &f) {
 
 /** "A camera shot. This is an animated camera path with keyframed settings." */
 class CamShot : public RndAnimatable, public RndTransformable {
+    friend class CamShotFrame;
+    friend class AutoPrepTarget;
+
 public:
     // Hmx::Object
     virtual ~CamShot();
@@ -182,15 +170,26 @@ public:
     Symbol Category() const { return mCategory; }
     int Flags() const { return mFlags; }
     int Disabled() const { return mDisabled; }
+    ObjPtrList<RndDrawable> &DrawOverrides() { return mDrawOverrides; }
+    ObjPtrList<RndDrawable> &PostProcOverrides() { return mPostProcOverrides; }
+    Spotlight *GlowSpot() const { return mGlowSpot; }
     void Disable(bool, int);
     bool ShotOk(CamShot *);
     bool SetPos(CamShotFrame &, RndCam *);
     RndCam *GetCam();
     void SetParent(RndDir *d) { unk1a4 = d; }
+    bool ShotOver() const { return mShotOver; }
     class WorldDir *GetCrowdDir() const;
     void AddAnim(RndAnimatable *);
     void ClearCrowds();
     bool AddCrowd(CamShotCrowd &);
+    float Filter() const { return mFilter; }
+    RndTransAnim *Path() const { return mPath; }
+    float PathFrame() const { return mPathFrame; }
+    float Duration() const { return mDuration; }
+    bool ShotStarted() const { return mShotStarted; }
+    float ClampHeight() const { return mClampHeight; }
+    const CamShotFrame &FrameAt(int idx) const { return mKeyframes[idx]; }
 
 protected:
     CamShot();
@@ -199,7 +198,6 @@ protected:
 
     virtual bool CheckShotStarted();
     virtual bool CheckShotOver(float);
-    // these three could be re-ordered, unsure of current order rn
     virtual void ApplyDynamicOffsetPreLookAt(Transform &, bool) {}
     virtual void ApplyDynamicOffsetPostLookAt(Transform &) {}
     virtual void ApplyFinalCamTransform(Transform &) {}
@@ -211,6 +209,7 @@ protected:
     void DoHide();
     void SetShotOver();
     void GetKey(float, CamShotFrame *&, CamShotFrame *&, float &);
+    void Shake(float, float, const Vector2 &, Vector3 &, Vector3 &);
 
     DataNode OnHasTargets(DataArray *);
     DataNode OnSetPos(DataArray *);
@@ -275,12 +274,12 @@ protected:
     int mFlags; // 0x1e4
     ObjPtrList<RndDrawable> mEndHideList; // 0x1e8
     ObjPtrList<RndDrawable> mEndShowList; // 0x1fc
-    Vector3 unk210;
-    Vector3 unk220;
-    Vector3 unk230;
-    Vector3 unk240;
-    Vector3 unk250;
-    Vector3 unk260;
+    Vector3 mLastShakeOffset; // 0x210
+    Vector3 mLastShakeAngOffset; // 0x220
+    Vector3 mLastDesiredShakeOffset; // 0x230
+    Vector3 mLastDesiredShakeAngOffset; // 0x240
+    Vector3 mShakeVelocity; // 0x250
+    Vector3 mShakeAngVelocity; // 0x260
     CamShotFrame *mLastNext; // 0x270
     CamShotFrame *mLastPrev; // 0x274
     /** "duration of the camshot" */

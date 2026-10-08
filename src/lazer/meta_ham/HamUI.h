@@ -1,9 +1,14 @@
 #pragma once
+#include "game/GamePanel.h"
+#include "gesture/GestureMgr.h"
+#include "gesture/LiveCameraInput.h"
 #include "meta_ham/BlacklightPanel.h"
 #include "meta_ham/HelpBarPanel.h"
+#include "meta_ham/LetterboxPanel.h"
 #include "meta_ham/OverlayPanel.h"
 #include "meta_ham/ShellInput.h"
 #include "meta/ConnectionStatusPanel.h"
+#include "obj/Msg.h"
 #include "os/ContentMgr.h"
 #include "os/JoypadMsgs.h"
 #include "os/PlatformMgr.h"
@@ -27,23 +32,28 @@ public:
     void ForceLetterboxOff();
     void ForceLetterboxOffImmediate();
     void GotoEventScreen(UIScreen *);
+    void InitPanels();
+
+    bool IsBlacklightMode();
     ShellInput *GetShellInput() const { return mShellInput; }
     HelpBarPanel *GetHelpBarPanel() const { return mHelpBar; }
-    int Unk108() const { return unk_0x108; }
+    int GetPadNum() const { return mPadNum; }
     UIPanel *EventDialogPanel() const { return mEventDialogPanel; }
     OverlayPanel *GetOverlayPanel() const { return mOverlayPanel; }
+    LetterboxPanel *GetLetterboxPanel() const { return mLetterbox; }
+    BlacklightPanel *GetBlacklightPanel() const { return mBlacklight; }
 
     void SetOverlayPanel(OverlayPanel *op) { mOverlayPanel = op; }
 
 protected:
-    void AttemptEventTransition();
+    void AttemptEventTranstion();
 
     DataNode OnMsg(const UITransitionCompleteMsg &);
     DataNode OnMsg(const ContentReadFailureMsg &);
     DataNode OnMsg(const ConnectionStatusChangedMsg &);
     DataNode OnMsg(const DiskErrorMsg &);
     DataNode OnMsg(const ButtonDownMsg &);
-    // DataNode OnMsg(const KinectGuideGestureMsg &);
+    DataNode OnMsg(const KinectGuideGestureMsg &);
 
 private:
     bool SetFullScreenDraw(bool);
@@ -66,26 +76,31 @@ private:
     void StoreDepthBufferAt(int);
     void StoreDepthBufferClipAt(float, float, float, float, int);
     void ReloadStrings();
+    void UpdateUIOverlay();
+    void DrawDebug();
+    bool IsGameActive() const;
 
     HelpBarPanel *mHelpBar; // 0xd8
-    u32 mLetterbox; // LetterboxPanel*
+    LetterboxPanel *mLetterbox; // 0xdc
     BlacklightPanel *mBlacklight; // 0xe0
     UIPanel *mEventDialogPanel; // 0xe4
     UIPanel *mBackgroundPanel; // 0xe8
     UIPanel *mContentLoadingPanel; // 0xec
     OverlayPanel *mOverlayPanel; // 0xf0
-    u32 mGamePanel; // 0xf4 - GamePanel*
-    RndDir *unk_0xF8; // 0xf8
-    u8 unk_0xFC;
-    u8 unk_0xFD;
+    GamePanel *mGamePanel; // 0xf4
+    RndDir *mAugmentedPhoto; // 0xf8
+    bool unk_0xFC;
+    bool unk_0xFD;
     UIScreen *mEventScreen; // 0x100
     ShellInput *mShellInput; // 0x104
-    s32 unk_0x108; // 0x108
-    u32 unk_0x10C;
+    int mPadNum; // 0x108
+    LiveCameraInput::BufferType mBufferType; // 0x10C
     bool mFullScreenDrawActive;
-    float mSkelRot;
-    bool unk_0x118;
+    float mSkelRot; // 0x114
+    bool mButtonSpam; // 0x118
     RndOverlay *mUIOverlay; // 0x11c
 };
+
+bool ToggleDrawSkeletons();
 
 extern HamUI TheHamUI;

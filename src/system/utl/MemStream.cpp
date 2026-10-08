@@ -1,11 +1,9 @@
 #include "utl/MemStream.h"
 
 void MemStream::ReadImpl(void *data, int bytes) {
-    int tell = mTell;
-    unsigned int size = mBuffer.size();
-    if (tell + bytes > size) {
+    if (mTell + bytes > mBuffer.size()) {
+        bytes = mBuffer.size() - mTell;
         mFail = true;
-        bytes = size - tell;
     }
     memcpy(data, &mBuffer[mTell], bytes);
     mTell += bytes;

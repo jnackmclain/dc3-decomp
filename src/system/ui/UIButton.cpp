@@ -21,6 +21,8 @@ void UIButton::Save(BinStream &bs) {
     SAVE_SUPERCLASS(UILabel)
 }
 
+INIT_REVS(0, 0)
+
 void UIButton::PreLoad(BinStream &bs) {
     LOAD_REVS(bs)
     ASSERT_REVS(0, 0)
@@ -36,7 +38,7 @@ DataNode UIButton::OnMsg(const ButtonDownMsg &msg) {
         SendSelect(msg.GetUser());
         return 1;
     }
-    return DataNode(kDataUnhandled, 0);
+    return DATA_UNHANDLED;
 }
 
 BEGIN_HANDLERS(UIButton)

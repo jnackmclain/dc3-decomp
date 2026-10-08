@@ -3,7 +3,6 @@
 #include "obj/Data.h"
 #include "obj/Object.h"
 #include "os/DateTime.h"
-#include "stl/_vector.h"
 #include "types.h"
 #include "utl/Symbol.h"
 #include "xdk/win_types.h"
@@ -14,11 +13,13 @@ public:
     bool Exists() const;
     static unsigned long long OfferStringToID(char const *);
     char const *CostStr() const;
-    bool IsAvailable() { return isAvailable; }
+    bool IsAvailable() const { return isAvailable; }
+    bool IsPurchased() const { return isPurchased; }
+    unsigned long long SongID() const { return songID; }
 
-    bool isAvailable;
-    bool isPurchased;
-    u64 songID; // 0x30
+    bool isAvailable; // 0x2c
+    bool isPurchased; // 0x2d
+    unsigned long long songID; // 0x30
     int cost; // 0x38
 };
 
@@ -27,8 +28,8 @@ public:
     // Hmx::Object
     virtual ~StoreOffer();
     virtual DataNode Handle(DataArray *, bool);
+    virtual bool Cmp(StoreOffer const &, Symbol) const = 0;
 
-    Symbol OfferType() const;
     bool HasData(Symbol) const;
     DateTime const &ReleaseDate() const;
     Symbol FirstChar(Symbol, bool) const;
@@ -50,8 +51,26 @@ public:
     DataNode OnGetData(DataArray *);
     StoreOffer(DataArray *, SongMgr *);
 
-    DataArray *storeOfferData; // 0x40
-    DateTime date; // 0x44
+    DataArray *StoreOfferData() const { return mStoreOfferData; }
+    Symbol OfferType() const {
+        static Symbol type("type");
+        return mStoreOfferData->FindSym(type);
+    }
+    Symbol ShortName() const { return mStoreOfferData->Sym(0); }
+
+protected:
+    DataArray *mStoreOfferData; // 0x40
+    DateTime mReleaseDate; // 0x44
     SongMgr *mSongMgr; // 0x4c
     std::vector<int> mSongsInOffer; // 0x50
+};
+
+class SortCmp {
+public:
+    SortCmp(Symbol type) : mType(type) {}
+    bool operator()(const StoreOffer *offer1, const StoreOffer *offer2) const {
+        return offer1->Cmp(*offer2, mType);
+    }
+
+    Symbol mType;
 };

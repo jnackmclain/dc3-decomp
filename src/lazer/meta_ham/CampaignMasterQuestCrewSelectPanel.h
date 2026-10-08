@@ -4,24 +4,27 @@
 #include "obj/Data.h"
 #include "obj/Object.h"
 #include "os/DateTime.h"
-#include "stl/_vector.h"
 #include "ui/PanelDir.h"
 #include "utl/Symbol.h"
 
 class CampaignMqCrewProvider : public HamNavProvider {
 public:
+    CampaignMqCrewProvider();
     virtual void Text(int, int, UIListLabel *, UILabel *) const;
     virtual Symbol DataSymbol(int) const;
+    virtual int NumData() const { return mMQCrews.size(); }
 
-    CampaignMqCrewProvider();
     void UpdateList();
+    void SetPanelDir(PanelDir *p) { mPanelDir = p; }
 
-    PanelDir *unk40;
-    std::vector<Symbol> unk44;
+private:
+    PanelDir *mPanelDir; // 0x40
+    std::vector<Symbol> mMQCrews; // 0x44
 };
 
 class CampaignMasterQuestCrewSelectPanel : public TexLoadPanel {
 public:
+    CampaignMasterQuestCrewSelectPanel();
     OBJ_CLASSNAME(CampaignMasterQuestCrewSelectPanel)
     OBJ_SET_TYPE(CampaignMasterQuestCrewSelectPanel)
     virtual DataNode Handle(DataArray *, bool);
@@ -29,7 +32,8 @@ public:
     virtual void Load();
     virtual void FinishLoad();
 
-    CampaignMasterQuestCrewSelectPanel();
+    NEW_OBJ(CampaignMasterQuestCrewSelectPanel)
+
     int GetTimeSinceEnter() const;
     Symbol GetSelectedCrew();
     void UpdateCrewMesh(Symbol);

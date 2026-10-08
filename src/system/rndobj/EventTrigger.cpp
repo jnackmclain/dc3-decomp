@@ -1,17 +1,69 @@
 #include "rndobj/EventTrigger.h"
+#include "math/Easing.h"
 #include "math/Rand.h"
 #include "obj/Data.h"
 #include "obj/DataFunc.h"
+#include "obj/Dir.h"
 #include "obj/Object.h"
 #include "obj/Msg.h"
+#include "obj/Task.h"
+#include "obj/Utl.h"
 #include "os/Debug.h"
+#include "os/File.h"
 #include "os/System.h"
 #include "rndobj/Anim.h"
+#include "rndobj/AnimFilter.h"
 #include "rndobj/PartLauncher.h"
 #include "utl/BinStream.h"
 #include "utl/Loader.h"
 
-DataArray *gSupportedEvents;
+static DataArray *gSupportedEvents = nullptr;
+
+#pragma region EventTrigger Structs
+
+EventTrigger::Anim::Anim(Hmx::Object *o)
+    : mAnim(o), mBlend(0), mDelay(0), mWait(0), mEnable(0), mRate(k30_fps), mStart(0),
+      mEnd(0), mPeriod(0), mScale(1) {
+    static Symbol range("range");
+    mType = range;
+}
+
+EventTrigger::Anim &EventTrigger::Anim::operator=(const EventTrigger::Anim &a) {
+    mAnim = a.mAnim.Ptr();
+    mBlend = a.mBlend;
+    mWait = a.mWait;
+    mDelay = a.mDelay;
+    mEnable = a.mEnable;
+    mRate = a.mRate;
+    mStart = a.mStart;
+    mEnd = a.mEnd;
+    mPeriod = a.mPeriod;
+    mScale = a.mScale;
+    mType = a.mType;
+    return *this;
+}
+
+EventTrigger::ProxyCall::ProxyCall(Hmx::Object *o) : mProxy(o), mEvent(o) {}
+
+EventTrigger::ProxyCall &
+EventTrigger::ProxyCall::operator=(const EventTrigger::ProxyCall &p) {
+    mProxy = p.mProxy.Ptr();
+    mCall = p.mCall;
+    mEvent = p.mEvent.Ptr();
+    return *this;
+}
+
+EventTrigger::HideDelay::HideDelay(Hmx::Object *o) : mHide(o, 0), mDelay(0), mRate(0) {}
+
+EventTrigger::HideDelay &
+EventTrigger::HideDelay::operator=(const EventTrigger::HideDelay &h) {
+    mHide = h.mHide.Ptr();
+    mDelay = h.mDelay;
+    mRate = h.mRate;
+    return *this;
+}
+
+#pragma endregion
 
 EventTrigger::EventTrigger()
     : mAnims(this), mSpawnedTasks(this), mProxyCalls(this), mSounds(this), mShows(this),
@@ -167,8 +219,10 @@ BEGIN_SAVES(EventTrigger)
     SAVE_SUPERCLASS(RndAnimatable)
     bs << mTriggerEvents << mAnims << mSounds << mShows << mHideDelays;
     bs << mEnableEvents << mDisableEvents << mWaitForEvents;
-    bs << mNextLink << mProxyCalls << mTriggerOrder << mResetTriggers << mEnabledAtStart
-       << mAnimTrigger << mAnimFrame;
+    bs << mNextLink << mProxyCalls << mTriggerOrder;
+    bs << mResetTriggers << mEnabledAtStart;
+    bs << mAnimTrigger;
+    bs << mAnimFrame;
     bs << mPartLaunchers;
 END_SAVES
 
@@ -234,6 +288,8 @@ void RemoveNullEvents(std::list<Symbol> &vec) {
     }
 }
 
+INIT_REVS(0x11, 0)
+
 BEGIN_LOADS(EventTrigger)
     LOAD_REVS(bs)
     ASSERT_REVS(0x11, 0)
@@ -263,16 +319,14 @@ BEGIN_LOADS(EventTrigger)
         int count;
         d >> count;
         mHideDelays.resize(count);
-        for (ObjList<HideDelay>::iterator it = mHideDelays.begin();
-             it != mHideDelays.end();
-             ++it) {
+        FOREACH (it, mHideDelays) {
             d >> it->mHide >> it->mDelay;
         }
     } else if (d.rev > 6) {
         ObjPtrList<RndDrawable> drawList(this);
         d >> drawList;
         mHideDelays.clear();
-        for (auto it = drawList.begin(); it != drawList.end(); ++it) {
+        FOREACH (it, drawList) {
             mHideDelays.push_back();
             mHideDelays.back().mHide = *it;
         }
@@ -286,9 +340,8 @@ BEGIN_LOADS(EventTrigger)
         bool oldMode = TheLoadMgr.EditMode();
         TheLoadMgr.SetEditMode(true);
         while (count-- != 0) {
-            curTrig->LoadOldEvent(
-                d, objPtr, count != 0 || curTrig != this ? str.c_str() : nullptr, Dir()
-            );
+            bool b = (count != 0 || curTrig != this);
+            curTrig->LoadOldEvent(d, objPtr, b ? str.c_str() : nullptr, Dir());
             if (count != 0) {
                 curTrig = new EventTrigger();
                 triggers.push_back(curTrig);
@@ -310,8 +363,7 @@ BEGIN_LOADS(EventTrigger)
         RemoveNullEvents(mWaitForEvents);
     }
     if (d.rev < 7) {
-        std::list<EventTrigger *>::iterator it;
-        for (it = triggers.begin(); it != triggers.end(); ++it) {
+        FOREACH (it, triggers) {
             (*it)->mEnableEvents = mEnableEvents;
             (*it)->mDisableEvents = mDisableEvents;
             (*it)->mWaitForEvents = mWaitForEvents;
@@ -342,21 +394,21 @@ BEGIN_LOADS(EventTrigger)
     ConvertParticleTriggerType();
 END_LOADS
 
-void EventTrigger::SetName(const char *cc, class ObjectDir *dir) {
+void EventTrigger::SetName(const char *name, class ObjectDir *dir) {
     UnregisterEvents();
-    Hmx::Object::SetName(cc, dir);
+    Hmx::Object::SetName(name, dir);
     RegisterEvents();
 }
 
 void EventTrigger::StartAnim() {
-    mFrame = kHugeFloat;
+    ResetFrame();
     if (mAnimTrigger == kTriggerAnimStart) {
         Trigger();
     }
 }
 
 void EventTrigger::EndAnim() {
-    mFrame = kHugeFloat;
+    ResetFrame();
     if (mAnimTrigger == kTriggerAnimEnd) {
         Trigger();
     } else if (mAnimTrigger == kTriggerAnimStart) {
@@ -365,10 +417,10 @@ void EventTrigger::EndAnim() {
 }
 
 void EventTrigger::SetFrame(float frame, float blend) {
-    float oldframe = mFrame;
+    float oldframe = GetFrame();
     RndAnimatable::SetFrame(frame, blend);
     if (mAnimTrigger == kTriggerAnimFrame && oldframe < mAnimFrame
-        && mFrame >= mAnimFrame) {
+        && GetFrame() >= mAnimFrame) {
         Trigger();
     }
 }
@@ -405,22 +457,19 @@ void EventTrigger::Trigger() {
 
 void EventTrigger::BasicReset() {
     mSpawnedTasks.DeleteAll();
-    for (ObjPtrList<RndDrawable>::iterator it = mShown.begin(); it != mShown.end();
-         ++it) {
+    FOREACH (it, mShown) {
         (*it)->SetShowing(false);
     }
-    for (ObjPtrList<RndDrawable>::iterator it = mHidden.begin(); it != mHidden.end();
-         ++it) {
+    FOREACH (it, mHidden) {
         (*it)->SetShowing(true);
     }
     CleanupHideShow();
-    for (ObjList<ProxyCall>::iterator it = mProxyCalls.begin(); it != mProxyCalls.end();
-         ++it) {
+    FOREACH (it, mProxyCalls) {
         if (it->mProxy && it->mEvent) {
             it->mEvent->BasicReset();
         }
     }
-    for (ObjPtrList<Sequence>::iterator it = mSounds.begin(); it != mSounds.end(); ++it) {
+    FOREACH (it, mSounds) {
         (*it)->Stop(false);
     }
     if (TypeDef()) {
@@ -435,13 +484,15 @@ void EventTrigger::BasicReset() {
 DataArray *EventTrigger::SupportedEvents() {
     DataArray *cfg;
     if (Type() == "endgame_action") {
-        cfg = SystemConfig(
-            "objects", "EventTrigger", "types", "endgame_action", "supported_events"
-        );
+        gSupportedEvents =
+            SystemConfig(
+                "objects", "EventTrigger", "types", "endgame_action", "supported_events"
+            )
+                ->Array(1);
     } else {
-        cfg = SystemConfig("objects", "EventTrigger", "supported_events");
+        gSupportedEvents =
+            SystemConfig("objects", "EventTrigger", "supported_events")->Array(1);
     }
-    gSupportedEvents = cfg->Array(1);
     return gSupportedEvents;
 }
 
@@ -449,27 +500,19 @@ void EventTrigger::RegisterEvents() {
     Hmx::Object *src = Dir();
     if (src) {
         static Symbol trigger("trigger");
-        for (std::list<Symbol>::iterator it = mTriggerEvents.begin();
-             it != mTriggerEvents.end();
-             ++it) {
+        FOREACH (it, mTriggerEvents) {
             src->AddSink(this, *it, trigger);
         }
         static Symbol enable("enable");
-        for (std::list<Symbol>::iterator it = mEnableEvents.begin();
-             it != mEnableEvents.end();
-             ++it) {
+        FOREACH (it, mEnableEvents) {
             src->AddSink(this, *it, enable);
         }
         static Symbol disable("disable");
-        for (std::list<Symbol>::iterator it = mDisableEvents.begin();
-             it != mDisableEvents.end();
-             ++it) {
+        FOREACH (it, mDisableEvents) {
             src->AddSink(this, *it, disable);
         }
         static Symbol wait_for("wait_for");
-        for (std::list<Symbol>::iterator it = mWaitForEvents.begin();
-             it != mWaitForEvents.end();
-             ++it) {
+        FOREACH (it, mWaitForEvents) {
             src->AddSink(this, *it, wait_for);
         }
         mEnabled = mEnabledAtStart;
@@ -479,59 +522,31 @@ void EventTrigger::RegisterEvents() {
 void EventTrigger::UnregisterEvents() {
     Hmx::Object *src = Dir();
     if (src) {
-        for (std::list<Symbol>::iterator it = mTriggerEvents.begin();
-             it != mTriggerEvents.end();
-             ++it) {
+        FOREACH (it, mTriggerEvents) {
             src->RemoveSink(this, *it);
         }
-        for (std::list<Symbol>::iterator it = mEnableEvents.begin();
-             it != mEnableEvents.end();
-             ++it) {
+        FOREACH (it, mEnableEvents) {
             src->RemoveSink(this, *it);
         }
-        for (std::list<Symbol>::iterator it = mDisableEvents.begin();
-             it != mDisableEvents.end();
-             ++it) {
+        FOREACH (it, mDisableEvents) {
             src->RemoveSink(this, *it);
         }
-        for (std::list<Symbol>::iterator it = mWaitForEvents.begin();
-             it != mWaitForEvents.end();
-             ++it) {
+        FOREACH (it, mWaitForEvents) {
             src->RemoveSink(this, *it);
         }
     }
 }
 
 void EventTrigger::CleanupEventCase(std::list<Symbol> &syms) {
-    for (std::list<Symbol>::iterator it = syms.begin(); it != syms.end(); ++it) {
-        const char *lightStr = strstr(it->Str(), "lighting_");
-        if (lightStr) {
+    FOREACH (it, syms) {
+        Symbol &s = *it;
+        if (strstr(s.Str(), "lighting_")) {
             String str(*it);
             str.ToLower();
             *it = str.c_str();
         }
     }
 }
-
-DataNode EventTrigger::OnTrigger(DataArray *) {
-    if (mEnabled) {
-        if (!mWaitForEvents.empty()) {
-            mWaiting = true;
-        } else
-            Trigger();
-    }
-    return 0;
-}
-
-EventTrigger::Anim::Anim(Hmx::Object *o)
-    : mAnim(o), mBlend(0), mDelay(0), mWait(0), mEnable(0), mRate(k30_fps), mStart(0),
-      mEnd(0), mPeriod(0), mScale(1) {
-    static Symbol range("range");
-    mType = range;
-}
-
-EventTrigger::ProxyCall::ProxyCall(Hmx::Object *o) : mProxy(o), mEvent(o) {}
-EventTrigger::HideDelay::HideDelay(Hmx::Object *o) : mHide(o, 0), mDelay(0), mRate(0) {}
 
 void EventTrigger::SetNextLink(EventTrigger *trig) {
     for (EventTrigger *it = trig; it != nullptr; it = it->mNextLink) {
@@ -582,6 +597,79 @@ void EventTrigger::LoadOldAnim(BinStream &bs, RndAnimatable *anim) {
     }
 }
 
+void EventTrigger::LoadOldEvent(
+    BinStreamRev &d, Hmx::Object *obj, const char *trigName, ObjectDir *dir
+) {
+    mTriggerEvents.clear();
+    Symbol s;
+    d >> s;
+    if (!s.Null()) {
+        mTriggerEvents.push_back(s);
+    }
+    if (trigName) {
+        const char *trigFileName = MakeString("%s_%s.trig", trigName, s);
+        SetName(NextName(trigFileName, dir), dir);
+    }
+    RndAnimatable *anim = dynamic_cast<RndAnimatable *>(obj);
+    if (d.rev < 5) {
+        bool b58;
+        d >> b58;
+        LoadOldAnim(d.stream, b58 ? anim : nullptr);
+    } else {
+        unsigned int count;
+        d >> count;
+        EventTrigger *curTrig = this;
+        while (count-- != 0) {
+            curTrig->LoadOldAnim(d.stream, anim);
+            if (count != 0) {
+                EventTrigger *newTrig = new EventTrigger();
+                mNextLink = newTrig;
+                curTrig = mNextLink;
+                curTrig->SetName(
+                    MakeString("%s_%d.trig", FileGetBase(Name()), count), dir
+                );
+            }
+        }
+    }
+    int whichVec;
+    d >> whichVec;
+    if (whichVec == 1) {
+        RndDrawable *draw = dynamic_cast<RndDrawable *>(obj);
+        if (draw)
+            mShows.push_back(draw);
+    } else if (whichVec == 2) {
+        RndDrawable *draw = dynamic_cast<RndDrawable *>(obj);
+        if (draw) {
+            mHideDelays.push_back();
+            mHideDelays.back().mHide = draw;
+        }
+    } else if (whichVec == 3) {
+        MILO_NOTIFY("%s: can't enable %s", Name(), obj ? obj->Name() : "''");
+    } else if (whichVec == 4) {
+        MILO_NOTIFY("%s: can't disable %s", Name(), obj ? obj->Name() : "''");
+    }
+    if (d.rev > 1) {
+        float f50;
+        d >> f50;
+        if (f50) {
+            FOREACH (it, mAnims) {
+                if (it->mAnim->Units() == 0) {
+                    it->mDelay += f50;
+                } else {
+                    MILO_NOTIFY("%s: anim delay not in seconds");
+                }
+            }
+        }
+    }
+    if (d.rev > 3) {
+        String str;
+        d >> str;
+        if (!str.empty()) {
+            MILO_NOTIFY("%s: %s", Name(), str);
+        }
+    }
+}
+
 void EventTrigger::ConvertParticleTriggerType() {
     if (!unkd0) {
         if (Type() == "particle_trigger") {
@@ -590,7 +678,7 @@ void EventTrigger::ConvertParticleTriggerType() {
                 Name(),
                 Dir()->GetPathName()
             );
-            DataArray *propArr = Property("systems", true)->Array();
+            DataArray *propArr = Property("systems")->Array();
             for (int i = 0; i < propArr->Size(); i++) {
                 RndPartLauncher *p = propArr->Obj<RndPartLauncher>(i);
                 if (p) {
@@ -601,6 +689,95 @@ void EventTrigger::ConvertParticleTriggerType() {
         }
     }
     unkd0 = true;
+}
+
+void EventTrigger::TriggerSelf() {
+    FOREACH (it, mResetTriggers) {
+        (*it)->BasicReset();
+    }
+    FOREACH (it, mProxyCalls) {
+        if (it->mProxy) {
+            if (!it->mCall.Null()) {
+                static Message msg(0);
+                msg.SetType(it->mCall);
+                it->mProxy->Handle(msg, true);
+            }
+            if (it->mEvent) {
+                it->mEvent->Trigger();
+            }
+        }
+    }
+    FOREACH (it, mAnims) {
+        if (it->mAnim) {
+            if (it->mEnable) {
+                mSpawnedTasks.push_back(it->mAnim->Animate(
+                    it->mBlend,
+                    it->mWait,
+                    it->mDelay,
+                    (RndAnimatable::Rate)it->mRate,
+                    it->mStart,
+                    it->mEnd,
+                    it->mPeriod,
+                    it->mScale,
+                    it->mType
+                ));
+            } else {
+                mSpawnedTasks.push_back(
+                    it->mAnim->Animate(it->mBlend, it->mWait, it->mDelay)
+                );
+            }
+        }
+    }
+    FOREACH (it, mSounds) {
+        (*it)->Play(0, 0, 0);
+    }
+    FOREACH (it, mShows) {
+        if (!(*it)->Showing()) {
+            if (!mTriggered) {
+                mShown.push_back(*it);
+            }
+            (*it)->SetShowing(true);
+        }
+    }
+    FOREACH (it, mHideDelays) {
+        if (it->mHide) {
+            if (it->mHide->Showing()) {
+                if (!mTriggered) {
+                    mHidden.push_back(it->mHide);
+                }
+                if (it->mDelay) {
+                    static Message msg("set_showing", 0);
+                    MessageTask *msgtask = new MessageTask(it->mHide, msg);
+                    mSpawnedTasks.push_back(msgtask);
+                    TheTaskMgr.Start(
+                        msgtask,
+                        RndAnimatable::RateToTaskUnits((RndAnimatable::Rate)it->mRate),
+                        it->mDelay
+                    );
+                } else {
+                    it->mHide->SetShowing(false);
+                }
+            }
+        }
+    }
+    FOREACH (it, mPartLaunchers) {
+        (*it)->LaunchParticles();
+    }
+    if (TypeDef()) {
+        static Message trigger("trigger");
+        HandleType(trigger);
+    }
+    mTriggered = true;
+}
+
+DataNode EventTrigger::OnTrigger(DataArray *) {
+    if (mEnabled) {
+        if (!mWaitForEvents.empty()) {
+            mWaiting = true;
+        } else
+            Trigger();
+    }
+    return 0;
 }
 
 DataNode EventTrigger::OnProxyCalls(DataArray *) {
@@ -626,4 +803,84 @@ DataNode EventTrigger::OnProxyCalls(DataArray *) {
     }
     ptr->Resize(idx);
     return ptr;
+}
+
+DataNode EventTrigger::Cleanup(DataArray *arr) {
+    ObjectDir *dir = arr->Obj<ObjectDir>(1);
+    std::list<EventTrigger *> trigList;
+    for (ObjDirItr<EventTrigger> it(dir, true); it != nullptr; ++it) {
+        trigList.push_back(it);
+        FOREACH (event, it->mTriggerEvents) {
+            char buf[128];
+            strcpy(buf, event->Str());
+            FileNormalizePath(buf);
+            *event = buf;
+        }
+        FOREACH (anim, it->mAnims) {
+            RndAnimFilter *filter = dynamic_cast<RndAnimFilter *>(anim->mAnim.Ptr());
+            if (filter) {
+                ObjRef *ref;
+                for (ref = filter->Refs().Begin(); ref != filter->Refs().End();
+                     ref = filter->Refs().Next(ref)) {
+                    if (ref->RefOwner() && ref->RefOwner() != it) {
+                        break;
+                    }
+                }
+                if (ref == filter->Refs().End()
+                    && filter->GetType() != RndAnimFilter::kShuttle) {
+                    anim->mAnim = filter->Anim();
+                    anim->mEnable = true;
+                    anim->mRate = filter->GetRate();
+                    anim->mStart = filter->Start();
+                    anim->mEnd = filter->End();
+                    anim->mPeriod = filter->Period();
+                    anim->mScale = filter->Property("scale")->Float();
+                    static Symbol range("range");
+                    static Symbol loop("loop");
+                    if (filter->GetType() == RndAnimFilter::kLoop)
+                        anim->mType = loop;
+                    else
+                        anim->mType = range;
+                    delete filter;
+                }
+            }
+        }
+    }
+    FOREACH (iter, trigList) {
+        EventTrigger *curTrig = *iter;
+        for (std::list<EventTrigger *>::iterator iter2 = iter; iter2 != trigList.end();) {
+            EventTrigger *curTrig2 = *iter2;
+            if (curTrig != curTrig2 && curTrig2->mTriggerEvents == curTrig->mTriggerEvents
+                && curTrig2->mEnableEvents == curTrig->mEnableEvents
+                && curTrig2->mDisableEvents == curTrig->mDisableEvents
+                && curTrig2->mWaitForEvents == curTrig->mWaitForEvents) {
+                MILO_NOTIFY("Combining %s with %s", curTrig2->Name(), curTrig->Name());
+                while (!curTrig2->mAnims.empty()) {
+                    curTrig->mAnims.push_back(curTrig2->mAnims.back());
+                    curTrig2->mAnims.pop_back();
+                }
+                while (!curTrig2->mSounds.empty()) {
+                    curTrig->mSounds.push_back(curTrig2->mSounds.back());
+                    curTrig2->mSounds.pop_back();
+                }
+                while (!curTrig2->mShows.empty()) {
+                    curTrig->mShows.push_back(curTrig2->mShows.back());
+                    curTrig2->mShows.pop_back();
+                }
+                while (!curTrig2->mHideDelays.empty()) {
+                    curTrig->mHideDelays.push_back(curTrig2->mHideDelays.back());
+                    curTrig2->mHideDelays.pop_back();
+                }
+                while (!curTrig2->mProxyCalls.empty()) {
+                    curTrig->mProxyCalls.push_back(curTrig2->mProxyCalls.back());
+                    curTrig2->mProxyCalls.pop_back();
+                }
+                curTrig2->ReplaceRefs(curTrig);
+                delete curTrig2;
+                iter2 = trigList.erase(iter2);
+            } else
+                ++iter2;
+        }
+    }
+    return 0;
 }

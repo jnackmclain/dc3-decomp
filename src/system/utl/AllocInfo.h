@@ -2,14 +2,25 @@
 #include "MemTrack.h"
 #include "os/Debug.h"
 #include "utl/Str.h"
-#include "utl/trie.h"
 #include "utl/TextStream.h"
 
 // size 0x65
 #pragma pack(push, 1)
 class AllocInfo {
 public:
-    AllocInfo(int requestedSize, int actualSize, const char *type, void *mem, signed char heap, bool pooled, unsigned char strat, const char *file, int line, String &, String &);
+    AllocInfo(
+        int requestedSize,
+        int actualSize,
+        const char *type,
+        void *mem,
+        signed char heap,
+        bool pooled,
+        unsigned char strat,
+        const char *file,
+        int line,
+        String &,
+        String &
+    );
     ~AllocInfo();
 
     int Compare(const AllocInfo &) const;
@@ -20,6 +31,7 @@ public:
     void PrintForReport(TextStream &) const;
     void Print(TextStream &) const;
     int StackCompare(const AllocInfo &) const;
+    void PrintForReport(FILE *) const;
 
     static bool bPrintCsv;
     static void SetPoolMemory(void *, int);
@@ -31,7 +43,7 @@ public:
     const char *mType; // 0x8
     void *mMem; // 0xc
     signed char mHeap; // 0x10
-    bool mPooled; // 0x11
+    unsigned char mPooled; // 0x11
     short mTimeSlice; // 0x12
     unsigned char mStrat; // 0x14
     const char *mFile; // 0x15
@@ -46,10 +58,10 @@ TextStream &operator<<(TextStream &, const AllocInfo &);
 
 class AllocInfoVec {
 public:
-    AllocInfoVec() : mStart(0), mEnd(0), mEndOfStorage(0) {}
-    __forceinline AllocInfoVec(int size)
-        : mStart((AllocInfo **)DebugHeapAlloc(size * 4)), mEnd(mStart),
-          mEndOfStorage(mStart + size) {}
+    // AllocInfoVec() : mStart(0), mEnd(0), mEndOfStorage(0) {}
+    AllocInfoVec(void *mem, int size)
+        : mStart((AllocInfo **)mem), mEnd((AllocInfo **)mem),
+          mEndOfStorage((AllocInfo **)mem + size) {}
     ~AllocInfoVec() { DebugHeapFree(mStart); }
 
     AllocInfo **begin() { return mStart; }
@@ -75,3 +87,5 @@ private:
     AllocInfo **mEnd; // 0x4
     AllocInfo **mEndOfStorage; // 0x8
 };
+
+void AllocInfoInit();

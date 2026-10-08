@@ -3,7 +3,6 @@
 #include "obj/Dir.h"
 #include "obj/Object.h"
 #include "os/Joypad.h"
-#include "stl/_vector.h"
 #include "ui/ResourceDirPtr.h"
 #include "ui/UIColor.h"
 #include "ui/UIComponent.h"
@@ -23,7 +22,6 @@ public:
         ~ActionElement();
         ActionElement();
         ActionElement(JoypadAction);
-        ActionElement(InlineHelp::ActionElement const &);
 
         bool HasSecondaryStr() const { return !mSecondaryStr.empty(); }
         void SetToken(Symbol, bool);
@@ -50,7 +48,6 @@ public:
     // RndPollable
     virtual void Poll();
     virtual void Enter();
-    virtual void OldResourcePreload(BinStream &);
 
     NEW_OBJ(InlineHelp)
     OBJ_MEM_OVERLOAD(0x16)
@@ -63,8 +60,19 @@ public:
     void SetLabelRotationPcts(float f);
     DataNode OnSetConfig(DataArray const *);
 
+private:
+    static float sLastUpdatedTime;
+    static float sRotationTime;
+    static float sLabelRot;
+    static bool sHasFlippedTextThisRotation;
+    static bool sNeedsTextUpdate;
+    static bool sRotated;
+    static const float sRotateDelay;
+    static const float sRotateDuration;
+
 protected:
     InlineHelp();
+
     void Update();
     void UpdateLabelText();
 
@@ -77,21 +85,11 @@ protected:
     bool mHorizontal; // 0x69
     float mSpacing; // 0x6c
     ResourceDirPtr<ObjectDir> mResourceDir; // 0x70
-    UILabel *unk88;
+    UILabel *unk88; // 0x88 - text label?
     ObjPtr<UIColor> mTextColor; // 0x8c
 
+    virtual void OldResourcePreload(BinStream &);
     virtual void SyncLabelsToConfig();
     virtual void UpdateIconTypes(bool);
     virtual String GetIconStringFromAction(int);
-
-private:
-    static bool sRotated;
-    static bool sHasFlippedTextThisRotation;
-    static bool sNeedsTextUpdate;
-    static float sLabelRot;
-    static float sLastUpdatedTime;
-    static float sRotationTime;
-    static float const sRotateDelay;
 };
-
-BinStream &operator>>(BinStream &, InlineHelp::ActionElement &);

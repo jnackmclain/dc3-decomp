@@ -2,6 +2,7 @@
 #include "obj/Data.h" /* IWYU pragma: keep */
 #include "obj/DataUtl.h"
 #include "obj/MessageTimer.h" /* IWYU pragma: keep */
+#include "os/Debug.h"
 #include "utl/BinStream.h" /* IWYU pragma: keep */
 #include "utl/MemMgr.h" /* IWYU pragma: keep */
 #include "utl/Symbol.h" /* IWYU pragma: keep */
@@ -30,30 +31,16 @@ public:
 };
 
 // ObjRef size: 0xc
+/** A circular doubly linked list to track an Object's refs. */
 class ObjRef {
     friend class Hmx::Object;
 
 protected:
-    // seems to be a linked list of an Object's refs
     ObjRef *next; // 0x4
     ObjRef *prev; // 0x8
 
-    // i *think* this is good?
-    void AddRef(ObjRef *ref) {
-        next = ref;
-        prev = ref->prev;
-        ref->prev = this;
-        prev->next = this;
-    }
-
-    void Release(ObjRef *ref) {
-        prev->next = next;
-        next->prev = prev;
-        // do something with ref here
-    }
-
 public:
-    ObjRef() {}
+    // ObjRef() {}
     // ObjRef(const ObjRef &other) : next(other.next), prev(other.prev) {
     //     prev->next = this;
     //     next->prev = this;
@@ -70,49 +57,64 @@ public:
     }
     virtual ObjRefOwner *Parent() const { return nullptr; }
 
-    class iterator {
-    private:
-        ObjRef *curRef;
-
-    public:
-        iterator() : curRef(nullptr) {}
-        iterator(ObjRef *ref) : curRef(ref) {}
-        operator ObjRef *() const { return curRef; }
-        ObjRef *operator->() const { return curRef; }
-
-        iterator operator++() {
-            curRef = curRef->next;
-            return *this;
-        }
-
-        iterator operator++(int) {
-            iterator tmp = *this;
-            ++*this;
-            return tmp;
-        }
-
-        bool operator!=(iterator it) { return curRef != it.curRef; }
-        bool operator==(iterator it) { return curRef == it.curRef; }
-        bool operator!() { return curRef == nullptr; }
-    };
-
-    iterator begin() const { return iterator(next); }
-    iterator end() const { return iterator((ObjRef *)this); }
     bool empty() const { return next == this; }
 
-    void Clear() { next = prev = this; }
+    ObjRef *Begin() const { return next; }
+    ObjRef *End() const { return (ObjRef *)this; }
+    ObjRef *Next(ObjRef *it) const { return it->next; }
+
+    /** Make `this` its own standalone single list node. */
+    void DetachSelf() { next = prev = this; }
+
     void ReplaceList(Hmx::Object *obj) {
-        while (next != this) {
+        while (!empty()) {
+            ObjRef *oldNext = next;
             next->Replace(obj);
-            if (this == next) {
-                MILO_FAIL("ReplaceList stuck in infinite loop");
-            }
+            MILO_ASSERT_FMT(oldNext != next, "ReplaceList stuck in infinite loop");
         }
+    }
+
+    /** Add `this` to the list, just before `ref`.
+     *  e.g. A <-> `ref` <-> B will then become
+     *  A <-> `this` <-> `ref` <-> B
+     */
+    void AddRef(ObjRef *ref) {
+        next = ref;
+        prev = ref->prev;
+        ref->prev = this;
+        prev->next = this;
+    }
+
+    /** Remove `this` from the list. */
+    void Release() {
+        prev->next = next;
+        next->prev = prev;
+    }
+
+    void AddSelf() {
+        prev->next = this;
+        next->prev = this;
+    }
+
+    /** Reposition `this` so it's just before `ref`. */
+    ObjRef *MoveBefore(ObjRef *ref) {
+        ObjRef *oldPrev = prev;
+        Release();
+        AddRef(ref);
+        return oldPrev;
     }
 
     // per ObjectDir::HasDirPtrs, this is the way to iterate across refs
     // for (ObjRef *it = mRefs.next; it != &mRefs; it = it->next) {
 };
+
+// BEGIN OBJREF ITERATION MACRO ----------------------------------------------------------
+
+#define FOREACH_OBJREF(it, obj)                                                          \
+    for (ObjRef *it = obj->Refs().Begin(); it != obj->Refs().End();                      \
+         it = obj->Refs().Next(it))
+
+// END OBJREF ITERATION MACRO ------------------------------------------------------------
 
 #pragma endregion
 #pragma region ObjRefConcrete
@@ -121,6 +123,9 @@ public:
 template <class T1, class T2 = class ObjectDir>
 class ObjRefConcrete : public ObjRef {
 protected:
+    // hack because passing in nullptr to the T1* ctor doesn't omit the AddRef asm
+    ObjRefConcrete() : mObject(nullptr) {}
+
     T1 *mObject; // 0xc
 public:
     ObjRefConcrete(T1 *obj);
@@ -154,7 +159,6 @@ private:
 public:
     ObjPtr(Hmx::Object *owner, T *ptr = nullptr);
     ObjPtr(const ObjPtr &p);
-    virtual ~ObjPtr();
     virtual Hmx::Object *RefOwner() const { return mOwner; }
 
     void operator=(T *obj) { SetObjConcrete(obj); }
@@ -211,17 +215,24 @@ class ObjPtrVec : public ObjRefOwner {
 private:
     // Node size: 0x14
     struct Node : public ObjRefConcrete<T1, T2> {
-        Node(ObjRefOwner *owner) : ObjRefConcrete<T1>(nullptr), mOwner(owner) {}
+        Node(ObjRefOwner *owner) : ObjRefConcrete<T1>(), mOwner(owner) {}
         Node(const Node &n);
         virtual ~Node() {}
-        virtual Hmx::Object *RefOwner() const;
+        virtual Hmx::Object *RefOwner() const {
+            ObjPtrVec<T1, T2> *vec = static_cast<ObjPtrVec<T1, T2> *>(mOwner);
+            return vec->Owner();
+        }
         virtual void Replace(Hmx::Object *obj) {
             ObjPtrVec<T1, T2> *vec = static_cast<ObjPtrVec<T1, T2> *>(mOwner);
             vec->ReplaceNode(this, obj);
         }
         virtual ObjRefOwner *Parent() const { return mOwner; }
 
-        T1 *Obj() const { return mObject; }
+        Node &operator=(const Node &n) {
+            CopyRef(n);
+            mOwner = n.mOwner;
+            return *this;
+        }
 
         /** The ObjPtrVec this Node belongs to. */
         ObjRefOwner *mOwner; // 0x10
@@ -240,67 +251,84 @@ protected:
     void ReplaceNode(Node *, Hmx::Object *);
 
 public:
-    // this derives off of std::vector<Node>::iterator in some way
+    // from RBVR
+    // they don't use an ObjPtrVec but they did make their own BufVector
+    // and it's got both iterator and const_iterator
     class iterator {
         friend class const_iterator;
 
     private:
-        typedef typename std::vector<Node>::iterator Base;
-        Base it;
-
+        Node *mData; // 0x0
     public:
-        iterator(Base base) : it(base) {}
-
-        Node &operator*() const { return *it; }
-        Node *operator->() const { return &(*it); }
-
-        iterator operator+(int idx) {
-            it += idx;
+        iterator(Node *n) : mData(n) {}
+        iterator() : mData(nullptr) {}
+        iterator operator++(int);
+        iterator &operator++() {
+            mData++;
             return *this;
         }
-
-        iterator operator++() {
-            ++it;
+        iterator operator--(int);
+        iterator &operator--() {
+            mData--;
             return *this;
         }
+        iterator operator+(int n) const { return mData + n; }
+        int operator-(iterator &) const;
+        iterator operator-(int) const;
 
-        bool operator!=(const iterator &other) const { return it != other.it; }
+        Node &operator*() { return *mData; }
+        Node *operator->() { return mData; }
+
+        bool operator==(const iterator &it) const { return mData == it.mData; }
+        bool operator!=(const iterator &it) const { return mData != it.mData; }
+        // bool operator<(const iterator &) const;
+        // bool operator>=(const iterator &) const;
     };
+
     // ditto
     class const_iterator {
     private:
-        typedef typename std::vector<Node>::const_iterator Base;
-        Base it;
-
+        const Node *mData; // 0x0
     public:
-        const_iterator(Base base) : it(base) {}
-        const_iterator(iterator non_const) : it(non_const.it) {}
+        const_iterator(const Node *n) : mData(n) {}
+        const_iterator() : mData(nullptr) {}
+        const_iterator(const iterator &other) : mData(other.mData) {}
 
-        const Node &operator*() const { return *it; }
-        const Node *operator->() const { return &(*it); }
-
-        const_iterator operator+(int idx) {
-            it += idx;
+        const_iterator operator++(int);
+        const_iterator &operator++() {
+            mData++;
             return *this;
         }
-
-        const_iterator operator++() {
-            ++it;
+        const_iterator operator--(int);
+        const_iterator &operator--() {
+            mData--;
             return *this;
         }
+        const_iterator operator+(int n) const { return mData + n; }
+        int operator-(const_iterator &) const;
+        const_iterator operator-(int) const;
 
-        bool operator!=(const const_iterator &other) const { return it != other.it; }
+        const Node &operator*() const { return *mData; }
+        const Node *operator->() const { return mData; }
+
+        bool operator==(const const_iterator &it) const { return mData == it.mData; }
+        bool operator!=(const const_iterator &it) const { return mData != it.mData; }
+        // bool operator<(const const_iterator &) const;
+        // bool operator>=(const const_iterator &) const;
     };
 
     ObjPtrVec(Hmx::Object *owner, EraseMode = (EraseMode)0, ObjListMode = kObjListNoNull);
     ObjPtrVec(const ObjPtrVec &);
     virtual ~ObjPtrVec();
 
-    iterator begin() { return empty() ? nullptr : mNodes.begin(); }
-    // regswapped and i have no idea why
+    iterator begin() { return empty() ? nullptr : &mNodes[0]; }
+    const_iterator begin() const { return empty() ? nullptr : &mNodes[0]; }
     iterator end() { return begin() + size(); }
-    const_iterator begin() const { return empty() ? nullptr : mNodes.begin(); }
     const_iterator end() const { return begin() + size(); }
+
+    // this stupid hack exists because when just calling end(),
+    // the compiler thinks we want the non-const version
+    const_iterator end_const() const { return end(); }
     iterator FindRef(ObjRef *);
 
     iterator erase(iterator);
@@ -309,8 +337,8 @@ public:
     int size() const { return mNodes.size(); }
     bool empty() const { return mNodes.empty(); }
     T1 *front() const { return *begin(); }
-    T1 *operator[](int idx) { return mNodes[idx].Obj(); }
-    const T1 *operator[](int idx) const { return mNodes[idx].Obj(); }
+    T1 *operator[](int idx) { return mNodes[idx]; }
+    const T1 *operator[](int idx) const { return mNodes[idx]; }
 
     template <class S>
     void sort(const S &);
@@ -324,10 +352,8 @@ public:
     void unique();
     void Set(iterator it, T1 *obj);
     void merge(const ObjPtrVec &);
-    Hmx::Object *Owner() const { return mOwner; }
-
-    // see Draw.cpp for this
     void operator=(const ObjPtrVec &other);
+    Hmx::Object *Owner() const { return mOwner; }
 
 private:
     std::vector<Node> mNodes; // 0x4
@@ -358,7 +384,14 @@ private:
     struct Node : public ObjRefConcrete<T1, T2> {
         Node() : ObjRefConcrete(nullptr) {}
         virtual ~Node() {}
-        virtual Hmx::Object *RefOwner() const;
+        virtual Hmx::Object *RefOwner() const {
+            ObjPtrList<T1, T2> *list = static_cast<ObjPtrList<T1, T2> *>(mOwner);
+            if (list->mOwner) {
+                return list->mOwner->RefOwner();
+            } else {
+                return nullptr;
+            }
+        }
         virtual void Replace(Hmx::Object *obj) {
             ObjPtrList<T1, T2> *list = static_cast<ObjPtrList<T1, T2> *>(mOwner);
             list->ReplaceNode(this, obj);
@@ -368,7 +401,6 @@ private:
         static void *operator new(unsigned int);
         static void operator delete(void *);
 
-        T1 *Obj() const { return mObject; }
         void operator=(const Node &n) { SetObjConcrete(n.mObject); }
 
         ObjRefOwner *mOwner; // 0x10
@@ -381,7 +413,10 @@ private:
     ObjListMode mListMode; // 0x10
 
     virtual Hmx::Object *RefOwner() const;
-    virtual bool Replace(ObjRef *, Hmx::Object *);
+    virtual bool Replace(ObjRef *, Hmx::Object *) {
+        MILO_FAIL("should never be called");
+        return false;
+    }
     void ReplaceNode(Node *, Hmx::Object *);
 
 public:
@@ -389,9 +424,9 @@ public:
     public:
         iterator() : mNode(0) {}
         iterator(Node *node) : mNode(node) {}
-        T1 *operator*() { return mNode->Obj(); }
+        T1 *operator*() { return *mNode; }
 
-        iterator operator++() {
+        iterator &operator++() {
             mNode = mNode->next;
             return *this;
         }
@@ -402,13 +437,13 @@ public:
             return tmp;
         }
 
-        // iterator &operator=(T1 *obj) {
-        //     mNode->SetObjConcrete(obj);
-        //     return *this;
-        // }
+        iterator &operator--() {
+            mNode = mNode->prev;
+            return *this;
+        }
 
-        bool operator!=(iterator it) { return mNode != it.mNode; }
-        bool operator==(iterator it) { return mNode == it.mNode; }
+        bool operator==(const iterator &it) const { return mNode == it.mNode; }
+        bool operator!=(const iterator &it) const { return mNode != it.mNode; }
         bool operator!() { return mNode == 0; }
 
         struct Node *mNode; // 0x0
@@ -433,9 +468,11 @@ public:
     }
 
     T1 *front() const;
+    T1 *back() const;
     void pop_front();
     void pop_back();
     void push_back(T1 *obj);
+    void push_front(T1 *obj);
     iterator find(const Hmx::Object *target) const;
     iterator begin() const { return iterator(mNodes); }
     iterator end() const { return iterator(0); }
@@ -445,8 +482,8 @@ public:
     void MoveItem(iterator thisIt, ObjPtrList<T1, T2> &otherList, iterator otherIt);
 
     typedef bool SortFunc(T1 *, T1 *);
-    void sort(SortFunc *func);
-    template <typename S>
+
+    template <class S>
     void sort(const S &);
 
     void operator=(const ObjPtrList &list);
@@ -635,6 +672,8 @@ extern DataArray *SystemConfig(Symbol, Symbol, Symbol);
     if (sym == msg::Type())                                                              \
     _HANDLE_CHECKED(OnMsg(msg(_msg)))
 
+#define HANDLE_METHOD(func) _HANDLE_CHECKED(func(_msg))
+
 #define HANDLE_FORWARD(func) _HANDLE_CHECKED(func(_msg, false))
 
 #define HANDLE_MEMBER(member) HANDLE_FORWARD(member.Handle)
@@ -652,7 +691,7 @@ extern DataArray *SystemConfig(Symbol, Symbol, Symbol);
 #define END_HANDLERS                                                                     \
     if (_warn)                                                                           \
         MILO_NOTIFY("%s unhandled msg: %s", PathName(this), sym);                        \
-    return DataNode(kDataUnhandled, 0);                                                  \
+    return DATA_UNHANDLED;                                                               \
     }
 
 // for handlers of objects that aren't directly Hmx::Objects (i.e. UIListProvider)
@@ -661,7 +700,7 @@ extern DataArray *SystemConfig(Symbol, Symbol, Symbol);
         MILO_NOTIFY(                                                                     \
             "%s unhandled msg: %s", PathName(dynamic_cast<Hmx::Object *>(this)), sym     \
         );                                                                               \
-    return DataNode(kDataUnhandled, 0);                                                  \
+    return DATA_UNHANDLED;                                                               \
     }
 // END HANDLE MACROS ---------------------------------------------------------------------
 
@@ -837,21 +876,26 @@ extern DataArray *SystemConfig(Symbol, Symbol, Symbol);
 // END COPY MACROS -----------------------------------------------------------------------
 
 // BEGIN LOAD MACROS  --------------------------------------------------------------------
+#define INIT_REVS(rev, alt)                                                              \
+    static const ALIGN(4) unsigned short gRev = rev;                                     \
+    static const ALIGN(4) unsigned short gAltRev = alt;
+
 #define BEGIN_LOADS(objType) void objType::Load(BinStream &bs) {
 #define LOAD_REVS(bs)                                                                    \
     int revs;                                                                            \
     bs >> revs;                                                                          \
-    BinStreamRev d(bs, revs);
+    int dRev = getHmxRev(revs);                                                          \
+    int dAltRev = getAltRev(revs);                                                       \
+    BinStreamRev d(bs, dRev, dAltRev);
 
 #define ASSERT_REVS(rev1, rev2)                                                          \
-    static const unsigned short gRevs[4] = { rev1, 0, rev2, 0 };                         \
     if (d.rev > rev1) {                                                                  \
         MILO_FAIL(                                                                       \
             "%s can't load new %s version %d > %d",                                      \
             PathName(this),                                                              \
             ClassName(),                                                                 \
             d.rev,                                                                       \
-            gRevs[0]                                                                     \
+            gRev                                                                         \
         );                                                                               \
     }                                                                                    \
     if (d.altRev > rev2) {                                                               \
@@ -860,7 +904,7 @@ extern DataArray *SystemConfig(Symbol, Symbol, Symbol);
             PathName(this),                                                              \
             ClassName(),                                                                 \
             d.altRev,                                                                    \
-            gRevs[2]                                                                     \
+            gAltRev                                                                      \
         );                                                                               \
     }
 
@@ -904,7 +948,7 @@ private:
     Hmx::Object *mOwner; // 0x8
     ObjPtrList<Hmx::Object> mObjects; // 0xc
 
-    void ReplaceObject(DataNode &, Hmx::Object *, Hmx::Object *);
+    void ReplaceObject(DataNode &n, Hmx::Object *from, Hmx::Object *to);
     void ReleaseObjects();
     void AddRefObjects();
     void ClearAll();
@@ -914,19 +958,19 @@ public:
         : mOwner(o), mMap(nullptr), mObjects(this, kObjListOwnerControl) {}
     virtual ~TypeProps() { ClearAll(); }
     virtual Hmx::Object *RefOwner() const { return mOwner; }
-    virtual bool Replace(ObjRef *, Hmx::Object *);
+    virtual bool Replace(ObjRef *from, Hmx::Object *to);
 
-    DataNode *KeyValue(Symbol, bool) const;
+    DataNode *KeyValue(Symbol key, bool fail = true) const;
     int Size() const;
-    void ClearKeyValue(Symbol);
-    void SetKeyValue(Symbol, const DataNode &, bool);
-    DataArray *GetArray(Symbol);
-    void SetArrayValue(Symbol, int, const DataNode &);
-    void RemoveArrayValue(Symbol, int);
-    void InsertArrayValue(Symbol, int, const DataNode &);
-    void Load(BinStreamRev &);
+    void ClearKeyValue(Symbol key);
+    void SetKeyValue(Symbol key, const DataNode &value, bool);
+    DataArray *GetArray(Symbol prop);
+    void SetArrayValue(Symbol prop, int i, const DataNode &value);
+    void RemoveArrayValue(Symbol prop, int i);
+    void InsertArrayValue(Symbol prop, int i, const DataNode &value);
+    void Load(BinStreamRev &d);
     TypeProps &operator=(const TypeProps &);
-    void Save(BinStream &);
+    void Save(BinStream &d);
     DataArray *Map() const { return mMap; }
     bool HasProps() const { return mMap && mMap->Size() != 0; }
 
@@ -980,6 +1024,7 @@ namespace Hmx {
 
     protected:
         /** A collection of object instances which reference this Object. */
+        /** "ref owners" */
         ObjRef mRefs; // 0x4
         /** An array of properties this Object can have. */
         TypeProps *mTypeProps; // 0x10
@@ -992,11 +1037,15 @@ namespace Hmx {
          */
         DataArray *mTypeDef; // 0x14
         /** A note about this Object, useful for debugging. */
+        /** "Just a note describing the object, stripped out of shipping assets,
+            so don't make code rely on this" */
         String mNote; // 0x18
         /** This Object's name. */
+        /** "name of the object" */
         const char *mName; // 0x20
         /** The ObjectDir in which this Object resides. */
         ObjectDir *mDir; // 0x24
+        /** "Sinks for messages sent to me" */
         MsgSinks *mSinks; // 0x28
     protected:
         /** An Object in the process of being deleted. */
@@ -1044,13 +1093,13 @@ namespace Hmx {
         /** Set this Object's mTypeDef array based this Object's types entry in
          * SystemConfig. */
         OBJ_SET_TYPE(Object);
-        /** Execute code based on the contents of a received message.
+        /** Executes a message/command on the Object.
          * @param [in] _msg The received message.
          * @param [in] _warn If true, and the message goes unhandled, print to console.
          * @returns The return value of whatever code was executed.
          */
         virtual DataNode Handle(DataArray *_msg, bool _warn = true);
-        /** Syncs an Object's property to or from a supplied DataNode.
+        /** Reads or modifies the object property at the given path.
          * @param [out] _val A DataNode to either place the property val into, or set the
          * property val with.
          * @param [in] _prop The DataArray containing the symbol representing the property
@@ -1063,14 +1112,18 @@ namespace Hmx {
          */
         virtual bool SyncProperty(DataNode &_val, DataArray *_prop, int _i, PropOp _op);
         virtual void InitObject();
-        /** Saves this Object into a BinStream. */
+        /** Serializes the Object's state
+         * @param [in] bs The BinStream to save into.
+         */
         virtual void Save(BinStream &);
-        /** Copy the contents of another Object into this Object based on the CopyType.
+        /** Copies the state of the given Object into this one.
          * @param [in] o The other Object to copy from.
          * @param [in] ty The copy type.
          */
         virtual void Copy(const Hmx::Object *o, Hmx::Object::CopyType ty);
-        /** Loads this Object from a BinStream. */
+        /** Deserializes the Object's state.
+         * @param [in] bs The BinStream to load from.
+         */
         virtual void Load(BinStream &);
         /** Any routines to write relevant data to a BinStream before the main Save method
          * executes. */
@@ -1102,13 +1155,13 @@ namespace Hmx {
         /** Get this Object's path name. */
         virtual const char *FindPathName();
 
+        /** "script type of the object" */
         Symbol Type() const {
             if (mTypeDef)
                 return mTypeDef->Sym(0);
             else
                 return Symbol();
         }
-        // ObjRef *Refs() const { return (ObjRef *)&mRefs; }
         const ObjRef &Refs() const { return mRefs; }
         void SetNote(const char *note);
         DataArray *TypeDef() const { return mTypeDef; }
@@ -1117,7 +1170,7 @@ namespace Hmx {
         const String &Note() const { return mNote; }
         const char *AllocHeapName() { return MemHeapName(MemFindAddrHeap(this)); }
         void AddRef(ObjRef *ref) { ref->AddRef(&mRefs); }
-        void Release(ObjRef *ref) { ref->Release(0); }
+        void Release(ObjRef *ref) { ref->Release(); }
         MsgSinks *Sinks() const { return mSinks; }
 
         void ReplaceRefs(Hmx::Object *);
@@ -1226,6 +1279,25 @@ inline TextStream &operator<<(TextStream &ts, const Hmx::Object *obj) {
         ts << "<null>";
     return ts;
 }
+
+struct ObjPair {
+    ObjPair(Hmx::Object *o1, Hmx::Object *o2) : from(o1), to(o2) {}
+
+    Hmx::Object *from;
+    Hmx::Object *to;
+};
+
+struct ObjMatchPr {
+    ObjMatchPr(Hmx::Object *o) : obj(o) {}
+    bool operator()(const Hmx::Object *value) const { return obj == value; }
+    Hmx::Object *obj;
+};
+
+struct ObjNameSort {
+    bool operator()(Hmx::Object *c1, Hmx::Object *c2) const {
+        return strcmp(c1->Name(), c2->Name()) < 0;
+    }
+};
 
 #pragma endregion
 #pragma region ObjVector
@@ -1342,9 +1414,7 @@ BinStream &operator>>(BinStreamRev &bs, ObjList<T> &oList) {
 // ObjectStage
 class ObjectStage : public ObjPtr<Hmx::Object> {
 public:
-    ObjectStage() : ObjPtr<Hmx::Object>(sOwner) {}
-    ObjectStage(Hmx::Object *o) : ObjPtr<Hmx::Object>(sOwner, o) {}
-    virtual ~ObjectStage() {}
+    ObjectStage(Hmx::Object *o = nullptr) : ObjPtr<Hmx::Object>(sOwner, o) {}
 
     static Hmx::Object *sOwner;
 };

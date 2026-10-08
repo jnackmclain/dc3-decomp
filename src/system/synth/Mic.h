@@ -7,8 +7,11 @@ class DataArray;
 
 class Mic {
 public:
+    // from RBVR
     enum Type {
-        kMicNull = 2
+        kDisconnected = 0,
+        kHeadset = 1,
+        kUSBMic = 2
     };
     Mic() : mInUse(0), unk8(1.0f) {}
     virtual ~Mic() {}
@@ -61,17 +64,18 @@ protected:
 
 class RingBuffer {
 public:
+    RingBuffer() : mSize(0), mBuffer(0) {}
     ~RingBuffer();
     void Reset();
-    void Init(int);
-    int Write(void *, int);
-    int Peek(void *, int);
-    int Read(void *, int);
+    void Init(int size);
+    int Write(void *data, int len);
+    int Peek(void *data, int len);
+    int Read(void *data, int len);
 
-protected:
+private:
     int mSize; // 0x0
-    int unk4;
+    int mTotal; // 0x4
     void *mBuffer; // 0x8
-    int unkc;
-    int unk10;
+    int mWriteIx; // 0xc
+    int mReadIx; // 0x10
 };

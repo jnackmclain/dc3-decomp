@@ -4,9 +4,12 @@
 #include "utl/MemMgr.h"
 
 enum UIListSlotDrawType {
-    kUIListSlotDrawAlways,
-    kUIListSlotDrawHighlight,
-    kUIListSlotDrawNoHighlight
+    kUIListSlotDrawAlways = 0,
+    kUIListSlotDrawHighlight = 1,
+    kUIListSlotDrawNoHighlight = 2,
+    kUIListSlotDrawAlwaysFullAlpha = 3,
+    kUIListSlotDrawHighlightFullAlpha = 4,
+    kUIListSlotDrawNoHighlightFullAlpha = 5
 };
 
 class UIListSlotElement {
@@ -16,6 +19,8 @@ public:
     virtual void Fill(const UIListProvider &, int, int) = 0;
     virtual void Draw(const Transform &, float, UIColor *, Box *) = 0;
     virtual void Poll() {}
+
+    MEM_OVERLOAD(UIListSlotElement, 0x1e)
 };
 
 /** "Base functionality for UIList slots" */

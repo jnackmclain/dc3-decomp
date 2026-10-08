@@ -2,13 +2,17 @@
 #include "curl/curl.h"
 #include "curl/easy.h"
 #include "net/HttpReq.h"
+#include "net/WebSvcMgr.h"
 #include "os/Debug.h"
 #include "os/NetworkSocket.h"
 #include "utl/MemMgr.h"
 #include "utl/Std.h"
+#include <cstdlib>
 
 namespace {
-    unsigned int WriteMemoryCallback(void *, unsigned int, unsigned int, void *);
+    unsigned int WriteMemoryCallback(
+        void *contents, unsigned int size, unsigned int nmemb, void *userp
+    );
 }
 
 HttpReqCurl::HttpReqCurl(
@@ -91,19 +95,15 @@ void HttpReqCurl::Start() {
     if (mHeaders) {
         curl_easy_setopt(mReq, CURLOPT_HTTPHEADER, mHeaders);
     }
-    switch (mType) {
-    case kHttpReqType_GET:
-    case kHttpReqType_HTTPS_POST:
-        break;
-    case kHttpReqType_POST:
-    case kHttpReqType_PUT:
-        curl_easy_setopt(mReq, CURLOPT_POST, 1);
-        curl_easy_setopt(mReq, CURLOPT_POSTFIELDS, mContent);
-        curl_easy_setopt(mReq, CURLOPT_POSTFIELDSIZE, mContentLength);
-        break;
-    default:
-        MILO_FAIL("Unknown HttpReqCurl type %d.\n", mType);
-        break;
+
+    if (mType != kHttpReqType_GET && mType != kHttpReqType_HTTPS_POST) {
+        if (mType == kHttpReqType_POST || mType == kHttpReqType_PUT) {
+            curl_easy_setopt(mReq, CURLOPT_POST, 1);
+            curl_easy_setopt(mReq, CURLOPT_POSTFIELDS, mContent);
+            curl_easy_setopt(mReq, CURLOPT_POSTFIELDSIZE, mContentLength);
+        } else {
+            MILO_FAIL("Unknown HttpReqCurl type %d.\n", mType);
+        }
     }
 }
 

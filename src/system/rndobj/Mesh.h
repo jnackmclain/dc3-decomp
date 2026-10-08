@@ -52,10 +52,11 @@ public:
         Vert()
             : pos(0, 0, 0), norm(0, 1, 0), boneWeights(0, 0, 0, 0), color(1, 1, 1, 1),
               tex(0, 0) {
-            for (int i = 0; i < 4; i++) {
-                boneIndices[i] = i;
-            }
-            unk50.Set(1, 0, 0, 1);
+            boneIndices[0] = 0;
+            boneIndices[1] = 1;
+            boneIndices[2] = 2;
+            boneIndices[3] = 3;
+            tangent.Set(1, 0, 0, 1);
         }
 
         static void *operator new(unsigned int s) {
@@ -74,13 +75,13 @@ public:
         Hmx::Color color; // 0x30
         Vector2 tex; // 0x40
         short boneIndices[4]; // 0x48
-        Vector4 unk50; // 0x50
+        Vector4 tangent; // 0x50
     };
 
     /** A triangle mesh face. */
     class Face {
     public:
-        Face() : v1(0), v2(0), v3(0) {}
+        Face(int inv1 = 0, int inv2 = 0, int inv3 = 0) : v1(inv1), v2(inv2), v3(inv3) {}
         unsigned short &operator[](int i) { return *(&v1 + i); }
         void Set(int i0, int i1, int i2) {
             v1 = i0;
@@ -145,7 +146,6 @@ public:
     virtual int NumFaces() const { return mFaces.size(); }
     /** "Number of verts in the mesh" */
     virtual int NumVerts() const { return mVerts.size(); }
-    virtual void OnSync(int);
 
     OBJ_MEM_OVERLOAD(0x2E);
     NEW_OBJ(RndMesh)
@@ -173,6 +173,9 @@ public:
     bool HasAOCalc() const { return mGeomOwner->mHasAOCalc; }
     void SetHasAOCalc(bool calc) { mGeomOwner->mHasAOCalc = calc; }
     RndMesh *GetGeomOwner() const { return mGeomOwner; }
+    MotionBlurCache &GetBlurCache() { return mMotionCache; }
+    RndTransformable *BoneTransAt(int idx) { return mBones[idx].mBone; }
+    Transform &BoneOffsetAt(int idx) { return mBones[idx].mOffset; }
     void InstanceGeomOwnerBones();
     void DeleteBones(bool);
     void BurnXfm();
@@ -193,6 +196,8 @@ public:
 
 protected:
     RndMesh();
+
+    virtual void OnSync(int flags);
 
     void ClearCompressedVerts();
     bool PatchOkay(int i, int j) { return i * 4.31 + j * 0.25 < 329.0; }
@@ -218,6 +223,7 @@ protected:
     DataNode OnConfigureMesh(const DataArray *);
 
     static bool sRawCollide;
+    static int sLastCollide;
 
     /** This mesh's vertices. */
     VertVector mVerts; // 0x100
@@ -251,7 +257,7 @@ public:
 
     int NumVerts() const { return mPatchVerts.size(); }
 
-    void Add(int, RndMesh::VertVector &, Vector3 &);
+    void Add(int vert, RndMesh::VertVector &verts, Vector3 &centroid);
 
     void Clear() {
         mPatchVerts.clear();
@@ -266,20 +272,20 @@ public:
             return false;
     }
 
+protected:
     int GreaterEq(int iii) const {
-        if (!mPatchVerts.empty() && mPatchVerts.front() < iii) {
-            if (mPatchVerts.back() < iii) {
+        if (!mPatchVerts.empty() && iii > mPatchVerts.front()) {
+            if (iii > mPatchVerts.back()) {
                 return mPatchVerts.size();
             } else {
                 int u5 = 0;
                 int u2 = mPatchVerts.size() - 1;
-                if (u5 + 1 < u2) {
+                while (u2 > u5 + 1) {
                     int u4 = (u5 + u2) >> 1;
                     int curVert = mPatchVerts[u4];
-                    if (curVert < iii) {
+                    if (iii > curVert) {
                         u5 = u4;
-                    }
-                    if (iii <= curVert) {
+                    } else {
                         u2 = u4;
                     }
                 }
@@ -289,7 +295,6 @@ public:
             return 0;
     }
 
-protected:
     Vector3 mCentroid; // 0x0
-    std::vector<int> mPatchVerts; // 0xc
+    std::vector<int> mPatchVerts; // 0x10
 };

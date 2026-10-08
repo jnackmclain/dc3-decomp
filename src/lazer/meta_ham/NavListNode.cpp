@@ -1,12 +1,17 @@
 #include "meta_ham/NavListNode.h"
+
+#include "NavListSort.h"
 #include "game/GameMode.h"
+#include "meta_ham/HamStarsDisplay.h"
 #include "obj/Data.h"
 #include "obj/Object.h"
+#include "os/Debug.h"
 #include "rndobj/Mat.h"
 #include "ui/UILabel.h"
 #include "ui/UIListCustom.h"
 #include "ui/UIListLabel.h"
 #include "ui/UIListMesh.h"
+#include "utl/Std.h"
 #include "utl/Symbol.h"
 #include <cstdio>
 
@@ -58,7 +63,9 @@ void NavListSortNode::Text(UIListLabel *listLabel, UILabel *label) const {
 
 void NavListSortNode::Custom(UIListCustom *custom, Hmx::Object *obj) const {
     if (custom->Matches("stars")) {
-        // uses HamStarDisplay
+        HamStarsDisplay *pStarsDisplay = dynamic_cast<HamStarsDisplay *>(obj);
+        MILO_ASSERT(pStarsDisplay, 0xec);
+        pStarsDisplay->SetShowing(false);
     }
 }
 
@@ -125,7 +132,7 @@ void NavListShortcutNode::Renumber(std::vector<NavListSortNode *> &nodes) {
 
 bool NavListShortcutNode::IsActive() const {
     FOREACH (it, mChildren) {
-        if ((*it)->IsActive())
+        if ((*it)->IsEnabled())
             return true;
     }
     return false;
@@ -141,11 +148,40 @@ NavListSortNode *NavListShortcutNode::GetFirstActive() {
     return nullptr;
 }
 
+void NavListShortcutNode::Insert(NavListItemNode *node, NavListSort *sort) {
+    auto range =
+        std::equal_range<>(mChildren.begin(), mChildren.end(), node, CompareHeaders());
+    NavListHeaderNode *newNode;
+    if (range.first != range.second) {
+        newNode = static_cast<NavListHeaderNode *>(*range.first);
+    } else {
+        newNode = sort->NewHeaderNode(node);
+        newNode->SetShortcut(this);
+        newNode->SetParent(this);
+        mChildren.insert(range.first, newNode);
+    }
+    newNode->Insert(node, sort);
+}
+
+void NavListShortcutNode::InsertHeaderRange(
+    NavListItemNode **node1, NavListItemNode **node2, NavListSort *sort
+) {
+    auto newNode = sort->NewHeaderNode(*node1, node2[-1]);
+    newNode->SetShortcut(this);
+    newNode->SetParent(this);
+    auto eqRange =
+        std::equal_range(mChildren.begin(), mChildren.end(), *node1, CompareHeaders());
+    mChildren.insert(eqRange.first, newNode);
+    for (; node1 != node2; node1++) {
+        newNode->Insert(*node1, sort);
+    }
+}
+
 #pragma endregion
 #pragma region NavListItemNode
 
 NavListSortNode *NavListItemNode::GetFirstActive() {
-    return IsEnabled() ? this : nullptr;
+    return IsActive() ? this : nullptr;
 }
 
 BEGIN_HANDLERS(NavListItemNode)
@@ -197,6 +233,10 @@ void NavListFunctionNode::Renumber(std::vector<NavListSortNode *> &nodes) {
     nodes.push_back(this);
 }
 
+Symbol NavListFunctionNode::GetToken() const { return unk4c; }
+
+bool NavListFunctionNode::IsEnabled() const { return IsActive(); }
+
 #pragma endregion
 #pragma region NavListHeaderNode
 
@@ -214,7 +254,7 @@ Symbol NavListHeaderNode::Select() { return SelectChildren(mChildren, 0); }
 
 bool NavListHeaderNode::IsEnabled() const {
     FOREACH (it, mChildren) {
-        if ((*it)->IsEnabled())
+        if ((*it)->IsActive())
             return true;
     }
     return false;
@@ -233,3 +273,43 @@ void NavListHeaderNode::SetCollapseStateIcon(bool) const {
         label->SetTextToken(gNullStr);
     }
 }
+
+void NavListHeaderNode::Insert(NavListItemNode *node, NavListSort *sort) {
+    auto lower =
+        std::lower_bound(mChildren.begin(), mChildren.end(), node, CompareItems());
+    node->SetShortcut(mShortcut);
+    node->SetParent(this);
+    mChildren.insert(lower, node);
+    UpdateItemCount(node);
+}
+
+Symbol NavListHeaderNode::SelectChildren(std::list<NavListSortNode *> &nodes, int i) {
+    static Symbol fail_add_header_too_big_screen("fail_add_header_too_big_screen");
+    if (i > 100) {
+        return fail_add_header_too_big_screen;
+    } else {
+        static Symbol fail_add_header_screen("fail_add_header_screen");
+        static Symbol incomplete_add_header_screen("incomplete_add_header_screen");
+
+        int num = 0;
+        FOREACH (it, nodes) {
+            Symbol select = (*it)->Select();
+            if (select == gNullStr) {
+                num += (*it)->GetItemCount();
+            } else if (incomplete_add_header_screen == select) {
+                num++;
+            }
+        }
+
+        if (0 == num) {
+            return fail_add_header_screen;
+        }
+
+        if (i != num) {
+            return incomplete_add_header_screen;
+        }
+        return gNullStr;
+    }
+}
+
+#pragma endregion

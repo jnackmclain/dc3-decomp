@@ -3,28 +3,34 @@
 #include "obj/Object.h"
 #include "os/FileCache.h"
 #include "rndobj/Poll.h"
-#include "stl/_vector.h"
 #include "utl/Symbol.h"
 
 class SongSequence : public RndPollable {
 public:
+    // size 0x3c
     struct Entry {
-        int unk0;
-        int unk4;
-        int unk8;
-        int unkc;
-        int unk10;
-        int unk14;
-        int unk18;
-        int unk1c;
-        int unk20;
-        Symbol unk24;
+        Symbol unk0; // 0x0 - song shortname
+        Symbol unk4; // 0x4 - song shortname
+        Symbol unk8; // 0x8 - game mode
+        float unkc;
+        float unk10;
+        Symbol unk14; // 0x14 - hollaback config?
+        float unk18;
+        float unk1c;
+        bool unk20;
+        bool unk21;
+        Symbol mIntroCamShot; // 0x24
+        Symbol mOutroCamShot; // 0x28
+        Symbol unk2c; // 0x2c - crew1?
+        Symbol unk30; // 0x30 - crew2?
+        int unk34; // 0x34 - combined score across p1 and p2?
+        int unk38; // 0x38 - stars?
     };
 
+    SongSequence();
     virtual ~SongSequence();
     virtual DataNode Handle(DataArray *, bool);
 
-    SongSequence();
     bool Done() const;
     void LoadNextSongAudio();
     Symbol GetIntroCamShot() const;
@@ -33,15 +39,20 @@ public:
     void Clear();
     bool DoNext(bool, bool);
     void Init();
-    void Add(DataArray const *);
+    void Add(const DataArray *);
+    int CurrentIndex() const { return mCurrentIndex; }
+    bool GetUnk28() const { return unk28; }
+    void SetUnk28(bool val) { unk28 = val; } // 0x28 - venueEntered flag
 
 protected:
-    std::vector<Entry> unk8;
+    std::vector<Entry> mEntries; // 0x8
     int mCurrentIndex; // 0x14
     float unk18;
     float unk1c;
     u32 unk20;
-    u32 unk24;
-    u32 unk28;
-    FileCache *unk2c;
+    float unk24;
+    bool unk28;
+    FileCache *mFileCache; // 0x2c
 };
+
+extern SongSequence TheSongSequence;

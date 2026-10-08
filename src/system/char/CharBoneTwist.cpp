@@ -34,6 +34,8 @@ BEGIN_COPYS(CharBoneTwist)
     END_COPYING_MEMBERS
 END_COPYS
 
+INIT_REVS(0, 0)
+
 BEGIN_LOADS(CharBoneTwist)
     LOAD_REVS(bs)
     ASSERT_REVS(0, 0)
@@ -44,31 +46,28 @@ BEGIN_LOADS(CharBoneTwist)
 END_LOADS
 
 void CharBoneTwist::Poll() {
-    if (!mBone || mTargets.size() == 0)
-        return;
-    Vector3 v58;
-    v58.Zero();
-    for (ObjPtrList<RndTransformable, ObjectDir>::iterator it = mTargets.begin();
-         it != mTargets.end();
-         ++it) {
-        Vector3 v64((*it)->WorldXfm().v);
-        Add(v64, v58, v58);
+    if (mBone && mTargets.size() != 0) {
+        Vector3 v58;
+        v58.Zero();
+        FOREACH (it, mTargets) {
+            Vector3 v64((*it)->WorldXfm().v);
+            Add(v64, v58, v58);
+        }
+        Scale(v58, 1.0f / mTargets.size(), v58);
+        Transform tf48(mBone->WorldXfm());
+        Vector3 v70;
+        Subtract(v58, mBone->WorldXfm().v, v70);
+        Vector3 v7c;
+        Scale(tf48.m.x, Dot(tf48.m.x, v70), v7c);
+        v70 -= v7c;
+        Normalize(v70, v70);
+        Interp(tf48.m.y, v70, Weight(), tf48.m.y);
+        Normalize(tf48.m.y, tf48.m.y);
+        Cross(tf48.m.x, tf48.m.y, tf48.m.z);
+        Normalize(tf48.m.z, tf48.m.z);
+        Scale(tf48.m.z, Length(tf48.m.x), tf48.m.z);
+        mBone->SetWorldXfm(tf48);
     }
-    Scale(v58, 1.0f / mTargets.size(), v58);
-    Transform tf48(mBone->WorldXfm());
-    Vector3 v70;
-    Subtract(v58, mBone->WorldXfm().v, v70);
-    Vector3 v7c;
-    Scale(tf48.m.x, Dot(tf48.m.x, v70), v7c);
-    Subtract(v70, v7c, v7c);
-    Normalize(v7c, v7c);
-
-    Interp(tf48.m.y, v7c, Weight(), tf48.m.y);
-    Normalize(tf48.m.y, tf48.m.y);
-    Cross(tf48.m.x, tf48.m.y, tf48.m.z);
-    Normalize(tf48.m.z, tf48.m.z);
-    Scale(tf48.m.z, Length(tf48.m.x), tf48.m.z);
-    mBone->SetWorldXfm(tf48);
 }
 
 void CharBoneTwist::PollDeps(

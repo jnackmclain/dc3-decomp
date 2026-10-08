@@ -1,5 +1,6 @@
 
 #pragma once
+#include "SongSortNode.h"
 #include "meta_ham/NavListNode.h"
 #include "meta_ham/NavListSort.h"
 #include "ui/UILabel.h"
